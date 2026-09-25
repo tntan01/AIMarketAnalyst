@@ -23,6 +23,7 @@ import ast
 import dataclasses
 import hashlib
 import inspect
+import json
 import os
 import sqlite3
 from datetime import UTC, datetime, timedelta
@@ -37,6 +38,8 @@ from controllers import app_controller as app_controller_module
 from controllers.app_controller import AppController
 from controllers.news_controller import (
     NewsController,
+    SourceIngestResult,
+    SourcePreview,
     StartupTurnResult,
     UserNoteFieldError,
     UserNoteResult,
@@ -64,7 +67,9 @@ from core.news_models import (
 )
 from core.news_policy import NewsPolicy
 from core.rate_trend import RateTrend
+from services.ff_source_parser import ParseErrorKind, RowDisposition
 from services.news_repository import (
+    ActualConflict,
     CurrencyRateTrend,
     NewsRepository,
     UpsertItemsResult,
@@ -343,6 +348,29 @@ def _stale_event() -> CalendarEvent:
         dedupe_key="stale-1",
         fetched_at=past,
     )
+
+
+FIXTURES = Path(__file__).resolve().parents[1] / "tests" / "fixtures"
+REAL_SOURCE = (FIXTURES / "ff_homepage_source.html").read_text(
+    encoding="utf-8", errors="replace"
+)
+
+
+def _real_controller(tmp_path: Path) -> tuple[NewsRepository, NewsController]:
+    """Repo thật trên temp DB + controller thật (producer/seam giả — khuôn
+    `_controller`) — đường viết của F3 được kiểm trên DB thật, không %APPDATA%."""
+    repo = _repo(tmp_path)
+    return repo, _controller(repo=repo)
+
+
+def _event_row(db_path: Path, dedupe_key: str) -> dict:
+    rows = _rows(db_path, "SELECT * FROM news_events WHERE dedupe_key = ?", (dedupe_key,))
+    assert len(rows) == 1, f"không tìm thấy đúng 1 sự kiện {dedupe_key}"
+    return rows[0]
+
+
+def _event_index(preview: SourcePreview, title: str) -> int:
+    return next(i for i, event in enumerate(preview.events) if event.title == title)
 
 
 # ---- 1. điều phối producer theo chính sách --------------------------------------
@@ -1063,3 +1091,271 @@ class TestAppControllerRegistration:
         from controllers.news_controller import NewsController as RealNewsController
 
         assert app_controller_module.NewsController is RealNewsController
+
+
+# ---------------------------------------------------------------------------
+# 7. Kênh dán mã nguồn — pha 1 (plan F3, contract §6.1 đợt 4 — KHÔNG GHI)
+# ---------------------------------------------------------------------------
+
+
+class TestPastePhase1NoWrite:
+    def test_parse_write_nothing_and_returns_typed_preview(self, tmp_path):
+        repo, controller = _real_controller(tmp_path)
+        browser = tmp_path / "news.db"
+
+        preview = controller.parse_pasted_source(REAL_SOURCE)
+
+        assert isinstance(preview, SourcePreview)
+        assert preview.error is None
+        assert len(preview.events) == 25
+        assert len(preview.rates) == 1
+        assert len(preview.dispositions) == 25
+        # PHA 1 không ghi — DB nguyên trạng: không sự kiện/lãi suất/run.
+        assert _rows(browser, "SELECT * FROM news_events") == []
+        assert _rows(browser, "SELECT * FROM interest_rates") == []
+        assert _rows(browser, "SELECT * FROM ingest_runs") == []
+
+    def test_parse_reads_existing_rows_via_events_in_range_window(self):
+        """Đọc hiện hữu đi qua ``events_in_range`` với cửa sổ min→max
+        ``event_time_utc`` của lô dán (§8 — không method hợp đồng mới)."""
+        repo = FakeRepository()
+        controller = _controller(repo=repo)
+
+        preview = controller.parse_pasted_source(REAL_SOURCE)
+
+        events = preview.events
+        expected_from = min(e.event_time_utc for e in events)
+        expected_to = max(e.event_time_utc for e in events)
+        assert repo.calls == [("events_in_range", (expected_from, expected_to), {})]
+        assert preview.dispositions == (RowDisposition.NEW,) * 25  # DB fake rỗng
+
+
+class TestPasteDispositions:
+    def test_empty_database_dispositions_are_all_new(self, tmp_path):
+        _, controller = _real_controller(tmp_path)
+
+        preview = controller.parse_pasted_source(REAL_SOURCE)
+
+        assert preview.dispositions == (RowDisposition.NEW,) * 25
+
+    def test_existing_dedupe_key_dispositions_will_update(self, tmp_path):
+        _, controller = _real_controller(tmp_path)
+        first = controller.parse_pasted_source(REAL_SOURCE)
+        controller.commit_pasted_source(first, edited_actuals={})
+
+        second = controller.parse_pasted_source(REAL_SOURCE)
+
+        assert second.dispositions == (RowDisposition.WILL_UPDATE,) * 25
+
+    def test_manual_row_with_different_actual_is_conflict(self, tmp_path):
+        repo, controller = _real_controller(tmp_path)
+        preview = controller.parse_pasted_source(REAL_SOURCE)
+        jn = next(e for e in preview.events if e.title == "JN Flash Manufacturing PMI")
+        repo.upsert_events(
+            [dataclasses.replace(jn, source=EventSource.USER, actual="99.9")]
+        )
+
+        repl = controller.parse_pasted_source(REAL_SOURCE)
+
+        index = _event_index(preview, jn.title)
+        assert repl.dispositions[index] is RowDisposition.CONFLICT_KEEP_MANUAL
+        assert all(
+            d is RowDisposition.NEW
+            for i, d in enumerate(repl.dispositions)
+            if i != index
+        )
+
+
+class TestPasteParseError:
+    def test_missing_calendar_logs_failed_run_and_preview_error_no_writes(self, tmp_path):
+        repo, controller = _real_controller(tmp_path)
+        browser = tmp_path / "news.db"
+
+        preview = controller.parse_pasted_source("<html>no calendar here</html>")
+
+        assert isinstance(preview, SourcePreview)
+        assert preview.error is not None
+        assert preview.error.kind is ParseErrorKind.NOT_FOUND
+        assert preview.events == [] and preview.rates == []
+        assert preview.dispositions == ()
+        assert _rows(browser, "SELECT * FROM news_events") == []
+        assert _rows(browser, "SELECT * FROM interest_rates") == []
+        runs = _rows(browser, "SELECT * FROM ingest_runs")
+        assert len(runs) == 1  # đúng 1 run failed — KHÔNG có run ok mới
+        assert runs[0]["producer"] == IngestProducer.USER.value
+        assert runs[0]["status"] == IngestRunStatus.FAILED.value
+        assert runs[0]["items_written"] == 0
+        assert runs[0]["error_type"] == ParseErrorKind.NOT_FOUND.value  # mã có kiểu
+        assert runs[0]["error_detail"] is not None
+
+    def test_cut_off_calendar_logs_malformed_run_no_writes(self, tmp_path):
+        repo, controller = _real_controller(tmp_path)
+        browser = tmp_path / "news.db"
+        cut = (
+            "<script>"
+            "window.calendarComponentStates[100000] = {\n"
+            'days: [{"date":"d","events":[{"id":1,"name":"cut"'
+        )
+
+        preview = controller.parse_pasted_source(cut)
+
+        assert preview.error is not None
+        assert preview.error.kind is ParseErrorKind.MALFORMED
+        assert preview.events == [] and preview.rates == []
+        runs = _rows(browser, "SELECT * FROM ingest_runs")
+        assert len(runs) == 1 and runs[0]["status"] == IngestRunStatus.FAILED.value
+        assert runs[0]["error_type"] == ParseErrorKind.MALFORMED.value
+
+
+# ---------------------------------------------------------------------------
+# 8. Kênh dán mã nguồn — pha 2 (plan F3, contract §6.1 bước 6 đợt 4 — GHI)
+# ---------------------------------------------------------------------------
+
+
+class TestPasteCommitWrites:
+    def test_commit_writes_events_rates_and_ok_run_with_typed_result(self, tmp_path):
+        repo, controller = _real_controller(tmp_path)
+        browser = tmp_path / "news.db"
+        preview = controller.parse_pasted_source(REAL_SOURCE)
+
+        result = controller.commit_pasted_source(preview, edited_actuals={})
+
+        assert isinstance(result, SourceIngestResult)
+        assert (result.inserted, result.updated) == (25, 0)
+        assert result.conflicts == ()
+        assert result.rates_written == 1
+        assert result.run_id is not None
+        events = _rows(browser, "SELECT * FROM news_events")
+        assert len(events) == 25
+        assert all(row["source"] == EventSource.FF_HTML.value for row in events)
+        assert all(row["dedupe_key"] for row in events)
+        rates = _rows(browser, "SELECT * FROM interest_rates")
+        assert len(rates) == 1
+        assert (rates[0]["currency"], rates[0]["rate"], rates[0]["source"]) == (
+            "CHF",
+            0.0,
+            RateSource.FF_HTML.value,
+        )
+        runs = _rows(browser, "SELECT * FROM ingest_runs")
+        assert len(runs) == 1
+        assert runs[0]["producer"] == IngestProducer.USER.value
+        assert runs[0]["status"] == IngestRunStatus.OK.value
+        assert runs[0]["items_written"] == 26  # 25 sự kiện + 1 lãi suất
+        assert result.run_id == runs[0]["id"]
+
+
+class TestPasteTwice:
+    def test_second_paste_previews_will_update_and_commit_inserts_none(self, tmp_path):
+        repo, controller = _real_controller(tmp_path)
+        browser = tmp_path / "news.db"
+        controller.commit_pasted_source(
+            controller.parse_pasted_source(REAL_SOURCE), edited_actuals={}
+        )
+
+        second = controller.parse_pasted_source(REAL_SOURCE)
+
+        assert second.dispositions == (RowDisposition.WILL_UPDATE,) * 25
+        result = controller.commit_pasted_source(second, edited_actuals={})
+        assert (result.inserted, result.updated) == (0, 25)  # mới=0, cập nhật=hết
+        assert result.conflicts == ()
+        events = _rows(browser, "SELECT * FROM news_events")
+        assert len(events) == 25  # không row trùng (dedupe_key UNIQUE)
+        assert len(_rows(browser, "SELECT * FROM interest_rates")) == 1
+
+
+class TestEditedCommit:
+    def test_edited_actual_written_with_user_source_and_original_in_raw_json(self, tmp_path):
+        _, controller = _real_controller(tmp_path)
+        browser = tmp_path / "news.db"
+        preview = controller.parse_pasted_source(REAL_SOURCE)
+        jn = next(e for e in preview.events if e.title == "JN Flash Manufacturing PMI")
+        au = next(e for e in preview.events if e.title == "AU Employment Change")
+
+        controller.commit_pasted_source(preview, edited_actuals={jn.dedupe_key: "54.5"})
+
+        jn_row = _event_row(browser, jn.dedupe_key)
+        assert jn_row["actual"] == "54.5"  # actual ĐÃ SỬA được ghi
+        assert jn_row["source"] == EventSource.USER.value  # dòng sửa → source=user
+        assert jn_row["dedupe_key"] == jn.dedupe_key  # dedupe_key BẤT BIẾN
+        assert json.loads(jn_row["raw_json"])["actual"] == "54.1"  # actual FF gốc giữ
+        au_row = _event_row(browser, au.dedupe_key)
+        assert au_row["actual"] == "39.5K"
+        assert au_row["source"] == EventSource.FF_HTML.value  # dòng không sửa → ff_html
+
+    def test_edited_rate_event_resyncs_the_observation(self, tmp_path):
+        _, controller = _real_controller(tmp_path)
+        browser = tmp_path / "news.db"
+        preview = controller.parse_pasted_source(REAL_SOURCE)
+        snb = next(e for e in preview.events if e.title == "SZ SNB Policy Rate")
+
+        controller.commit_pasted_source(preview, edited_actuals={snb.dedupe_key: "0.25%"})
+
+        rates = _rows(browser, "SELECT * FROM interest_rates")
+        assert len(rates) == 1
+        assert rates[0]["rate"] == 0.25  # quan sát theo actual ĐÃ SỬA
+        assert rates[0]["source"] == RateSource.FF_HTML.value  # stamp giữ ff_html
+        assert rates[0]["observed_at"] == snb.day_key
+
+
+class TestPasteMergeRules:
+    def test_rule1_an_existing_actual_survives_a_paste_without_actual(self, tmp_path):
+        """Quy tắc 1 qua đường commit: actual đã có không bị lần dán mang actual
+        rỗng làm mất (không ghi đè giá trị thật bằng NULL)."""
+        _, controller = _real_controller(tmp_path)
+        browser = tmp_path / "news.db"
+        preview = controller.parse_pasted_source(REAL_SOURCE)
+        claims = next(e for e in preview.events if e.title == "US Unemployment Claims")
+        assert claims.actual is None  # dòng này bóc ra actual rỗng
+        controller.commit_pasted_source(preview, edited_actuals={claims.dedupe_key: "210K"})
+
+        controller.commit_pasted_source(
+            controller.parse_pasted_source(REAL_SOURCE), edited_actuals={}
+        )
+
+        claims_row = _event_row(browser, claims.dedupe_key)
+        assert claims_row["actual"] == "210K"  # actual đã ghi không bị NULL xóa
+
+    def test_rule2_user_row_is_never_overwritten_by_a_later_paste(self, tmp_path):
+        """Quy tắc 2 qua đường commit: bản ghi ``source=user`` không bị lượt dán
+        đè; chỉ user được sửa (các dòng ff_html khác vẫn cập nhật bình thường)."""
+        _, controller = _real_controller(tmp_path)
+        browser = tmp_path / "news.db"
+        first = controller.parse_pasted_source(REAL_SOURCE)
+        jn = next(e for e in first.events if e.title == "JN Flash Manufacturing PMI")
+        controller.commit_pasted_source(first, edited_actuals={jn.dedupe_key: "54.5"})
+
+        second = controller.parse_pasted_source(REAL_SOURCE)
+        result = controller.commit_pasted_source(second, edited_actuals={})
+
+        jn_row = _event_row(browser, jn.dedupe_key)
+        assert jn_row["source"] == EventSource.USER.value  # không bị đè
+        assert jn_row["actual"] == "54.5"  # giá trị user giữ nguyên
+        au_row = _event_row(browser, next(e for e in first.events if e.title == "AU Employment Change").dedupe_key)
+        assert au_row["source"] == EventSource.FF_HTML.value  # dòng khác cập nhật
+        assert result.inserted == 0
+
+    def test_rule3_conflict_prefers_manual_and_logs_into_run(self, tmp_path):
+        """Quy tắc 3 qua đường commit: xung đột actual (nhập tay ≠ giá trị dán)
+        → ưu tiên nhập tay + ghi nhận xung đột vào ``ingest_runs``."""
+        _, controller = _real_controller(tmp_path)
+        browser = tmp_path / "news.db"
+        first = controller.parse_pasted_source(REAL_SOURCE)
+        jn = next(e for e in first.events if e.title == "JN Flash Manufacturing PMI")
+        controller.commit_pasted_source(first, edited_actuals={jn.dedupe_key: "54.5"})
+
+        result = controller.commit_pasted_source(
+            controller.parse_pasted_source(REAL_SOURCE), edited_actuals={}
+        )
+
+        assert len(result.conflicts) == 1  # xung đột THẬT từ UpsertEventsResult
+        conflict = result.conflicts[0]
+        assert isinstance(conflict, ActualConflict)
+        assert conflict.dedupe_key == jn.dedupe_key
+        assert conflict.user_actual == "54.5"
+        assert conflict.incoming_actual == "54.1"
+        jn_row = _event_row(browser, jn.dedupe_key)
+        assert jn_row["actual"] == "54.5"  # ưu tiên user
+        runs = _rows(browser, "SELECT * FROM ingest_runs")
+        assert runs[-1]["error_type"] == "ActualConflict"  # ghi nhận vào run
+        assert "user=54.5" in runs[-1]["error_detail"]
+        assert "auto=54.1" in runs[-1]["error_detail"]

@@ -18,10 +18,11 @@ của producer lịch cũ cắm vào repository) và delegate một-sự-kiện 
 và hai lượt đối ngoại của đường xuất/nhập file (contract §13 / §10 đợt 3 — "Bỏ
 thu tự động FF; app không phát request mạng nào tới ForexFactory" + "Bãi bỏ
 xuất/nhập file"; sao lưu = tệp ``news.db``).  Kênh duy nhất của lịch kinh tế +
-actual là **mã nguồn trang người dùng dán** — đường đó tiếp nhận tại lô F3
-(``parse_pasted_source``/``commit_pasted_source``), chưa tồn tại trong lô F1
-này.  ``run_startup_turn`` chỉ còn purge retention + khởi động lịch producer
-RSS/FRED (L3.6/L3.7 giữ nguyên — QĐ-F2).
+actual là **mã nguồn trang người dùng dán**, tiếp nhận tại lô F3 qua luồng 2
+pha ``parse_pasted_source`` (pha 1 — bóc tách + xem trước, không ghi) và
+``commit_pasted_source`` (pha 2 — xác nhận, ghi qua repository), contract §6.1
+đợt 3+4.  ``run_startup_turn`` chỉ còn purge retention + khởi động lịch
+producer RSS/FRED (L3.6/L3.7 giữ nguyên — QĐ-F2).
 
 Delivered by this batch (plan L2.7):
 
@@ -80,6 +81,32 @@ are constructor seams (khuôn d.275-282); the production default resolves
 ``settings.ai.active_provider()`` lazily exactly like ``scanner_controller``
 (d.720-728).
 
+**Pasted page-source channel (đợt 3+4, 24/09/2026 — ca "Nguồn dán FF", plan
+F3, contract §6.1):** the only channel of calendar events + actual is the
+user-pasted ForexFactory page source.  ``parse_pasted_source`` implements pha 1
+(§6.1 bước 2 + 5): it hands the raw text to the sole parser owner
+``services/ff_source_parser`` (this layer never self-extracts — S2), reads the
+existing rows through ``events_in_range`` (window = the batch's min→max
+``event_time_utc``, §8 — no repository method is added) and classifies each
+row via the parser's pure ``classify_incoming_events`` (`Mới` / `Sẽ cập nhật`
+/ `Xung đột — giữ nhập tay`).  **Pha 1 writes nothing** — no
+``upsert_events``/``add_rate_observations``, no ``ok`` run; a parse error
+returns a typed preview error and logs one ``failed`` run (§4.6/§6.1 — lỗi có
+kiểu).  ``commit_pasted_source`` implements pha 2 (§6.1 bước 6 đợt 4): it
+receives the preview plus the actuals the user edited (only ``actual`` may
+differ from the parsed value — QĐ-F6), calls the parser's pure
+``finalize_edited_batch`` (edited rows → ``source=user`` + the original FF
+actual kept in ``raw_json``; untouched rows keep ``ff_html``; rate observations
+in the inherited list resync to the edited actual with ``ff_html`` source;
+``dedupe_key`` immutable), then writes through the repository:
+``upsert_events`` + ``add_rate_observations`` (the 3 merge rules stay in the
+repository, never copied here) + ``record_run`` (producer ``user``,
+``items_written`` = events + rates) and returns the REAL new/updated/conflict
+counts from ``UpsertEventsResult`` plus the rate count; rule-3 conflicts are
+logged into the run's ``error_type``/``error_detail`` (``ActualConflict`` —
+khuôn the retired ``ff_calendar_producer``).  Cancel = the UI never calls
+``commit_pasted_source`` → nothing written, no run, edits discarded (§6.1).
+
 Declared readings (V2 — decided here on purpose, not silently):
 
 * §6.4 makes the form supply "loại tin" while the write in the same sentence
@@ -96,7 +123,7 @@ Declared readings (V2 — decided here on purpose, not silently):
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
@@ -109,6 +136,7 @@ from core.news_models import (
     NewsItem,
     NewsItemKind,
     NewsItemSource,
+    RateObservation,
     StoreState,
     TrendVerdict,
     VerdictScopeType,
@@ -118,13 +146,28 @@ from core.news_policy import NewsPolicy, load_news_policy
 from core.trend_prompt_builder import TrendPrompt, TrendPromptOutcome, build_trend_prompt
 from core.trend_verdict_parser import TrendParseOutcome, parse_trend_verdict
 from services.ai_service import AIProviderConfig, AIService
+from services.ff_source_parser import (
+    ParseError,
+    RowDisposition,
+    classify_incoming_events,
+    finalize_edited_batch,
+    parse_calendar_source,
+)
 from services.news_producers.fred_rate_producer import FredRateProducer, RateFetchResult
 from services.news_producers.rss_producer import RssCollectionResult, RssProducer
-from services.news_repository import CurrencyRateTrend, NewsRepository, UpsertItemsResult
+from services.news_repository import (
+    ActualConflict,
+    CurrencyRateTrend,
+    NewsRepository,
+    UpsertEventsResult,
+    UpsertItemsResult,
+)
 
 __all__ = [
     "AiScopePreview",
     "NewsController",
+    "SourceIngestResult",
+    "SourcePreview",
     "StartupTurnResult",
     "TrendAnalysisResult",
     "UserNoteFieldError",
@@ -249,6 +292,46 @@ class StartupTurnResult:
 
 
 # ---------------------------------------------------------------------------
+# Typed results of the pasted page-source path (plan F3 — C3, no bare dict)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class SourcePreview:
+    """Kết quả có kiểu của ``parse_pasted_source`` — pha 1 (§6.1 bước 2 + 5 đợt 4).
+
+    ``error`` None đúng khi lô dán bóc được trọn vẹn (``events``/``rates`` đầy
+    đủ và ``dispositions`` phân loại từng dòng cùng thứ tự); khi parse lỗi thì
+    cả ba rỗng và ``error`` mang lỗi có kiểu của parser (không bảng — L3).
+    ``fetched_at`` là mốc thời gian của lượt bóc (parser không tự bịa mốc — do
+    caller F3 cấp), giữ lại để pha 2 ghi đúng cùng provenance khi chung thiện
+    lô."""
+
+    events: list[CalendarEvent]
+    rates: list[RateObservation]
+    dispositions: tuple[RowDisposition, ...]
+    error: ParseError | None
+    fetched_at: str
+
+
+@dataclass(frozen=True, slots=True)
+class SourceIngestResult:
+    """Kết quả có kiểu của ``commit_pasted_source`` — pha 2 (§6.1 bước 6 đợt 4).
+
+    ``inserted``/``updated``/``conflicts`` là số **THẬT** từ ``UpsertEventsResult``
+    của lần ghi (không dùng số dự đoán của preview); ``rates_written`` là số
+    quan sát lãi suất đã ghi; ``run_id`` là dòng ``ingest_runs`` của lượt dán
+    (producer ``user``, status ``ok``).  Xung đột quy tắc 3 cũng nằm trong
+    ``error_type``/``error_detail`` của run (``ActualConflict``)."""
+
+    inserted: int
+    updated: int
+    conflicts: tuple[ActualConflict, ...]
+    rates_written: int
+    run_id: int
+
+
+# ---------------------------------------------------------------------------
 # Manual-entry helpers (pure — validation only, no I/O)
 # ---------------------------------------------------------------------------
 
@@ -360,6 +443,31 @@ def _normalize_currencies(value: object) -> list[str] | None:
 def _utc_now() -> str:
     """Current UTC time in the khuôn ISO-8601 form: ``YYYY-MM-DDTHH:MM:SSZ``."""
     return datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+def _conflicts_detail(conflicts: tuple[ActualConflict, ...]) -> str:
+    """Compact machine-readable summary of rule-3 conflicts (contract §6.1 quy
+    tắc 3 — user actual wins and the conflict is written into ``ingest_runs``).
+
+    Khuôn của bộ sản xuất lịch cũ ``ff_calendar_producer`` (đã xóa ở F1) —
+    chuỗi máy đọc cho log vận hành, không phải chuỗi hiển thị (L3)."""
+    return "; ".join(
+        f"{c.dedupe_key}|{c.currency}|{c.title}|user={c.user_actual}|auto={c.incoming_actual}"
+        for c in conflicts
+    )
+
+
+def _run_error_fields(
+    conflicts: tuple[ActualConflict, ...],
+) -> tuple[str | None, str | None]:
+    """Map rule-3 conflicts onto the ``ingest_runs`` error fields (§4.6/§6.1).
+
+    Quy tắc merge 3 nằm trong ``NewsRepository`` — controller chỉ chuyển tiếp
+    ``UpsertEventsResult.conflicts`` do repository báo về, không bao giờ tự
+    suy diễn lại (L2.1).  Không xung đột → run không có lỗi."""
+    if not conflicts:
+        return None, None
+    return "ActualConflict", _conflicts_detail(conflicts)
 
 
 def _fred_api_key() -> str | None:
@@ -484,7 +592,8 @@ class NewsController:
         The ForexFactory parts of the old turn (JSON calendar + HTML actual
         channels) were removed with the FF automatic channels (đợt 3 — no
         request to ForexFactory remains anywhere; the only FF channel is the
-        human-pasted page-source path, tiếp nhận sau này tại F3).  This layer
+        human-pasted page-source path ``parse_pasted_source``/
+        ``commit_pasted_source``, tiếp nhận tại F3).  This layer
         delegates (C3 — no display string, no added retry)."""
         if self._fetched_this_session:
             return StartupTurnResult(ran=False)
@@ -584,6 +693,119 @@ class NewsController:
         self._schedule_worker = None
         thread.quit()
         thread.wait(5000)
+
+    # --- pasted page-source channel (§6.1 đợt 3+4, plan F3 — luồng 2 pha) ------
+
+    def parse_pasted_source(self, source_text: str) -> SourcePreview:
+        """Pha 1 — bóc tách + xem trước của kênh dán mã nguồn (§6.1 bước 2 + 5).
+
+        Nhận văn bản source (không tự bóc — S2) và giao cho chủ sở hữu duy nhất
+        ``services/ff_source_parser.parse_calendar_source``; đọc sự kiện hiện hữu
+        qua ``events_in_range`` (cửa sổ = min→max ``event_time_utc`` của lô dán,
+        §8 — không thêm method hợp đồng nào) và nhờ hàm thuần phân loại dòng của
+        parser ``classify_incoming_events`` (mới / sẽ cập nhật / xung đột-giữ-
+        nhập-tay, §11b).  Trả ``SourcePreview`` có kiểu.
+
+        **PHA 1 KHÔNG GHI DỮ LIỆU** — không ``upsert_events``, không
+        ``add_rate_observations``, không run ``ok`` (DB nguyên trạng).  Parse
+        lỗi → ``record_run(status=failed)`` với ``error_type``/``error_detail``
+        có kiểu (§4.6/§6.1 — lỗi không tìm thấy lịch, lỗi JSON hỏng/cắt cụt)
+        + lỗi trong preview (không bảng)."""
+        fetched_at = _utc_now()
+        outcome = parse_calendar_source(source_text, fetched_at=fetched_at)
+        if outcome.error is not None:
+            self._record_failed_parse(outcome.error, fetched_at)
+            return SourcePreview(
+                events=[],
+                rates=[],
+                dispositions=(),
+                error=outcome.error,
+                fetched_at=fetched_at,
+            )
+        existing = self._existing_in_paste_window(outcome.events)
+        dispositions = tuple(classify_incoming_events(outcome.events, existing))
+        return SourcePreview(
+            events=list(outcome.events),
+            rates=list(outcome.rates),
+            dispositions=dispositions,
+            error=None,
+            fetched_at=fetched_at,
+        )
+
+    def commit_pasted_source(
+        self,
+        preview: SourcePreview,
+        edited_actuals: Mapping[str, str],
+    ) -> SourceIngestResult:
+        """Pha 2 — xác nhận ghi của kênh dán mã nguồn (§6.1 bước 6 đợt 4).
+
+        Nhận preview (lô đã bóc pha 1) + bản actual người dùng đã sửa (chỉ
+        ``actual`` được khác giá trị bóc — QĐ-F6); gọi hàm thuần chung thiện lô
+        của parser ``finalize_edited_batch`` (dòng sửa → ``source=user`` + actual
+        FF gốc giữ trong ``raw_json``; dòng không sửa giữ ``ff_html``; quan sát
+        lãi suất trong danh mục đồng bộ theo actual đã sửa, stamp ``ff_html``;
+        ``dedupe_key`` BẤT BIẾN — §11b), rồi GHI qua repository:
+        ``upsert_events`` + ``add_rate_observations`` (3 quy tắc merge nằm trong
+        repository — không nhân bản, L2.1) + ``record_run(IngestRun(producer=
+        user, status=ok, items_written=tổng sự kiện + lãi suất))``.  Trả tóm tắt
+        mới/cập nhật/xung đột THẬT từ ``UpsertEventsResult`` của lần ghi (không
+        dùng số dự đoán của preview) + số lãi suất đã ghi; xung đột quy tắc 3
+        được ghi vào ``error_type``/``error_detail`` của run.  Hủy = UI không
+        gọi method này → không ghi, không run, chỉnh sửa bị loại bỏ (§6.1)."""
+        started_at = _utc_now()
+        finalized = finalize_edited_batch(
+            preview.events,
+            edited_actuals=edited_actuals,
+            fetched_at=preview.fetched_at,
+        )
+        upsert = self._repo.upsert_events(list(finalized.events))
+        rates_written = self._repo.add_rate_observations(list(finalized.rates))
+        error_type, error_detail = _run_error_fields(upsert.conflicts)
+        run_id = self._repo.record_run(
+            IngestRun(
+                producer=IngestProducer.USER,
+                started_at=started_at,
+                finished_at=_utc_now(),
+                status=IngestRunStatus.OK,
+                items_written=upsert.inserted + upsert.updated + rates_written,
+                error_type=error_type,
+                error_detail=error_detail,
+            )
+        )
+        return SourceIngestResult(
+            inserted=upsert.inserted,
+            updated=upsert.updated,
+            conflicts=tuple(upsert.conflicts),
+            rates_written=rates_written,
+            run_id=run_id,
+        )
+
+    def _existing_in_paste_window(
+        self, events: Sequence[CalendarEvent]
+    ) -> list[CalendarEvent]:
+        """Các bản ghi hiện hữu trong cửa sổ thời gian của lô dán (min→max
+        ``event_time_utc``) — chính là đọc ``events_in_range`` §8 đã có; các
+        chuỗi ISO-8601 UTC mang hậu tố ``Z`` so sánh đúng thứ tự thời gian."""
+        if not events:
+            return []
+        from_utc = min(event.event_time_utc for event in events)
+        to_utc = max(event.event_time_utc for event in events)
+        return self._repo.events_in_range(from_utc, to_utc)
+
+    def _record_failed_parse(self, error: ParseError, started_at: str) -> None:
+        """Một dòng ``ingest_runs`` cho lượt bóc lỗi (§4.6/§6.1 — fail-closed:
+        lỗi có kiểu, không ghi dữ liệu nào, all-or-nothing)."""
+        self._repo.record_run(
+            IngestRun(
+                producer=IngestProducer.USER,
+                started_at=started_at,
+                finished_at=_utc_now(),
+                status=IngestRunStatus.FAILED,
+                items_written=0,
+                error_type=error.kind.value,
+                error_detail=error.detail,
+            )
+        )
 
     # --- manual entry (§6.4) ------------------------------------------------------
 

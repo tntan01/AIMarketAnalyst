@@ -258,7 +258,7 @@ song F1 nếu Tech Lead muốn, nhưng nghiệm thu vẫn theo thứ tự).
   ghi — ngoại lệ duy nhất: run `failed` khi parse lỗi); disposition + chung
   thiện lô không tính trong controller (S2 — gọi hàm thuần parser); không
   method mới trong `news_repository.py` (diff file này = 0).
-- **Trạng thái:** PLANNED
+- **Trạng thái:** IMPLEMENTED (25/09/2026 — collector D2; bảng §8 cập nhật KÉP)
 
 ### F4 — UI: dialog dán mã nguồn 2 pha + panel "Sự kiện đang thiếu số liệu" (M)
 
@@ -458,7 +458,7 @@ song F1 nếu Tech Lead muốn, nhưng nghiệm thu vẫn theo thứ tự).
 |---|---|---|---|---|
 | F1 | Xóa hoàn toàn đường FF tự động + xuất/nhập file (producer, file_transfer, 2 nút FF, 2 nút file, lookup seam, kênh ff_html trong fred producer) + test theo D2 (gồm QĐ-F7) | L | — | IMPLEMENTED |
 | F2 | Parser `services/ff_source_parser.py` (bóc tách + hàm thuần phân loại dòng) + fixture source thật + test (QĐ-F8: bổ sung `calendar_event_dedupe_key` vào core + test models + 2 chỉnh §11b) | M | F1 | IMPLEMENTED |
-| F3 | Đường nhập 2 pha: `parse_pasted_source` (preview — không ghi) + `commit_pasted_source` (chung thiện lô: dòng sửa actual→`source=user`+`raw_json` actual gốc, `dedupe_key` bất biến; ghi DB + run `producer=user` + tóm tắt) | M | F1, F2 | PLANNED |
+| F3 | Đường nhập 2 pha: `parse_pasted_source` (preview — không ghi) + `commit_pasted_source` (chung thiện lô: dòng sửa actual→`source=user`+`raw_json` actual gốc, `dedupe_key` bất biến; ghi DB + run `producer=user` + tóm tắt) | M | F1, F2 | IMPLEMENTED |
 | F4 | UI: dialog dán mã nguồn 2 pha (bảng xem trước — **chỉ cột actual sửa được** + Cập nhật/Hủy) + panel "Sự kiện đang thiếu số liệu" + toolbar 3 nút | M | F3 | PLANNED |
 | F5 | Nghiệm thu tổng (battery/smoke/build/boot + bằng chứng không-mạng-FF) + đồng bộ tài liệu + xóa plan | M | tất cả | PLANNED |
 
