@@ -20,12 +20,10 @@ vào `tmp_path` — không ghi gì vào repo.
 from __future__ import annotations
 
 import contextlib
-import dataclasses
 import os
 import sys
 import threading
 import time
-from datetime import UTC, datetime
 from types import SimpleNamespace
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -111,14 +109,11 @@ class FakeNewsController:
         self,
         events: list[CalendarEvent] | None = None,
         items: list[NewsItem] | None = None,
-        pending: list[CalendarEvent] | None = None,
     ) -> None:
         self.events = [EVENT] if events is None else events
         self.items = [HEADLINE, EXCLUDED_NOTE] if items is None else items
-        self.pending = [] if pending is None else pending
         self.event_calls: list[tuple[str, str]] = []
         self.item_calls: list[tuple[str, str, bool]] = []
-        self.pending_calls: list[datetime] = []
 
     def events_in_range(self, from_utc, to_utc, currencies=None, include_non_impact=True):
         self.event_calls.append((from_utc, to_utc))
@@ -127,10 +122,6 @@ class FakeNewsController:
     def items_in_range(self, from_utc, to_utc=None, kinds=None, currencies=None, exclude_flagged=True):
         self.item_calls.append((from_utc, to_utc, exclude_flagged))
         return list(self.items)
-
-    def events_pending_actual(self, now):
-        self.pending_calls.append(now)
-        return list(self.pending)
 
 
 _SCREENS: list[NewsScreen] = []
@@ -214,7 +205,7 @@ class TestDisplayDictionary:
         }
         assert news.SOURCE_TEXT == {
             "ff_json": "ForexFactory (lịch — dữ liệu cũ)",
-            "ff_html": "ForexFactory (mã nguồn trang)",
+            "ff_html": "Forex Factory",
             "google_news_rss": "Google News",
             "fxstreet_rss": "FXStreet",
             "investing_rss": "Investing",
@@ -280,15 +271,18 @@ class TestTableModel:
         assert headers == list(news.COLUMN_LABELS)
 
     def test_event_row_shows_the_registered_labels(self):
+        # Múi giờ hiển thị cố định (Asia/Ho_Chi_Minh) — không phụ thuộc settings
+        # máy chạy test; hiển thị theo múi giờ người dùng (Owner 25/09/2026).
+        news._configure_display_timezone("Asia/Ho_Chi_Minh")
         model = self._model()
         index = model.index(0, 0)
 
         def cell(column: int) -> str:
             return model.data(model.index(0, column), Qt.ItemDataRole.DisplayRole)
 
-        assert model.data(index, Qt.ItemDataRole.DisplayRole) == "20/09/2026 14:30"
+        assert model.data(index, Qt.ItemDataRole.DisplayRole) == "20/09/2026 21:30"
         assert cell(1) == news.EVENT_TEXT
-        assert cell(2) == "ForexFactory (mã nguồn trang)"
+        assert cell(2) == "Forex Factory"
         assert cell(3) == "USD"
         assert cell(4) == "FOMC Meeting"
         assert cell(5) == "Cao"
@@ -365,7 +359,7 @@ class TestScreenLayout:
         texts = _texts(screen)
 
         assert "Tin tức" in texts
-        assert "Quản lý tin" in texts
+        assert news.SEARCH_BUTTON_TEXT in texts  # nút tìm của card lọc (26/09/2026)
         for label in news.FILTER_LABELS:
             assert label in texts, label
         for label in news.TOOLBAR_LABELS:
@@ -375,7 +369,9 @@ class TestScreenLayout:
         screen = _screen()
 
         kind = _combo_texts(screen, screen.kind_combo)
-        assert kind == ["Tất cả loại tin", news.EVENT_TEXT, "Headline", "Phát biểu", "Nhập tay"]
+        # Mục đầu rút gọn "Tất cả" cho mọi combo (Owner quyết 26/09/2026) —
+        # nhãn cạnh ô đã nói ô đó lọc gì.
+        assert kind == ["Tất cả", news.EVENT_TEXT, "Headline", "Phát biểu", "Nhập tay"]
         assert [screen.kind_combo.itemData(i) for i in range(1, screen.kind_combo.count())] == [
             "event",
             "headline",
@@ -385,20 +381,20 @@ class TestScreenLayout:
 
         status = _combo_texts(screen, screen.status_combo)
         assert status == [
-            "Tất cả trạng thái",
+            "Tất cả",
             "Chưa tới giờ",
             "Đã có số liệu",
             "Thiếu số liệu",
             "Đã loại trừ",
         ]
         impact = _combo_texts(screen, screen.impact_combo)
-        assert impact == ["Tất cả tác động", "Cao", "Trung bình", "Thấp", "Không đáng kể"]
+        assert impact == ["Tất cả", "Cao", "Trung bình", "Thấp", "Không đáng kể"]
 
     def test_currency_options_come_from_the_loaded_rows(self):
         screen = _screen()
         _wait_until(lambda: screen.table_model.rowCount() > 0)
 
-        assert _combo_texts(screen, screen.currency_combo) == ["Tất cả đồng tiền", "EUR", "JPY", "USD"]
+        assert _combo_texts(screen, screen.currency_combo) == ["Tất cả", "EUR", "JPY", "USD"]
 
     def test_toolbar_buttons_are_wired_per_lot(self):
         screen = _screen()
@@ -425,36 +421,6 @@ class TestScreenLayout:
 
         assert screen.date_to_input.date() == QDate.currentDate()
         assert screen.date_from_input.date() == QDate.currentDate().addMonths(-1)
-
-
-class TestPendingPanel:
-    """F4 — panel "Sự kiện đang thiếu số liệu" (d.1544-1545, d.1613-1617)."""
-
-    def test_panel_shows_title_and_open_button_when_events_pending(self):
-        now = datetime.now(UTC)
-        pending = [
-            dataclasses.replace(
-                EVENT,
-                day_key=now.strftime("%Y-%m-%d"),
-                event_time_utc=now.isoformat(timespec="seconds").replace("+00:00", "Z"),
-                title="Stale FOMC",
-                actual=None,
-                status=EventStatus.STALE,
-                dedupe_key="p-1",
-            )
-        ]
-        controller = FakeNewsController(pending=pending)
-        screen = _screen(controller)
-
-        assert _wait_until(lambda: screen._pending_panel.isVisible())
-        texts = _texts(screen)
-        assert news.PANEL_TITLE_TEXT in texts
-        assert news.OPEN_FF_TEXT in texts
-
-    def test_panel_stays_hidden_when_nothing_pending(self):
-        screen = _screen()
-
-        assert _wait_until(lambda: not screen._pending_panel.isVisible())
 
 
 # ---- 5. trạng thái tải và rỗng -------------------------------------------------
@@ -519,6 +485,9 @@ class TestLoadingAndEmptyState:
 
 class TestRowDetailDialog:
     def test_item_detail_shows_provenance_content_and_link(self):
+        # Múi giờ hiển thị cố định (Asia/Ho_Chi_Minh) — hiển thị theo múi giờ
+        # người dùng (Owner 25/09/2026), không phụ thuộc settings máy chạy test.
+        news._configure_display_timezone("Asia/Ho_Chi_Minh")
         screen = _screen()
         rows = build_rows([EVENT], [HEADLINE, EXCLUDED_NOTE])
         dialog = screen.row_detail_dialog(rows[1])
@@ -528,7 +497,7 @@ class TestRowDetailDialog:
         assert dialog.windowTitle() == news.DETAIL_TEXT
         assert "Powell said the committee can wait." in joined
         assert "Google News" in joined
-        assert "21/09/2026 09:00" in joined  # giờ fetch
+        assert "21/09/2026 16:00" in joined  # giờ fetch (Asia/Ho_Chi_Minh)
         assert "https://example.com/fed" in joined
         for label in news.PROVENANCE_LABELS:
             assert label in joined, label
@@ -540,7 +509,7 @@ class TestRowDetailDialog:
         joined = " ".join(label.text() for label in dialog.findChildren(QLabel))
         assert "raw_json" in joined
         assert "FOMC Meeting" in joined
-        assert "ForexFactory (mã nguồn trang)" in joined
+        assert "Forex Factory" in joined
 
 
 # ---- 7. màn không vỡ layout 800px + đăng ký điều hướng ------------------------

@@ -421,7 +421,7 @@ Các màn hình chính trong ứng dụng:
 * `journal_screen.py`: Nhật ký giao dịch; tổng quan, thống kê và bộ lọc.
 * `journal_detail_screen.py`: Chi tiết một giao dịch trong nhật ký.
 * `orders_screen.py`: Quản lý lệnh/vị thế đang mở và trạng thái Order Management (SL/BE/trailing).
-* `news_screen.py`: Quản lý tin — **IMPLEMENTED** (ca Tin tức, Bước 3; **sửa đổi ca "Nguồn dán FF" IMPLEMENTED 25/09/2026**): gỡ 2 nút fetch ForexFactory + xuất/nhập file CSV-JSON, toolbar **[ Dán mã nguồn trang | Nhập tin | AI nhận định xu hướng ]** với dialog dán mã nguồn **2 pha** (bảng xem trước chỉ sửa được cột actual + Cập nhật/Hủy, xác nhận trước khi ghi) + panel "sự kiện đang thiếu số liệu" (mở trang lịch tuần FF bằng trình duyệt ngoài). Contract dữ liệu: [`news/news-architecture.md`](../news/news-architecture.md); thiết kế màn hình: `ui/screen_design.md`.
+* `news_screen.py`: Quản lý tin — **IMPLEMENTED** (ca Tin tức, Bước 3; **sửa đổi ca "Nguồn dán FF" IMPLEMENTED 25/09/2026**): gỡ 2 nút fetch ForexFactory + xuất/nhập file CSV-JSON, toolbar **[ Dán mã nguồn trang | Nhập tin | AI nhận định xu hướng ]** với dialog dán mã nguồn **2 pha** (bảng xem trước chỉ sửa được cột actual + Cập nhật/Hủy, xác nhận trước khi ghi). Contract dữ liệu: [`news/news-architecture.md`](../news/news-architecture.md); thiết kế màn hình: `ui/screen_design.md`.
 * `settings_screen.py`: Cài đặt AI, dữ liệu MT5, giao dịch, hiển thị và nâng cao; gồm kill-switch VIX pair-aware mặc định OFF.
 
 Nếu cần màn hình hoặc widget chart riêng, đặt dưới dạng component/view phụ và dùng `QWebEngineView`; không thay thế màn hình kết quả phân tích.

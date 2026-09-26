@@ -45,7 +45,7 @@
         ],
         "price_vs_zone": "far",
         "zone_origin_class": "smc",
-        "tooltip": "Trạng thái giá tại thời điểm quét so với vùng entry đã chọn.\nTrong vùng = giá nằm trong hoặc đúng biên vùng.\nGần vùng = giá cách biên vùng trong bán kính nửa ATR (sắp vào vùng).\nXa vùng = giá còn ngoài khoảng cách kể trên.\n-- = chưa có vùng thật hoặc thiếu dữ liệu.\nGiá sẽ được kiểm tra lại theo bid/ask live trước khi gửi lệnh.\n\nĐiểm SMC: 6/15\nVùng: H1 · FVG · 999.83091 – 1000.86545\nTrạng thái: Chờ xác nhận\nXác nhận: Đang chờ xác nhận vào lệnh\n· M15 chưa xác nhận tín hiệu vào lệnh.\n· Giá đã đi quá xa vùng vào lệnh, không còn phù hợp để vào lệnh.\n· Được chọn vì chất lượng cao nhất trong các vùng cùng hướng."
+        "tooltip": "Giá LÚC QUÉT so với vùng entry của kế hoạch đã chọn tại thời điểm đó.\nĐây là ảnh chụp tại lúc quét, không phải giá hiện tại.\nTrong vùng = giá nằm trong hoặc đúng biên vùng.\nGần vùng = giá cách biên vùng trong bán kính nửa ATR (sắp vào vùng).\nXa vùng = giá còn ngoài khoảng cách kể trên.\nKhông xác định = chưa có vùng thật hoặc thiếu giá lúc quét.\nGiá sẽ được kiểm tra lại theo bid/ask live trước khi gửi lệnh.\n\nGiá lúc quét 1003.27273 còn xa Entry 999.83091–1000.86545.\n\nĐiểm SMC: 6/15\nVùng: H1 · FVG · 999.83091 – 1000.86545\nTrạng thái: Chờ xác nhận\nXác nhận: Đang chờ xác nhận vào lệnh\n· M15 chưa xác nhận tín hiệu vào lệnh.\n· Giá đã đi quá xa vùng vào lệnh, không còn phù hợp để vào lệnh.\n· Được chọn vì chất lượng cao nhất trong các vùng cùng hướng."
       },
       "detail": {
         "light": {
@@ -56,13 +56,13 @@
           "capture": {
             "theme": "light",
             "background_rgb": [
-              237,
-              235,
-              228
+              234,
+              230,
+              223
             ],
-            "background_luminance": 0.9213,
-            "background_ratio": 0.9194,
-            "ink_ratio": 0.0291,
+            "background_luminance": 0.9033,
+            "background_ratio": 0.9491,
+            "ink_ratio": 0.0386,
             "theme_ok": true,
             "ink_ok": true
           }
@@ -75,13 +75,13 @@
           "capture": {
             "theme": "dark",
             "background_rgb": [
-              17,
-              24,
-              39
+              21,
+              31,
+              46
             ],
-            "background_luminance": 0.0925,
-            "background_ratio": 0.9528,
-            "ink_ratio": 0.0281,
+            "background_luminance": 0.1175,
+            "background_ratio": 0.9491,
+            "ink_ratio": 0.0385,
             "theme_ok": true,
             "ink_ok": true
           }
@@ -123,13 +123,13 @@
                 234
               ],
               "background_luminance": 0.9456,
-              "background_ratio": 0.8579,
-              "ink_ratio": 0.0894,
+              "background_ratio": 0.9023,
+              "ink_ratio": 0.0682,
               "theme_ok": true,
               "ink_ok": true
             },
             "pdf_saved": true,
-            "caption": "SMC: MUA · Vùng đã chọn | BÁN · Vùng đang theo dõi",
+            "caption": "",
             "loaded": true
           }
         },
@@ -168,13 +168,13 @@
                 22
               ],
               "background_luminance": 0.0692,
-              "background_ratio": 0.8579,
-              "ink_ratio": 0.0964,
+              "background_ratio": 0.8891,
+              "ink_ratio": 0.0737,
               "theme_ok": true,
               "ink_ok": true
             },
             "pdf_saved": true,
-            "caption": "SMC: MUA · Vùng đã chọn | BÁN · Vùng đang theo dõi",
+            "caption": "",
             "loaded": true
           }
         }
@@ -218,7 +218,7 @@
         ],
         "price_vs_zone": null,
         "zone_origin_class": null,
-        "tooltip": "Trạng thái giá tại thời điểm quét so với vùng entry đã chọn.\nTrong vùng = giá nằm trong hoặc đúng biên vùng.\nGần vùng = giá cách biên vùng trong bán kính nửa ATR (sắp vào vùng).\nXa vùng = giá còn ngoài khoảng cách kể trên.\n-- = chưa có vùng thật hoặc thiếu dữ liệu.\nGiá sẽ được kiểm tra lại theo bid/ask live trước khi gửi lệnh.\n\nĐiểm SMC: 6/15\nVùng: H1 · FVG · 1003.37000 – 1004.44455\nTrạng thái: Đủ điều kiện kiểm tra lần cuối\nXác nhận: Đã có xác nhận vào lệnh\n· M15 đã xác nhận tín hiệu vào lệnh.\n· Đủ điều kiện để kiểm tra lần cuối trước khi vào lệnh.\n· Được chọn vì chất lượng cao nhất trong các vùng cùng hướng."
+        "tooltip": "Giá LÚC QUÉT so với vùng entry của kế hoạch đã chọn tại thời điểm đó.\nĐây là ảnh chụp tại lúc quét, không phải giá hiện tại.\nTrong vùng = giá nằm trong hoặc đúng biên vùng.\nGần vùng = giá cách biên vùng trong bán kính nửa ATR (sắp vào vùng).\nXa vùng = giá còn ngoài khoảng cách kể trên.\nKhông xác định = chưa có vùng thật hoặc thiếu giá lúc quét.\nGiá sẽ được kiểm tra lại theo bid/ask live trước khi gửi lệnh.\n\nKhông xác định.\n\nĐiểm SMC: 6/15\nVùng: H1 · FVG · 1003.37000 – 1004.44455\nTrạng thái: Đủ điều kiện kiểm tra lần cuối\nXác nhận: Đã có xác nhận vào lệnh\n· M15 đã xác nhận tín hiệu vào lệnh.\n· Đủ điều kiện để kiểm tra lần cuối trước khi vào lệnh.\n· Được chọn vì chất lượng cao nhất trong các vùng cùng hướng."
       },
       "detail": {
         "light": {
@@ -229,13 +229,13 @@
           "capture": {
             "theme": "light",
             "background_rgb": [
-              237,
-              235,
-              228
+              234,
+              230,
+              223
             ],
-            "background_luminance": 0.9213,
-            "background_ratio": 0.9163,
-            "ink_ratio": 0.0311,
+            "background_luminance": 0.9033,
+            "background_ratio": 0.9458,
+            "ink_ratio": 0.0408,
             "theme_ok": true,
             "ink_ok": true
           }
@@ -248,13 +248,13 @@
           "capture": {
             "theme": "dark",
             "background_rgb": [
-              17,
-              24,
-              39
+              21,
+              31,
+              46
             ],
-            "background_luminance": 0.0925,
-            "background_ratio": 0.9497,
-            "ink_ratio": 0.0301,
+            "background_luminance": 0.1175,
+            "background_ratio": 0.9458,
+            "ink_ratio": 0.0408,
             "theme_ok": true,
             "ink_ok": true
           }
@@ -289,13 +289,13 @@
                 234
               ],
               "background_luminance": 0.9456,
-              "background_ratio": 0.8603,
-              "ink_ratio": 0.0874,
+              "background_ratio": 0.8832,
+              "ink_ratio": 0.074,
               "theme_ok": true,
               "ink_ok": true
             },
             "pdf_saved": true,
-            "caption": "SMC: MUA · Vùng đã chọn",
+            "caption": "",
             "loaded": true
           }
         },
@@ -327,13 +327,13 @@
                 22
               ],
               "background_luminance": 0.0692,
-              "background_ratio": 0.8603,
-              "ink_ratio": 0.0947,
+              "background_ratio": 0.8831,
+              "ink_ratio": 0.0799,
               "theme_ok": true,
               "ink_ok": true
             },
             "pdf_saved": true,
-            "caption": "SMC: MUA · Vùng đã chọn",
+            "caption": "",
             "loaded": true
           }
         }
@@ -377,7 +377,7 @@
         ],
         "price_vs_zone": null,
         "zone_origin_class": null,
-        "tooltip": "Trạng thái giá tại thời điểm quét so với vùng entry đã chọn.\nTrong vùng = giá nằm trong hoặc đúng biên vùng.\nGần vùng = giá cách biên vùng trong bán kính nửa ATR (sắp vào vùng).\nXa vùng = giá còn ngoài khoảng cách kể trên.\n-- = chưa có vùng thật hoặc thiếu dữ liệu.\nGiá sẽ được kiểm tra lại theo bid/ask live trước khi gửi lệnh.\n\nĐiểm SMC: 6/15\nVùng: H1 · FVG · 1003.37000 – 1004.44455\nTrạng thái: Xác nhận đã bị vô hiệu\nXác nhận: Xác nhận đã bị vô hiệu\n· Giá đã đi quá xa vùng vào lệnh, không còn phù hợp để vào lệnh.\n· M15 chưa xác nhận tín hiệu vào lệnh.\n· Được chọn vì chất lượng cao nhất trong các vùng cùng hướng."
+        "tooltip": "Giá LÚC QUÉT so với vùng entry của kế hoạch đã chọn tại thời điểm đó.\nĐây là ảnh chụp tại lúc quét, không phải giá hiện tại.\nTrong vùng = giá nằm trong hoặc đúng biên vùng.\nGần vùng = giá cách biên vùng trong bán kính nửa ATR (sắp vào vùng).\nXa vùng = giá còn ngoài khoảng cách kể trên.\nKhông xác định = chưa có vùng thật hoặc thiếu giá lúc quét.\nGiá sẽ được kiểm tra lại theo bid/ask live trước khi gửi lệnh.\n\nKhông xác định.\n\nĐiểm SMC: 6/15\nVùng: H1 · FVG · 1003.37000 – 1004.44455\nTrạng thái: Xác nhận đã bị vô hiệu\nXác nhận: Xác nhận đã bị vô hiệu\n· Giá đã đi quá xa vùng vào lệnh, không còn phù hợp để vào lệnh.\n· M15 chưa xác nhận tín hiệu vào lệnh.\n· Được chọn vì chất lượng cao nhất trong các vùng cùng hướng."
       },
       "detail": {
         "light": {
@@ -388,13 +388,13 @@
           "capture": {
             "theme": "light",
             "background_rgb": [
-              237,
-              235,
-              228
+              234,
+              230,
+              223
             ],
-            "background_luminance": 0.9213,
-            "background_ratio": 0.9124,
-            "ink_ratio": 0.0324,
+            "background_luminance": 0.9033,
+            "background_ratio": 0.9387,
+            "ink_ratio": 0.0526,
             "theme_ok": true,
             "ink_ok": true
           }
@@ -407,13 +407,13 @@
           "capture": {
             "theme": "dark",
             "background_rgb": [
-              17,
-              24,
-              39
+              21,
+              31,
+              46
             ],
-            "background_luminance": 0.0925,
-            "background_ratio": 0.9458,
-            "ink_ratio": 0.0314,
+            "background_luminance": 0.1175,
+            "background_ratio": 0.9387,
+            "ink_ratio": 0.0525,
             "theme_ok": true,
             "ink_ok": true
           }
@@ -455,13 +455,13 @@
                 234
               ],
               "background_luminance": 0.9456,
-              "background_ratio": 0.8438,
-              "ink_ratio": 0.0978,
+              "background_ratio": 0.8832,
+              "ink_ratio": 0.074,
               "theme_ok": true,
               "ink_ok": true
             },
             "pdf_saved": true,
-            "caption": "SMC: MUA · Vùng không còn hiệu lực | BÁN · Vùng đang theo dõi",
+            "caption": "",
             "loaded": true
           }
         },
@@ -500,13 +500,13 @@
                 22
               ],
               "background_luminance": 0.0692,
-              "background_ratio": 0.8438,
-              "ink_ratio": 0.1061,
+              "background_ratio": 0.8831,
+              "ink_ratio": 0.0799,
               "theme_ok": true,
               "ink_ok": true
             },
             "pdf_saved": true,
-            "caption": "SMC: MUA · Vùng không còn hiệu lực | BÁN · Vùng đang theo dõi",
+            "caption": "",
             "loaded": true
           }
         }
@@ -548,7 +548,7 @@
         ],
         "price_vs_zone": null,
         "zone_origin_class": null,
-        "tooltip": "Trạng thái giá tại thời điểm quét so với vùng entry đã chọn.\nTrong vùng = giá nằm trong hoặc đúng biên vùng.\nGần vùng = giá cách biên vùng trong bán kính nửa ATR (sắp vào vùng).\nXa vùng = giá còn ngoài khoảng cách kể trên.\n-- = chưa có vùng thật hoặc thiếu dữ liệu.\nGiá sẽ được kiểm tra lại theo bid/ask live trước khi gửi lệnh.\n\nĐiểm SMC: 0/15 · chưa có setup hợp lệ\nTrạng thái: Chưa có setup hợp lệ\n· Đã xét đủ dữ liệu nhưng không có setup hợp lệ."
+        "tooltip": "Giá LÚC QUÉT so với vùng entry của kế hoạch đã chọn tại thời điểm đó.\nĐây là ảnh chụp tại lúc quét, không phải giá hiện tại.\nTrong vùng = giá nằm trong hoặc đúng biên vùng.\nGần vùng = giá cách biên vùng trong bán kính nửa ATR (sắp vào vùng).\nXa vùng = giá còn ngoài khoảng cách kể trên.\nKhông xác định = chưa có vùng thật hoặc thiếu giá lúc quét.\nGiá sẽ được kiểm tra lại theo bid/ask live trước khi gửi lệnh.\n\nKhông xác định.\n\nĐiểm SMC: 0/15 · chưa có setup hợp lệ\nTrạng thái: Chưa có setup hợp lệ\n· Đã xét đủ dữ liệu nhưng không có setup hợp lệ."
       },
       "detail": {
         "light": {
@@ -559,13 +559,13 @@
           "capture": {
             "theme": "light",
             "background_rgb": [
-              237,
-              235,
-              228
+              234,
+              230,
+              223
             ],
-            "background_luminance": 0.9213,
-            "background_ratio": 0.9359,
-            "ink_ratio": 0.0198,
+            "background_luminance": 0.9033,
+            "background_ratio": 0.9563,
+            "ink_ratio": 0.0336,
             "theme_ok": true,
             "ink_ok": true
           }
@@ -578,13 +578,13 @@
           "capture": {
             "theme": "dark",
             "background_rgb": [
-              17,
-              24,
-              39
+              21,
+              31,
+              46
             ],
-            "background_luminance": 0.0925,
-            "background_ratio": 0.9693,
-            "ink_ratio": 0.0187,
+            "background_luminance": 0.1175,
+            "background_ratio": 0.9563,
+            "ink_ratio": 0.0335,
             "theme_ok": true,
             "ink_ok": true
           }
@@ -611,8 +611,8 @@
                 234
               ],
               "background_luminance": 0.9456,
-              "background_ratio": 0.9393,
-              "ink_ratio": 0.0212,
+              "background_ratio": 0.9424,
+              "ink_ratio": 0.0177,
               "theme_ok": true,
               "ink_ok": true
             },
@@ -641,8 +641,8 @@
                 22
               ],
               "background_luminance": 0.0692,
-              "background_ratio": 0.9393,
-              "ink_ratio": 0.0232,
+              "background_ratio": 0.9424,
+              "ink_ratio": 0.0209,
               "theme_ok": true,
               "ink_ok": true
             },
@@ -689,7 +689,7 @@
         ],
         "price_vs_zone": null,
         "zone_origin_class": null,
-        "tooltip": "Trạng thái giá tại thời điểm quét so với vùng entry đã chọn.\nTrong vùng = giá nằm trong hoặc đúng biên vùng.\nGần vùng = giá cách biên vùng trong bán kính nửa ATR (sắp vào vùng).\nXa vùng = giá còn ngoài khoảng cách kể trên.\n-- = chưa có vùng thật hoặc thiếu dữ liệu.\nGiá sẽ được kiểm tra lại theo bid/ask live trước khi gửi lệnh.\n\nĐiểm SMC: Thiếu dữ liệu\nTrạng thái: Thiếu dữ liệu\n· Thiếu dữ liệu D1/H4/H1 nên chưa kết luận được."
+        "tooltip": "Giá LÚC QUÉT so với vùng entry của kế hoạch đã chọn tại thời điểm đó.\nĐây là ảnh chụp tại lúc quét, không phải giá hiện tại.\nTrong vùng = giá nằm trong hoặc đúng biên vùng.\nGần vùng = giá cách biên vùng trong bán kính nửa ATR (sắp vào vùng).\nXa vùng = giá còn ngoài khoảng cách kể trên.\nKhông xác định = chưa có vùng thật hoặc thiếu giá lúc quét.\nGiá sẽ được kiểm tra lại theo bid/ask live trước khi gửi lệnh.\n\nKhông xác định.\n\nĐiểm SMC: Thiếu dữ liệu\nTrạng thái: Thiếu dữ liệu\n· Thiếu dữ liệu D1/H4/H1 nên chưa kết luận được."
       },
       "detail": {
         "light": {
@@ -700,13 +700,13 @@
           "capture": {
             "theme": "light",
             "background_rgb": [
-              237,
-              235,
-              228
+              234,
+              230,
+              223
             ],
-            "background_luminance": 0.9213,
-            "background_ratio": 0.9367,
-            "ink_ratio": 0.0197,
+            "background_luminance": 0.9033,
+            "background_ratio": 0.9582,
+            "ink_ratio": 0.0327,
             "theme_ok": true,
             "ink_ok": true
           }
@@ -719,13 +719,13 @@
           "capture": {
             "theme": "dark",
             "background_rgb": [
-              17,
-              24,
-              39
+              21,
+              31,
+              46
             ],
-            "background_luminance": 0.0925,
-            "background_ratio": 0.9701,
-            "ink_ratio": 0.0187,
+            "background_luminance": 0.1175,
+            "background_ratio": 0.9582,
+            "ink_ratio": 0.0326,
             "theme_ok": true,
             "ink_ok": true
           }
@@ -760,13 +760,13 @@
                 234
               ],
               "background_luminance": 0.9456,
-              "background_ratio": 0.8974,
-              "ink_ratio": 0.0489,
+              "background_ratio": 0.9461,
+              "ink_ratio": 0.0353,
               "theme_ok": true,
               "ink_ok": true
             },
             "pdf_saved": true,
-            "caption": "SMC: BÁN · Vùng đang theo dõi",
+            "caption": "",
             "loaded": true
           }
         },
@@ -798,13 +798,13 @@
                 22
               ],
               "background_luminance": 0.0692,
-              "background_ratio": 0.8974,
-              "ink_ratio": 0.0518,
+              "background_ratio": 0.946,
+              "ink_ratio": 0.039,
               "theme_ok": true,
               "ink_ok": true
             },
             "pdf_saved": true,
-            "caption": "SMC: BÁN · Vùng đang theo dõi",
+            "caption": "",
             "loaded": true
           }
         }
@@ -846,7 +846,7 @@
         ],
         "price_vs_zone": null,
         "zone_origin_class": null,
-        "tooltip": "Trạng thái giá tại thời điểm quét so với vùng entry đã chọn.\nTrong vùng = giá nằm trong hoặc đúng biên vùng.\nGần vùng = giá cách biên vùng trong bán kính nửa ATR (sắp vào vùng).\nXa vùng = giá còn ngoài khoảng cách kể trên.\n-- = chưa có vùng thật hoặc thiếu dữ liệu.\nGiá sẽ được kiểm tra lại theo bid/ask live trước khi gửi lệnh.\n\nĐiểm SMC: Kết quả lưu theo định dạng cũ\nTrạng thái: Dòng này được lưu trước khi có kết quả SMC hiện hành; chỉ xem lại lịch sử, không dùng để vào lệnh."
+        "tooltip": "Giá LÚC QUÉT so với vùng entry của kế hoạch đã chọn tại thời điểm đó.\nĐây là ảnh chụp tại lúc quét, không phải giá hiện tại.\nTrong vùng = giá nằm trong hoặc đúng biên vùng.\nGần vùng = giá cách biên vùng trong bán kính nửa ATR (sắp vào vùng).\nXa vùng = giá còn ngoài khoảng cách kể trên.\nKhông xác định = chưa có vùng thật hoặc thiếu giá lúc quét.\nGiá sẽ được kiểm tra lại theo bid/ask live trước khi gửi lệnh.\n\nKhông xác định.\n\nĐiểm SMC: Kết quả lưu theo định dạng cũ\nTrạng thái: Dòng này được lưu trước khi có kết quả SMC hiện hành; chỉ xem lại lịch sử, không dùng để vào lệnh."
       },
       "detail": {
         "light": {
@@ -857,13 +857,13 @@
           "capture": {
             "theme": "light",
             "background_rgb": [
-              237,
-              235,
-              228
+              234,
+              230,
+              223
             ],
-            "background_luminance": 0.9213,
-            "background_ratio": 0.9491,
-            "ink_ratio": 0.014,
+            "background_luminance": 0.9033,
+            "background_ratio": 0.9757,
+            "ink_ratio": 0.0194,
             "theme_ok": true,
             "ink_ok": true
           }
@@ -876,13 +876,13 @@
           "capture": {
             "theme": "dark",
             "background_rgb": [
-              17,
-              24,
-              39
+              21,
+              31,
+              46
             ],
-            "background_luminance": 0.0925,
-            "background_ratio": 0.9825,
-            "ink_ratio": 0.0143,
+            "background_luminance": 0.1175,
+            "background_ratio": 0.9757,
+            "ink_ratio": 0.0194,
             "theme_ok": true,
             "ink_ok": true
           }
@@ -911,8 +911,8 @@
                 234
               ],
               "background_luminance": 0.9456,
-              "background_ratio": 0.889,
-              "ink_ratio": 0.0724,
+              "background_ratio": 0.8759,
+              "ink_ratio": 0.0744,
               "theme_ok": true,
               "ink_ok": true
             },
@@ -943,8 +943,8 @@
                 22
               ],
               "background_luminance": 0.0692,
-              "background_ratio": 0.889,
-              "ink_ratio": 0.0758,
+              "background_ratio": 0.8759,
+              "ink_ratio": 0.0789,
               "theme_ok": true,
               "ink_ok": true
             },
@@ -991,7 +991,7 @@
         ],
         "price_vs_zone": null,
         "zone_origin_class": null,
-        "tooltip": "Trạng thái giá tại thời điểm quét so với vùng entry đã chọn.\nTrong vùng = giá nằm trong hoặc đúng biên vùng.\nGần vùng = giá cách biên vùng trong bán kính nửa ATR (sắp vào vùng).\nXa vùng = giá còn ngoài khoảng cách kể trên.\n-- = chưa có vùng thật hoặc thiếu dữ liệu.\nGiá sẽ được kiểm tra lại theo bid/ask live trước khi gửi lệnh.\n\nĐiểm SMC: Chưa có dữ liệu SMC\nTrạng thái: Chưa có dữ liệu SMC"
+        "tooltip": "Giá LÚC QUÉT so với vùng entry của kế hoạch đã chọn tại thời điểm đó.\nĐây là ảnh chụp tại lúc quét, không phải giá hiện tại.\nTrong vùng = giá nằm trong hoặc đúng biên vùng.\nGần vùng = giá cách biên vùng trong bán kính nửa ATR (sắp vào vùng).\nXa vùng = giá còn ngoài khoảng cách kể trên.\nKhông xác định = chưa có vùng thật hoặc thiếu giá lúc quét.\nGiá sẽ được kiểm tra lại theo bid/ask live trước khi gửi lệnh.\n\nKhông xác định.\n\nĐiểm SMC: Chưa có dữ liệu SMC\nTrạng thái: Chưa có dữ liệu SMC"
       },
       "detail": {
         "light": {
@@ -1002,13 +1002,13 @@
           "capture": {
             "theme": "light",
             "background_rgb": [
-              237,
-              235,
-              228
+              234,
+              230,
+              223
             ],
-            "background_luminance": 0.9213,
-            "background_ratio": 0.9524,
-            "ink_ratio": 0.012,
+            "background_luminance": 0.9033,
+            "background_ratio": 0.9842,
+            "ink_ratio": 0.0158,
             "theme_ok": true,
             "ink_ok": true
           }
@@ -1021,13 +1021,13 @@
           "capture": {
             "theme": "dark",
             "background_rgb": [
-              17,
-              24,
-              39
+              21,
+              31,
+              46
             ],
-            "background_luminance": 0.0925,
-            "background_ratio": 0.9858,
-            "ink_ratio": 0.012,
+            "background_luminance": 0.1175,
+            "background_ratio": 0.9842,
+            "ink_ratio": 0.0157,
             "theme_ok": true,
             "ink_ok": true
           }
@@ -1056,8 +1056,8 @@
                 234
               ],
               "background_luminance": 0.9456,
-              "background_ratio": 0.889,
-              "ink_ratio": 0.0724,
+              "background_ratio": 0.8759,
+              "ink_ratio": 0.0744,
               "theme_ok": true,
               "ink_ok": true
             },
@@ -1088,8 +1088,8 @@
                 22
               ],
               "background_luminance": 0.0692,
-              "background_ratio": 0.889,
-              "ink_ratio": 0.0758,
+              "background_ratio": 0.8759,
+              "ink_ratio": 0.0789,
               "theme_ok": true,
               "ink_ok": true
             },

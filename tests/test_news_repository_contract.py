@@ -29,7 +29,6 @@ from pathlib import Path
 
 import services.news_repository as news_repository_module
 from config.paths import PROJECT_ROOT
-from core.news_freshness import classify_event_status
 from core.news_models import (
     CalendarEvent,
     EventImpact,
@@ -237,11 +236,6 @@ class TestContractSignatures:
         assert sig.parameters["currencies"].default is None
         assert sig.parameters["include_non_impact"].default is True
 
-    def test_events_pending_actual_signature(self):
-        sig = inspect.signature(NewsRepository.events_pending_actual)
-        assert list(sig.parameters) == ["self", "now"]
-        assert sig.parameters["now"].default is inspect.Parameter.empty
-
     def test_items_in_range_signature(self):
         sig = inspect.signature(NewsRepository.items_in_range)
         assert list(sig.parameters) == [
@@ -353,49 +347,8 @@ def repo_db_file(tmp_path) -> Path:
     return tmp_path / "news.db"
 
 
-# ---- 3. events_pending_actual ---------------------------------------------------
-
-
-class TestEventsPendingActual:
-    def test_pending_actual_set_and_grace_boundary(self, tmp_path):
-        repo = _repo(tmp_path)
-        now = datetime(2026, 10, 1, 12, 0, 0, tzinfo=timezone.utc)
-        grace, _ = _grace_and_max_age()
-
-        repo.upsert_events([
-            _event("overdue", event_time=_iso(now - grace - timedelta(minutes=5))),
-            _event("at-boundary", event_time=_iso(now - grace)),
-            _event("future", event_time=_iso(now + timedelta(days=1))),
-            _event(
-                "has-actual",
-                event_time=_iso(now - grace - timedelta(minutes=5)),
-                actual="1.2",
-            ),
-            _event(
-                "non-impact",
-                event_time=_iso(now - grace - timedelta(minutes=5)),
-                impact=EventImpact.NON,
-            ),
-        ])
-
-        pending = repo.events_pending_actual(now)
-        assert isinstance(pending, list)
-        assert all(isinstance(e, CalendarEvent) for e in pending)
-        assert [e.dedupe_key for e in pending] == ["overdue"]
-        assert pending[0].status == EventStatus.STALE
-
-    def test_boundary_is_strictly_past(self, tmp_path):
-        repo = _repo(tmp_path)
-        now = datetime(2026, 10, 1, 12, 0, 0, tzinfo=timezone.utc)
-        grace, _ = _grace_and_max_age()
-        past = _event("past", event_time=_iso(now - grace - timedelta(seconds=60)))
-        at = _event("at", event_time=_iso(now - grace))
-        repo.upsert_events([past, at])
-        # đối chiếu chính classify_event_status (repo không tự chứa logic)
-        assert classify_event_status(past, now, grace) == EventStatus.STALE
-        assert classify_event_status(at, now, grace) == EventStatus.SCHEDULED
-        assert [e.dedupe_key for e in repo.events_pending_actual(now)] == ["past"]
-
+# ---- 3. (gỡ 26/09/2026: events_pending_actual + panel "Sự kiện đang thiếu
+# ----    actual" — test của hành vi bị xóa) --------------------------------------
 
 # ---- 4. (gỡ đợt 3: event_actual_or_lookup + seam lookup — test của hành vi
 # ----    bị xóa; ghim còn lại: mô-đun không có import mạng) --------------------

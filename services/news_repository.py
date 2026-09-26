@@ -627,31 +627,6 @@ class NewsRepository:
             for row in rows
         ]
 
-    def events_pending_actual(self, now: datetime) -> list[CalendarEvent]:
-        """Events already past their ``event_time_utc + grace`` window that
-        still lack an actual (contract §8: ``impact != non``, past grace, actual
-        NULL).  From đợt 3 (24/09/2026) this serves only the guidance panel of
-        the news screen ("sự kiện đang thiếu actual" — telling the user which
-        ForexFactory page to open and paste); it feeds no automatic fetch
-        (contract §8).  The SQL window is deliberately broad (``actual IS NULL
-        AND impact != non``); the grace filter is applied by re-classification
-        through ``core/news_freshness`` so the grace formula lives in exactly
-        one place (S1 — no copied classification knowledge in SQL)."""
-        now_utc = now
-        with self._connect() as conn:
-            rows = conn.execute(
-                "SELECT * FROM news_events "
-                "WHERE actual IS NULL AND impact != ? "
-                "ORDER BY event_time_utc ASC, id ASC",
-                (EventImpact.NON.value,),
-            ).fetchall()
-        pending: list[CalendarEvent] = []
-        for row in rows:
-            event = _event_from_row(row)
-            if self._classify_status(event, now_utc) == EventStatus.STALE:
-                pending.append(replace(event, status=EventStatus.STALE))
-        return pending
-
     def items_in_range(
         self,
         from_utc: str,

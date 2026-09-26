@@ -1217,6 +1217,8 @@ QPushButton#PrimaryButton[btnColor="danger"]:hover, QPushButton#PrimaryButton[bt
 
 QPushButton#PrimaryButton[btnColor="success"] { background: #059669; border: 1px solid #059669; color: #ffffff; }
 QPushButton#PrimaryButton[btnColor="success"]:hover, QPushButton#PrimaryButton[btnColor="success"]:pressed, QPushButton#PrimaryButton[btnColor="success"]:checked { background: #10B981; border-color: #047857; color: #ffffff; }
+QPushButton#PrimaryButton[btnColor="success"][filterDirty="true"] { border-color: #D97706; }
+QPushButton#PrimaryButton[btnColor="success"][filterDirty="true"]:hover, QPushButton#PrimaryButton[btnColor="success"][filterDirty="true"]:pressed, QPushButton#PrimaryButton[btnColor="success"][filterDirty="true"]:checked { border-color: #B45309; }
 
 QPushButton#PrimaryButton[btnColor="warning"] { background: #D97706; border: 1px solid #D97706; color: #ffffff; }
 QPushButton#PrimaryButton[btnColor="warning"]:hover, QPushButton#PrimaryButton[btnColor="warning"]:pressed, QPushButton#PrimaryButton[btnColor="warning"]:checked { background: #F59E0B; border-color: #B45309; color: #ffffff; }

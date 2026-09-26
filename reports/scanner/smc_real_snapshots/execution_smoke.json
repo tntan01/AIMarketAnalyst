@@ -261,9 +261,9 @@
       "services/mt5_service.py:1380"
     ]
   },
-  "elapsed_seconds": 13.6104,
+  "elapsed_seconds": 12.7577,
   "failures": [],
-  "generated_at": "2026-09-17T17:21:57.339014+00:00",
+  "generated_at": "2026-09-25T14:50:40.715925+00:00",
   "intent_lock": {
     "default_value": false,
     "error": "CandidateContractError: SCANNER_SCHEMA_INVALID at order_payload.sends_real_order: Step 08 never sends a real order; must be False until cutover",

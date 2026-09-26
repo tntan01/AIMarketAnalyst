@@ -25,7 +25,6 @@ import dataclasses
 import os
 import sys
 import time
-from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -33,7 +32,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import pytest
 
 from PyQt6.QtCore import QTimer, Qt
-from PyQt6.QtWidgets import QApplication, QDialog, QLabel, QMessageBox, QPushButton, QWidget
+from PyQt6.QtWidgets import QApplication, QDialog, QLabel, QMessageBox, QPushButton
 
 from controllers.news_controller import (
     NewsController,
@@ -58,6 +57,7 @@ from core.news_models import (
 from core.news_policy import load_news_policy
 from services.ff_source_parser import ParseError, ParseErrorKind, RowDisposition
 from services.news_repository import UpsertItemsResult
+from ui.responsive_row import ResponsiveGrid
 from ui.screens import news_screen as news
 from ui.screens.news_screen import NewsScreen, build_rows
 
@@ -119,7 +119,7 @@ class FakeNewsController:
     (Đợt 3 — các thành viên của 2 nút FF và xuất/nhập file đã gỡ cùng hành vi
     bị xóa; fake chỉ còn các đường màn còn dùng: đọc bảng, nhập/sửa tin,
     sửa/xóa/toggle.  F4 — mở rộng đúng chữ ký controller thật: parse/commit/
-    reclassify/events_pending_actual.)"""
+    reclassify.)"""
 
     def __init__(
         self,
@@ -139,7 +139,6 @@ class FakeNewsController:
         self.paste_parse_calls: list[str] = []
         self.paste_commit_calls: list[tuple] = []
         self.paste_reclassify_calls: list[tuple] = []
-        self.pending: list[CalendarEvent] = []
         self.paste_preview = _sample_preview()
         self.paste_error_preview: SourcePreview | None = None
         self.paste_commit_result = SourceIngestResult(
@@ -188,9 +187,6 @@ class FakeNewsController:
         if self.paste_reclassify_result is not None:
             return self.paste_reclassify_result
         return tuple(self.paste_preview.dispositions)
-
-    def events_pending_actual(self, now):
-        return list(self.pending)
 
 
 def _sample_preview() -> SourcePreview:
@@ -780,163 +776,218 @@ class TestPasteDialog:
         assert _wait_until(lambda: dialog._phase_2.isVisible())
 
 
-# ---- 11. F4 — panel "Sự kiện đang thiếu số liệu" (d.1613-1617, QĐ-F10) ---------
+# ---- 11. card tìm kiếm: chỉ tìm khi bấm nút (Owner duyệt 26/09/2026) -----------
 
-
-def _pending_event(*, time_utc: str, day: str, title: str, key: str, currency: str = "USD") -> CalendarEvent:
-    return dataclasses.replace(
-        EVENT,
-        day_key=day,
-        event_time_utc=time_utc,
-        currency=currency,
-        title=title,
-        actual=None,
-        status=EventStatus.STALE,
-        dedupe_key=key,
-    )
-
-
-class TestPendingPanel:
-    def test_panel_lists_pending_events_with_open_button(self):
-        now = datetime.now(UTC)
-        pending = [
-            _pending_event(
-                time_utc=now.isoformat(timespec="seconds").replace("+00:00", "Z"),
-                day=now.strftime("%Y-%m-%d"), title="FOMC past due", key="p-1",
-            )
-        ]
+class TestFilterSearchButton:
+    def test_changing_combo_or_date_does_not_trigger_a_read(self):
         controller = FakeNewsController()
-        controller.pending = pending
         screen = _screen(controller)
+        assert len(controller.event_calls) == 1  # lượt nạp khi mở màn
 
-        assert _wait_until(lambda: screen._pending_panel.isVisible())
-        labels = [label.text() for label in screen.findChildren(QLabel)]
-        assert news.PANEL_TITLE_TEXT in labels
-        buttons = [b for b in screen.findChildren(QPushButton) if b.text() == news.OPEN_FF_TEXT]
-        assert len(buttons) == 1
-
-    def test_open_button_calls_desktop_services_with_the_week_url(self, monkeypatch):
-        now = datetime.now(UTC)
-        iso = lambda dt: dt.isoformat(timespec="seconds").replace("+00:00", "Z")  # noqa: E731
-        pending = [
-            _pending_event(time_utc=iso(now), day=now.strftime("%Y-%m-%d"), title="This week", key="p-this"),
-            _pending_event(time_utc=iso(now - timedelta(days=7)), day=(now - timedelta(days=7)).strftime("%Y-%m-%d"), title="Last week", key="p-last"),
-            _pending_event(time_utc=iso(now - timedelta(days=35)), day=(now - timedelta(days=35)).strftime("%Y-%m-%d"), title="Far past", key="p-far"),
-        ]
-        controller = FakeNewsController()
-        controller.pending = pending
-        screen = _screen(controller)
-        assert _wait_until(lambda: screen._pending_panel.isVisible())
-
-        opened: list[str] = []
-        monkeypatch.setattr(
-            news.QDesktopServices, "openUrl", staticmethod(lambda url: opened.append(url.toString()))
-        )
-        assert _wait_until(lambda: screen._pending_panel.isVisible())
-        buttons = [b for b in screen.findChildren(QPushButton) if b.text() == news.OPEN_FF_TEXT]
-        assert len(buttons) == 3
-        for button in buttons:
-            button.click()
-            _app().processEvents()
-
-        assert opened == [
-            news.FF_WEEK_THIS_URL,  # tuần hiện tại → week=this
-            news.FF_WEEK_LAST_URL,  # tuần trước → week=last
-            news.FF_CALENDAR_BASE_URL,  # xa hơn → trang mặc định
-        ]
-
-
-# ---- 12. P1 — panel cuộn + dòng một hàng elide (QĐ-P1/P2/P3) --------------------
-
-
-def _pending_events_many(count: int = 70) -> list[CalendarEvent]:
-    """70+ sự kiện stale giả (mỗi dòng lùi 1 ngày so với hôm nay) — kịch bản
-    thật gây nén layout trước khi sửa."""
-    now = datetime.now(UTC)
-    iso = lambda dt: dt.isoformat(timespec="seconds").replace("+00:00", "Z")  # noqa: E731
-    return [
-        _pending_event(
-            time_utc=iso(now - timedelta(days=i)),
-            day=(now - timedelta(days=i)).strftime("%Y-%m-%d"),
-            title=f"Stale event {i:02d} với tiêu đề khá dài để kiểm tra elide",
-            key=f"p{i:03d}",
-            currency="USD" if i % 2 else "EUR",
-        )
-        for i in range(count)
-    ]
-
-
-class TestPendingPanelScrolled:
-    @staticmethod
-    def _row_widgets(screen: news.NewsScreen) -> list:
-        return [w for w in screen.findChildren(QWidget) if w.objectName() == "NewsPendingRow"]
-
-    @staticmethod
-    def _screen_with_pending(count: int = 70) -> tuple[FakeNewsController, NewsScreen]:
-        controller = FakeNewsController()
-        controller.pending = _pending_events_many(count)
-        screen = _screen(controller)
-        assert _wait_until(lambda: screen._pending_panel.isVisible()), "panel chưa hiện sau đọc 70 dòng"
-        return controller, screen
-
-    def test_panel_caps_height_and_scrolls_to_the_last_row(self):
-        _controller, screen = self._screen_with_pending(70)
-        assert _wait_until(lambda: len(self._row_widgets(screen)) == 70)
-
-        # (a) panel kẹp chiều cao bằng token + vùng cuộn cuộn được tới dòng cuối.
-        assert screen._pending_panel.maximumHeight() == news.LayoutTokens.PANEL_LIST_MAX_HEIGHT
-        vbar = screen._pending_scroll.verticalScrollBar()
-        assert _wait_until(lambda: vbar.maximum() > 0), f"scrollbar max={vbar.maximum()} <= 0"
-
-    def test_rows_have_fixed_height_and_never_overlap(self):
-        _controller, screen = self._screen_with_pending(70)
-        assert _wait_until(lambda: len(self._row_widgets(screen)) == 70)
-        rows = self._row_widgets(screen)
-
-        # (b) mỗi dòng một hàng cao đúng token (bỏ word-wrap — ghim defect chữ chồng).
-        assert _wait_until(
-            lambda: all(r.height() == news.LayoutTokens.TABLE_ROW_HEIGHT for r in rows)
-        )
-        for index, row in enumerate(rows):
-            assert row.height() == news.LayoutTokens.TABLE_ROW_HEIGHT
-            # Không 2 widget dòng nào giao nhau (gốc defect: chữ chèn vào nhau).
-            for other_index in range(index + 1, len(rows)):
-                assert not row.geometry().intersects(rows[other_index].geometry()), (
-                    f"dòng {index} và {other_index} giao nhau: {row.geometry()} vs {rows[other_index].geometry()}"
-                )
-
-    def test_table_card_still_visible_with_70_pending_rows(self):
-        _controller, screen = self._screen_with_pending(70)
-        assert _wait_until(lambda: len(self._row_widgets(screen)) == 70)
-
-        # (c) bảng tin vẫn hiển thị — không bị nén về 0.
-        assert screen.table.isVisible() is True
-        assert screen.table.height() > 0
-        assert screen.table_model.rowCount() > 0
-
-    def test_every_row_button_opens_the_correct_week_url(self, monkeypatch):
-        controller, screen = self._screen_with_pending(70)
-        assert _wait_until(lambda: len(self._row_widgets(screen)) == 70)
-
-        opened: list[str] = []
-        monkeypatch.setattr(
-            news.QDesktopServices, "openUrl", staticmethod(lambda url: opened.append(url.toString()))
-        )
-        buttons = [b for b in screen.findChildren(QPushButton) if b.text() == news.OPEN_FF_TEXT]
-        assert len(buttons) == 70  # (d) đúng từng dòng
-        first_pending, last_pending = screen._pending_events[0], screen._pending_events[-1]
-        expected_first = news.ff_week_url_for_event(first_pending.event_time_utc)
-        expected_last = news.ff_week_url_for_event(last_pending.event_time_utc)
-
-        buttons[0].click()
-        buttons[-1].click()
+        screen.kind_combo.setCurrentIndex(screen.kind_combo.findData("user_note"))
+        screen.date_from_input.setDate(screen.date_from_input.date().addDays(-3))
         _app().processEvents()
 
-        assert opened == [expected_first, expected_last]
+        assert len(controller.event_calls) == 1  # KHÔNG tự đọc lại DB khi chọn ô
 
-    def test_panel_is_hidden_when_no_pending_events(self):
-        controller = FakeNewsController()  # pending mặc định rỗng
+    def test_search_button_rereads_the_database(self):
+        controller = FakeNewsController()
         screen = _screen(controller)
 
-        # (e) panel rỗng → ẩn toàn bộ.
-        assert _wait_until(lambda: not screen._pending_panel.isVisible())
+        screen.search_button.click()
+
+        assert _wait_until(lambda: len(controller.event_calls) == 2)
+        assert _wait_until(lambda: len(controller.item_calls) == 2)
+
+    def test_search_applies_the_selected_filters(self):
+        controller = FakeNewsController()
+        screen = _screen(controller)
+        assert screen.table_model.rowCount() > 1  # mặc định: nhiều loại tin
+
+        screen.kind_combo.setCurrentIndex(screen.kind_combo.findData("user_note"))
+        screen.search_button.click()
+        assert _wait_until(lambda: len(controller.event_calls) == 2)
+        _app().processEvents()
+
+        # lọc theo loại "Nhập tay": chỉ còn dòng USER_ITEM
+        assert _wait_until(lambda: screen.table_model.rowCount() == 1)
+
+
+# ---- 12. card lọc gọn ở mọi bề ngang (defect 1920×1200@150% = 1280px logic) ----
+
+class TestFilterCardLayout:
+    def _assert_glued(self, cell, widget_indexes):
+        """Nhãn và các ô trong một ô lọc phải sát nhau (khe ≤ 6px, nhãn x=0)."""
+        layout = cell.layout()
+        label = layout.itemAt(0).widget()
+        assert label.x() == 0
+        assert label.width() <= 200, "nhãn bị giãn nở"
+        previous_end = label.x() + label.width()
+        for index in widget_indexes:
+            widget = layout.itemAt(index).widget()
+            assert widget.x() - previous_end <= 6, f"khe {widget} ↔ nhãn bị rộng"
+            previous_end = widget.x() + widget.width()
+
+    def test_labels_stay_glued_to_fields_at_1280_logical(self):
+        controller = FakeNewsController()
+        screen = _screen(controller)
+        screen.resize(1280, 800)
+        _app().processEvents()
+
+        grid = screen.findChildren(ResponsiveGrid)[0]
+        # không rơi thẳng về compact 1 cột ở 1280px logic (1920×1200@150%) —
+        # metric font đổi theo môi trường nên chỉ ghim BẤT BIẾN: nhiều hơn compact.
+        assert grid.column_count() > grid._compact_columns
+
+        for combo in (
+            screen.kind_combo,
+            screen.currency_combo,
+            screen.impact_combo,
+            screen.source_combo,
+            screen.status_combo,
+        ):
+            self._assert_glued(combo.parent(), [1])
+        self._assert_glued(screen.date_from_input.parent(), [1, 2, 3])
+        assert screen.search_button.width() <= 200, "nút tìm kiếm giãn full cột"
+
+    def test_narrow_screen_never_keeps_the_full_column_count(self):
+        controller = FakeNewsController()
+        screen = _screen(controller)
+        screen.resize(752, 500)
+        _app().processEvents()
+
+        grid = screen.findChildren(ResponsiveGrid)[0]
+        # hẹp thì xuống dòng: không giữ nguyên 4 cột desktop; số cột đúng bằng
+        # số cột vừa bề ngang (fluid — không ghim số tuyệt đối vì metric font
+        # đổi theo môi trường chạy).
+        assert grid.column_count() < grid._columns
+        assert grid.column_count() == grid._fitted_columns()
+
+    def test_cells_flow_in_row_major_order_for_the_fitted_columns(self):
+        # Owner quyết 26/09/2026: dòng 1 = Loại tin/Đồng tiền/Tác động/Nguồn;
+        # dòng 2 = Trạng thái/Khoảng ngày/nút "Tìm kiếm" — lưới đầy 4×2 đủ 7 ô,
+        # nút là ô cuối thay _action_cell. Fluid (vòng 7)
+        # lấy SỐ CỘT LỚN NHẤT vừa bề ngang trong [4..1], nên số cột thật phụ
+        # thuộc font môi trường — chỉ ghim BẤT BIẾN: 7 ô xếp theo dòng (hết
+        # một dòng mới xuống dòng kế — bố cục chảy, không ô nào mất vị trí),
+        # nút "Tìm kiếm" là ô chót cùng.
+        controller = FakeNewsController()
+        screen = _screen(controller)
+        screen.resize(1280, 800)
+        _app().processEvents()
+
+        grid = screen.findChildren(ResponsiveGrid)[0]
+        fitted = grid.column_count()
+        assert grid.column_count() == grid._fitted_columns()
+        assert 1 <= fitted <= 4
+
+        def cell_of(widget):
+            # item của lưới là Ô LỌC (widget cha chứa nhãn + ô nhập), leo cấp
+            # cha cho tới widget nằm trực tiếp trong lưới.
+            node = widget
+            while node is not None and node.parent() is not grid:
+                node = node.parent()
+            assert node is not None, "widget không nằm trong lưới"
+            return node
+
+        def position_of(widget):
+            cell = cell_of(widget)
+            for index in range(grid._grid.count()):
+                item = grid._grid.itemAt(index)
+                if item is not None and item.widget() is cell:
+                    return grid._grid.getItemPosition(index)
+            raise AssertionError("widget không nằm trong lưới")
+
+        cells = [
+            screen.kind_combo, screen.currency_combo, screen.impact_combo,
+            screen.source_combo, screen.status_combo, screen.date_from_input,
+            screen.search_button,
+        ]
+        for order, widget in enumerate(cells):
+            row, col = position_of(widget)[:2]
+            assert (row, col) == (order // fitted, order % fitted), (
+                f"ô {widget.objectName()} sai vị trí ({row},{col}) thay cho "
+                f"({order // fitted},{order % fitted})"
+            )
+
+    def test_inputs_align_within_each_grid_column(self):
+        # Owner yêu cầu 26/09/2026 ("sắp thẳng cột"): các ô CÙNG cột lưới
+        # (bất kỳ chế độ fluid nào — 4, 2 hay 1 cột) phải bắt đầu tại CÙNG tọa
+        # độ. Vòng 6: nút "Tìm kiếm" là ô cuối lưới (phần tử bình thường sau
+        # "Khoảng ngày"); cột nhãn đồng nhất ⇒ mép phải nhãn thẳng hàng mọi dòng.
+        controller = FakeNewsController()
+        screen = _screen(controller)
+        screen.resize(1280, 800)
+        _app().processEvents()
+
+        grid = screen.findChildren(ResponsiveGrid)[0]
+
+        def cell_of(widget):
+            node = widget
+            while node is not None and node.parent() is not grid:
+                node = node.parent()
+            assert node is not None, "widget không nằm trong lưới"
+            return node
+
+        def column_of(widget):
+            cell = cell_of(widget)
+            for index in range(grid._grid.count()):
+                item = grid._grid.itemAt(index)
+                if item is not None and item.widget() is cell:
+                    return grid._grid.getItemPosition(index)[1]
+            raise AssertionError("widget không nằm trong lưới")
+
+        def cell_x(widget):
+            return widget.mapTo(grid, widget.rect().topLeft()).x()
+
+        pairs = (
+            (screen.kind_combo, screen.status_combo),
+            (screen.currency_combo, screen.date_from_input),
+            (screen.impact_combo, screen.search_button),
+        )
+        # Tại bề ngang 1280 logic (4×2 với font hẹp, 2 cột với font rộng/
+        # offscreen) các cặp "dòng 1–dòng 2" nằm chung một cột lưới — mỗi cặp
+        # chung cột phải khớp tọa độ bắt đầu (thẳng cột).
+        for first, second in pairs:
+            if column_of(first) != column_of(second):
+                continue
+            assert cell_x(cell_of(first)) == cell_x(cell_of(second)), (
+                f"ô cùng cột lệch tọa độ: {first.objectName()} vs "
+                f"{second.objectName()}"
+            )
+        # cột nhãn đồng nhất: mọi nhãn cùng bề rộng ⇒ mép phải nhãn thẳng hàng.
+        widths = {
+            combo.parent().layout().itemAt(0).widget().width()
+            for combo in (
+                screen.kind_combo, screen.currency_combo, screen.impact_combo,
+                screen.source_combo, screen.status_combo, screen.date_from_input,
+            )
+        }
+        assert len(widths) == 1, f"bề rộng nhãn không đồng nhất: {widths}"
+
+
+# ---- 13. dirty state của nút Tìm kiếm (vòng 6, 26/09/2026) ----
+
+class TestFilterDirtyState:
+    def test_search_button_marks_dirty_until_search_is_applied(self):
+        controller = FakeNewsController()
+        screen = _screen(controller)
+        assert not screen.search_button.property("filterDirty")
+
+        screen.kind_combo.setCurrentIndex(screen.kind_combo.findData("user_note"))
+        _app().processEvents()
+        assert screen.search_button.property("filterDirty") is True
+
+        screen.search_button.click()
+        assert _wait_until(lambda: len(controller.event_calls) == 2)
+        _app().processEvents()
+        assert not screen.search_button.property("filterDirty")
+
+    def test_date_change_marks_dirty_because_the_window_changed(self):
+        controller = FakeNewsController()
+        screen = _screen(controller)
+        assert not screen.search_button.property("filterDirty")
+
+        screen.date_from_input.setDate(screen.date_from_input.date().addDays(-30))
+        _app().processEvents()
+        assert screen.search_button.property("filterDirty") is True

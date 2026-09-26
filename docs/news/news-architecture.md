@@ -316,7 +316,10 @@ xác nhận trước khi ghi):**
    **kế thừa `_FOREX_RATE_EVENTS` hiện hành** của `interest_rate_service.py`
    (bằng chứng: runtime hiện hành — không bịa danh mục mới, B5).
 5. **Bảng xem trước (preview):** màn hình hiển thị dữ liệu đã bóc tách dạng
-   bảng — thời gian (UTC), đồng tiền, sự kiện, tác động, dự báo, kỳ trước,
+   bảng — thời gian (hiển thị theo múi giờ người dùng đã chọn trong Settings —
+   khóa `display.timezone`, `Asia/Ho_Chi_Minh` / `Asia/Bangkok` / `UTC`; giá trị
+   lưu trữ `event_time_utc`/`day_key` vẫn UTC theo §4.2 — chỉ tầng trình bày
+   đổi múi giờ khi hiển thị), đồng tiền, sự kiện, tác động, dự báo, kỳ trước,
    **thực tế (actual lấy từ chính source)** — kèm **trạng thái từng dòng**
    đối chiếu database theo `dedupe_key` (chỉ đọc): `Mới` / `Sẽ cập nhật` /
    `Xung đột — giữ nhập tay` (bản ghi hiện hữu `source=user` khác actual).
@@ -466,7 +469,6 @@ ra ổn định; đổi cách lưu trữ bên trong không buộc bên tiêu th�
 | Phương thức | Ngữ nghĩa |
 |---|---|
 | `events_in_range(from_utc, to_utc, currencies=None, include_non_impact=True)` | sự kiện theo cửa sổ, đã phân loại `status` |
-| `events_pending_actual(now)` | sự kiện đã đến hạn công bố (`impact != non`, qua `event_time_utc + grace`) mà `actual` còn NULL — từ đợt 3 (24/09/2026) phục vụ **panel hướng dẫn "sự kiện đang thiếu actual"** của màn Quản lý tin (cho người dùng biết cần mở trang FF nào để dán mã nguồn); KHÔNG phục vụ lượt fetch tự động nào (không còn — §6.1) |
 | `items_in_range(from_utc, to_utc=None, kinds=None, currencies=None, exclude_flagged=True)` | tin văn bản; mặc định bỏ tin `excluded=1` |
 | `latest_rates(currencies)` | quan sát gần nhất mỗi đồng tiền + trend dẫn xuất |
 | `store_state()` | trả `StoreState` — mô hình có kiểu (C3, cấm dict trần qua ranh giới): trạng thái `fresh`/`degraded`/`unavailable` cho từng tín hiệu (`events`, `items`, `rates`) + giờ ingest thành công cuối mỗi tín hiệu (từ `ingest_runs`) |
@@ -618,7 +620,7 @@ xuất/nhập file):
 | Stamp `source` | Sự kiện/actual/lãi suất bóc từ source dán = `ff_html` (enum đóng băng, đúng provenance); `ff_json`, `import` = giá trị lịch sử, không phát sinh; lượt dán ghi `ingest_runs` `producer=user` |
 | Lãi suất từ source dán | CÓ — parser bóc sự kiện lãi suất theo danh mục kế thừa `_FOREX_RATE_EVENTS` (B5) → `interest_rates` `source=ff_html`; kênh FF-HTML qua mạng trong `fred_rate_producer` bị gỡ |
 | `event_actual_or_lookup` | XÓA khỏi hợp đồng §8 — bên tiêu thụ đọc `events_in_range` + trạng thái `stale` (fail-closed; độ tươi là trách nhiệm người dùng dán source) |
-| `events_pending_actual` | GIỮ, đổi công dụng: nuôi panel hướng dẫn "sự kiện đang thiếu actual" của màn Quản lý tin |
+| `events_pending_actual` | XÓA khỏi hợp đồng §8 cùng panel hướng dẫn "sự kiện đang thiếu actual" của màn Quản lý tin (Owner quyết 26/09/2026 — bỏ tính năng khỏi hệ thống; không bên tiêu thụ nào còn) |
 | Nhập tay | Form tin `user_note` (§6.4) GIỮ nguyên; đường "nhập actual bằng tay cho sự kiện khi HTML lỗi" BỎ — dán source là kênh actual duy nhất |
 | RSS + FRED | KHÔNG đổi — giữ tự động định kỳ (`rss_poll_interval_minutes`, `fred_refresh_hours`) |
 | Căn cứ | Điều tra 24/09/2026: nextweek JSON 404 vĩnh viễn (upstream gỡ), thisweek 429 tái diễn (budget IP hẹp + retry khuếch đại), HTML `forexfactory.com` chặn theo TLS fingerprint (handshake timeout với Python/curl, browser qua được), wss `calendar-feed:2087` bị managed challenge (403 `cf-mitigated: challenge`) — cả ba kênh tự động bất khả thi với app |

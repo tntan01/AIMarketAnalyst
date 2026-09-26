@@ -239,6 +239,29 @@ def test_grid_drops_to_compact_columns_when_narrow() -> None:
     grid.close()
 
 
+def test_grid_fluid_picks_the_most_columns_that_fit() -> None:
+    # fluid (opt-in 26/09/2026 — dải lọc màn Tin tức): không rơi thẳng về
+    # compact ở bề ngang trung bình, mà lấy số cột lớn nhất vừa chỗ.
+    app = _app()
+    cards = [QPushButton(f"Ô {index}") for index in range(4)]
+    grid = ResponsiveGrid(
+        widgets=cards, columns=4, compact_columns=2, item_min_width=200, fluid=True
+    )
+    grid.resize(4 * 200 + 3 * 8 + 40, 80)
+    grid.show()
+    app.processEvents()
+    assert grid.column_count() == 4
+
+    grid.resize(3 * 200 + 2 * 8 + 40, 80)  # đủ 3 cột, thiếu 4
+    app.processEvents()
+    assert grid.column_count() == 3
+
+    grid.resize(2 * 200 + 8 + 40, 80)  # chỉ đủ 2 cột
+    app.processEvents()
+    assert grid.column_count() == 2
+    grid.close()
+
+
 def test_grid_skips_a_hidden_cell_and_takes_it_back() -> None:
     app = _app()
     hidden = QPushButton("Xóa trailing")

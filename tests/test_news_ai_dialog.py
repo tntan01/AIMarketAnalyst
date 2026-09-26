@@ -622,6 +622,9 @@ class TestAiDialogAnalysis:
 
 class TestAiDialogHistory:
     def test_history_lists_verdicts_with_registered_labels(self):
+        # Múi giờ hiển thị cố định (Asia/Ho_Chi_Minh) — hiển thị theo múi giờ
+        # người dùng (Owner 25/09/2026), không phụ thuộc settings máy chạy test.
+        news._configure_display_timezone("Asia/Ho_Chi_Minh")
         history = [
             _verdict(VerdictHorizon.LONG, created_at="2026-09-23T09:00:00Z", direction=VerdictDirection.NEUTRAL),
             _verdict(VerdictHorizon.SHORT, created_at="2026-09-22T09:00:00Z"),
@@ -631,8 +634,8 @@ class TestAiDialogHistory:
 
         assert controller.history_calls == [("pair", "EUR/USD", news.AI_HISTORY_LIMIT)]
         texts = [label.text() for label in dialog._history_layout.parent().findChildren(QLabel)]
-        assert any("23/09/2026 09:00" in t and "Dài hạn" in t and "Trung lập" in t for t in texts)
-        assert any("22/09/2026 09:00" in t and "Ngắn hạn" in t and "Tăng" in t for t in texts)
+        assert any("23/09/2026 16:00" in t and "Dài hạn" in t and "Trung lập" in t for t in texts)
+        assert any("22/09/2026 16:00" in t and "Ngắn hạn" in t and "Tăng" in t for t in texts)
 
     def test_history_refreshes_after_a_successful_analysis(self):
         controller = FakeAiController(_preview(), result=_result(_verdict(VerdictHorizon.SHORT), inserted=1))

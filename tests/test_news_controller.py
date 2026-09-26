@@ -99,7 +99,6 @@ class FakeRepository:
         self.purge_calls: list[int] = []
         self.purge_result = 3
         self.events: list[CalendarEvent] = []
-        self.pending: list[CalendarEvent] = []
         self.items: list[NewsItem] = []
         self.rates: list[CurrencyRateTrend] = []
         self.state = StoreState(
@@ -138,10 +137,6 @@ class FakeRepository:
     def events_in_range(self, *args: object, **kwargs: object) -> list[CalendarEvent]:
         self._record("events_in_range", args, kwargs)
         return self.events
-
-    def events_pending_actual(self, now: datetime) -> list[CalendarEvent]:
-        self._record("events_pending_actual", (now,), {})
-        return self.pending
 
     def items_in_range(self, *args: object, **kwargs: object) -> list[NewsItem]:
         self._record("items_in_range", args, kwargs)
@@ -902,17 +897,14 @@ class TestReadDelegation:
     def test_reads_are_delegated_verbatim(self):
         repo = FakeRepository()
         controller = _controller(repo=repo)
-        now = datetime(2026, 9, 22, 10, 0, tzinfo=UTC)
 
         assert controller.events_in_range("a", "b", ["USD"], False) is repo.events
-        assert controller.events_pending_actual(now) is repo.pending
         assert controller.items_in_range("a", "b", ["user_note"], ["USD"], False) is repo.items
         assert controller.latest_rates(["USD"]) is repo.rates
         assert controller.store_state() is repo.state
 
         assert repo.calls == [
             ("events_in_range", ("a", "b", ["USD"], False), {}),
-            ("events_pending_actual", (now,), {}),
             ("items_in_range", ("a", "b", ["user_note"], ["USD"], False), {}),
             ("latest_rates", (["USD"],), {}),
             ("store_state", (), {}),

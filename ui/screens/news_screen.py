@@ -15,9 +15,10 @@ tự đặt thêm.  Bốn chuỗi ngoài bảng đó đều có nguồn đã đ�
   contract §2 ("Sự kiện lịch kinh tế").  Đây là giá trị lọc riêng của màn
   (bảng hợp nhất hai nguồn), không phải một enum của contract.
 * nhãn cột / nhãn bộ lọc / nhãn nút thanh công cụ — nguyên văn khối "Bố cục".
-* mục "(tất cả …)" của mỗi combo — khuôn có sẵn của repo
-  (``journal_screen.py``: "Tất cả mã", "Tất cả trạng thái"...), ghép từ chính
-  nhãn bộ lọc đã đăng ký.
+* mục "Tất cả" của mỗi combo — rút gọn từ khuôn "(tất cả …)" của repo
+  (``journal_screen.py``: "Tất cả mã", "Tất tất trạng thái"...); Owner quyết
+  26/09/2026: nhãn gọn cạnh ô đã nói ô đó lọc gì nên mục đầu chỉ còn "Tất cả"
+  (không lặp "Tất tất loại tin/đồng tiền/…").
 * ``LOADING_TEXT = "Đang tải..."`` — chuỗi có sẵn của repo
   (``dashboard_screen.py``) cho chỉ báo loading mà screen_design yêu cầu.
 
@@ -28,13 +29,13 @@ bộ slot thread/dialog riêng của chúng đã bị **GỠ** (contract §13/§
 thu tự động FF, bỏ xuất/nhập file; app không phát request mạng nào tới
 ForexFactory).  Gợi ý "Nhập actual bằng tay" cũng bỏ (dán source là kênh actual
 duy nhất — contract §13 đợt 3).  Nhãn hiển thị nguồn đổi 3 chuỗi theo Từ điển
-đợt 3 (``ff_html`` = "ForexFactory (mã nguồn trang)", ``ff_json`` = "ForexFactory
+đợt 3 (``ff_html`` = "Forex Factory", ``ff_json`` = "ForexFactory
 (lịch — dữ liệu cũ)", ``import`` = "Nhập file (dữ liệu cũ)" — nhãn cũ phục vụ
 dữ liệu cũ, GIỮ); empty state gợi ý "Dán mã nguồn trang".
 
-**Lô F4 — dialog dán mã nguồn 2 pha + panel thiếu số liệu** (screen_design
+**Lô F4 — dialog dán mã nguồn 2 pha** (screen_design
 "Hành vi dán mã nguồn trang ForexFactory" d.1579-1617 + "Bố cục" d.1544-1547 +
-từ điển d.1577; contract §6.1 đợt 3+4; QĐ-F6/F9/F10): toolbar
+từ điển d.1577; contract §6.1 đợt 3+4; QĐ-F6/F9): toolbar
 **[ Dán mã nguồn trang | Nhập tin | AI nhận định xu hướng ]** — nút đầu và nút
 empty state cùng nhãn mở ``PasteSourceDialog`` (2 pha).  Pha 1: dán source hoặc
 chọn file `.html` (đọc file TRONG WORKER — không block GUI) → "Bóc tách" →
@@ -46,12 +47,7 @@ tế" sửa được** (QĐ-F6/đợt 4), cột còn lại read-only, không che
 sửa actual → badge "Đã sửa" + phân loại lại qua ``controller.reclassify_pasted_rows``
 (QĐ-F9 — UI không tự phân loại, S2); "Cập nhật" → ``commit_pasted_source(preview,
 edited_actuals)`` trong worker → tóm tắt mới/cập nhật/xung đột → đóng dialog (màn
-làm mới bảng tin + panel); "Hủy" → reject, không ghi/không run (§6.1 bước 6).
-Panel "Sự kiện đang thiếu số liệu" đọc ``events_pending_actual`` qua worker
-(contract §8 — chỉ nuôi panel hướng dẫn, không phục vụ fetch tự động); nút "Mở
-trang ForexFactory" mỗi dòng → ``QDesktopServices.openUrl`` URL trang lịch TUẦN
-tương ứng (QĐ-F10 — chỉ mở link bằng trình duyệt ngoài, app không phát request
-mạng nào tới ForexFactory; QĐ-F4).
+làm mới bảng tin); "Hủy" → reject, không ghi/không run (§6.1 bước 6).
 
 Khai báo đọc-hiểu lô F4 (V2):
 
@@ -63,10 +59,7 @@ Khai báo đọc-hiểu lô F4 (V2):
   thái chuyển 'Đã sửa'"); kết quả ``reclassify_pasted_rows`` vẫn được tính (và
   giữ) để phân loại các dòng chưa sửa.
 * Dialog đóng (accept) ngay sau "Cập nhật" thành công — màn chủ lo phần làm mới
-  bảng tin + panel (d.1611-1612); "Hủy" reject không chạm controller.
-* URLs ``https://www.forexfactory.com/calendar...`` là hằng số QĐ-F10 (bốn
-  URL) — là nơi DUY NHẤT chứa "http" trên màn, luôn đi qua
-  ``QDesktopServices.openUrl`` để mở trình duyệt ngoài; màn không import mạng.
+  bảng tin (d.1611-1612); "Hủy" reject không chạm controller.
 
 **Lô L3.5 — cửa sổ AI nhận định xu hướng** (screen_design d.1621-1649; contract
 §9.1-§9.2): nút "AI nhận định xu hướng" mở ``AiTrendDialog`` (520×640, không
@@ -110,7 +103,9 @@ tin", contract §6.4):
 
 Khai báo đọc-hiểu lô L3.3 (V2 — bên dưới, xem từng điểm):
 
-* **D2 — giờ đăng theo UTC:** widget giờ của form thu UTC (``Qt.TimeSpec.UTC``),
+* **D2 — giờ đăng theo múi giờ người dùng:** widget giờ của form thu theo khóa
+  ``settings.display.timezone`` (Settings chọn `Asia/Ho_Chi_Minh` / `Asia/Bangkok`
+  / `UTC` — Owner quyết 25/09/2026); giá trị lưu ``published_utc`` vẫn UTC —
   nhất quán với ``_display_time`` của bảng.
 * **D3 — "Loại tin" cố định "Nhập tay":** combo chỉ có ``user_note``, không
   chào lựa chọn tự động (controller từ chối kind tự động — ``not_manual_note``).
@@ -127,6 +122,16 @@ Khai báo đọc-hiểu (V2):
 * Bộ lọc là lọc HIỂN THỊ trên tập dòng đã đọc theo khoảng ngày; khoảng ngày
   đẩy xuống repository (``events_in_range``/``items_in_range``), các bộ lọc
   enum còn lại lọc tại chỗ (chúng trộn cả hai nguồn nên không đẩy xuống được).
+* Card tìm kiếm KHÔNG tự áp khi chọn ô — chỉ tìm khi bấm nút "Tìm kiếm"
+  (Owner duyệt 26/09/2026): nút gọi ``reload_rows`` (đọc lại DB theo cửa sổ
+  ngày mới rồi áp 5 bộ lọc — đổi ngày phải đọc lại DB nên không dùng lọc
+  in-memory cho nút này).
+* **Vòng 6 (Owner duyệt 26/09/2026):** nút "Tìm kiếm" trở thành ô cuối lưới
+  (phần tử bình thường của dải lọc — nút bám trái ô, không neo mép phải cửa
+  sổ; icon ``search``) thay ``_action_cell`` → lưới đủ 7 ô: Loại tin, Đồng
+  tiền, Tác động, Nguồn, Trạng thái, Khoảng ngày, nút tìm; bộ lọc lệch lần
+  áp cuối → nút nhấn qua property QSS ``filterDirty`` (snapshot chốt mỗi
+  ``reload_rows``, so sánh 7 control — trạng thái không tính riêng ô nào).
 * Màn đọc tin văn bản với ``exclude_flagged=False`` — nếu không, hàng
   ``excluded=1`` không bao giờ hiện ra để mang badge "Đã loại trừ"/để lọc
   theo trạng thái đó (screen_design yêu cầu cột Trạng thái hiển thị cờ này).
@@ -135,12 +140,23 @@ Khai báo đọc-hiểu (V2):
   file đó ngoài sổ điểm chạm), màn **không đọc gì** và hiện empty state: không
   tự dựng controller thật để tránh mở ``news.db`` trong test của màn khác.
 * Bố cục dùng ``ResponsiveGrid`` (khuôn ``ui/responsive_row.py``) cho dãy bộ lọc
-  và thanh công cụ: một hàng đầy đủ ở desktop, tự xuống nhiều hàng khi hẹp, nên
-  sàn bề ngang của màn là bề ngang MỘT hàng compact — màn vừa 800px (điểm review
-  của lô).  Combo/date-edit được đặt sàn bề ngang tường minh
-  (``setMinimumWidth``) vì nhãn item dài (vd "ForexFactory (mã nguồn trang)")
-  sẽ đẩy sàn vượt 800px nếu để mặc định.  Thanh công cụ 2 nút (đợt 3) càng
-  không vượt sàn.
+  và thanh công cụ. Dải lọc bật chế độ **fluid** (opt-in 26/09/2026): số cột
+  lấy lớn nhất vừa bề ngang thực tế trong [1..đầy] — không rơi thẳng về compact
+  ở bề ngang trung bình (defect 1920×1200@150% = 1280px logic); mỗi ô
+  ``_filter_cell`` (nhãn Fixed + ô Maximum + ``addStretch`` cuối ô — thay
+  ``form_row`` nhãn 150px + ô giãn làm card phình): nhãn/ô không giãn theo
+  cột, phần dư dồn về SAU ô (không rải vào khe nhãn–ô). Sàn bề ngang của màn
+  là bề ngang Ô RỘNG NHẤT (compact 1 cột = bố cục chảy: hết chỗ thì xuống
+  dòng từng ô, không nén méo/tràn) — màn vừa shell 800px.
+  Mỗi ô nhập tự định cỡ theo NỘI DUNG THẬT nó phải chứa (Owner 26/09/2026 —
+  không dùng chung một sàn cho mọi ô): combo lọc dùng
+  ``AdjustToContents`` nên rộng đủ hiển thị TRỌN mục dài nhất trong danh sách
+  (vd "ForexFactory (lịch — dữ liệu cũ)" — bề rộng mỗi combo là của riêng nó,
+  theo font đang dùng); ô ngày đo ``sizeHint()`` của ``QDateEdit`` (Qt tính từ
+  format "dd/MM/yyyy" + frame/nút bật lịch), không hard-code số px. Khi màn
+  hẹp, lưới fluid xuống dòng liên tục (4 → 2 → 1 cột) giữ mọi ô nguyên nội
+  dung — không bóp chữ, không tràn. Thanh công cụ 2 nút (đợt 3) càng không
+  vượt sàn.
 * Bảng đặt bề ngang cột tường minh (khuôn ``scanner_screen._configure_table_columns``):
   cột "Tiêu đề/Nội dung" giãn, các cột còn lại cố định đủ đọc trọn nhãn cột;
   cửa sổ hẹp thì bảng cuộn ngang (``ScrollBarAsNeeded``) thay vì bóp cột tới mức
@@ -150,7 +166,8 @@ Khai báo đọc-hiểu (V2):
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from datetime import UTC, datetime, timedelta, time as clock_time
+from datetime import UTC, datetime, time as clock_time, tzinfo
+from zoneinfo import ZoneInfo
 
 from PyQt6.QtCore import (
     QAbstractTableModel,
@@ -161,9 +178,8 @@ from PyQt6.QtCore import (
     QTime,
     Qt,
     QThread,
-    QUrl,
 )
-from PyQt6.QtGui import QColor, QDesktopServices, QPalette
+from PyQt6.QtGui import QColor, QPalette
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
@@ -179,7 +195,6 @@ from PyQt6.QtWidgets import (
     QLineEdit,
     QMessageBox,
     QPushButton,
-    QScrollArea,
     QTextEdit,
     QSizePolicy,
     QTableView,
@@ -203,7 +218,7 @@ from ui.layout_system import LayoutTokens, configure_table
 from ui.responsive_row import ResponsiveGrid
 from ui.rich_text import compile_rich_html, empty_state_html, set_rich_html
 from ui.screens.shared import action_button, card, form_row, page_header
-from ui.theme_manager import semantic_qcolor
+from ui.theme_manager import semantic_qcolor, set_dynamic_property
 from workers.news_worker import NewsReadWorker
 
 # ---------------------------------------------------------------------------
@@ -229,7 +244,7 @@ IMPACT_TEXT: dict[str, str] = {
 }
 SOURCE_TEXT: dict[str, str] = {
     "ff_json": "ForexFactory (lịch — dữ liệu cũ)",
-    "ff_html": "ForexFactory (mã nguồn trang)",
+    "ff_html": "Forex Factory",
     "google_news_rss": "Google News",
     "fxstreet_rss": "FXStreet",
     "investing_rss": "Investing",
@@ -283,6 +298,11 @@ TOOLBAR_LABELS: tuple[str, ...] = (
     "Nhập tin",
     "AI nhận định xu hướng",
 )
+# Nút áp bộ lọc của card tìm kiếm (screen_design "Bố cục" d.1543-1545 — Owner
+# duyệt 26/09/2026: KHÔNG tự tìm khi chọn ô, chỉ tìm khi bấm nút; nút đọc lại
+# DB theo cửa sổ ngày mới).
+SEARCH_BUTTON_TEXT = "Tìm kiếm"
+DATE_RANGE_ARROW_TEXT = "→"  # nối 2 ô ngày trong cụm "Khoảng ngày"
 EMPTY_TEXT = "Không có tin trong khoảng lọc"
 LOADING_TEXT = "Đang tải..."
 DETAIL_TEXT = "Chi tiết"
@@ -386,7 +406,7 @@ DIRECTION_ROLE: dict[str, str] = {
 AI_HISTORY_LIMIT = 5  # đọc-hiểu trình bày (B5 — không phải giá trị vận hành)
 
 # ---------------------------------------------------------------------------
-# Từ điển lô F4 — dialog dán mã nguồn 2 pha + panel thiếu số liệu
+# Từ điển lô F4 — dialog dán mã nguồn 2 pha
 # (screen_design từ điển d.1577 + "Hành vi dán mã nguồn trang ForexFactory"
 # d.1579-1617 + "Bố cục" d.1544-1547; mọi chuỗi có nguồn đăng ký — không phát
 # minh nhãn; L3: chuỗi thân thiện cho lỗi parser đặt TẠI đây, không trong
@@ -427,7 +447,7 @@ PARSE_ERROR_TEXT: dict[str, str] = {
 }
 # Cột bảng xem trước (d.1594-1596).  CHỈ cột "Thực tế" (actual) sửa được — QĐ-F6/đợt 4.
 _PREVIEW_COLUMNS: tuple[tuple[str, str], ...] = (
-    ("event_time_utc", "Thời gian (UTC)"),
+    ("event_time_utc", "Thời gian"),
     ("currency", "Đồng tiền"),
     ("title", "Sự kiện"),
     ("impact", "Tác động"),
@@ -458,56 +478,6 @@ PASTE_COMMIT_PROGRESS_TEXT = "Đang ghi..."
 PASTE_FILE_LOAD_PROGRESS_TEXT = "Đang đọc file..."
 PASTE_EMPTY_SOURCE_TEXT = "Hãy dán mã nguồn trang vào ô bên trên trước khi bóc tách."
 
-# Panel "Sự kiện đang thiếu số liệu" (d.1544-1545, d.1613-1617).
-PANEL_TITLE_TEXT = "Sự kiện đang thiếu số liệu"
-OPEN_FF_TEXT = "Mở trang ForexFactory"  # d.1614
-
-# ---------------------------------------------------------------------------
-# URL trang lịch tuần ForexFactory (QĐ-F10 — căn cứ code legacy
-# forex_factory_client.py d.57-58: this/next + interest_rate_service.py d.89-90:
-# this/last).  Chỉ mở bằng trình duyệt ngoài (QDesktopServices.openUrl) — app
-# không phát request mạng nào tới ForexFactory (contract §6.1 đợt 3, QĐ-F4).
-# ---------------------------------------------------------------------------
-
-FF_CALENDAR_BASE_URL = "https://www.forexfactory.com/calendar"
-FF_WEEK_THIS_URL = f"{FF_CALENDAR_BASE_URL}?week=this"
-FF_WEEK_NEXT_URL = f"{FF_CALENDAR_BASE_URL}?week=next"
-FF_WEEK_LAST_URL = f"{FF_CALENDAR_BASE_URL}?week=last"
-
-
-def _week_start_utc(moment: datetime) -> datetime:
-    """Thứ 2 00:00 (UTC) của tuần chứa một mốc — tuần = Thứ 2 → Chủ nhật (QĐ-F10)."""
-    moment_utc = moment if moment.tzinfo is not None else moment.replace(tzinfo=UTC)
-    moment_utc = moment_utc.astimezone(UTC)
-    monday = moment_utc - timedelta(days=moment_utc.weekday())
-    return datetime.combine(monday.date(), clock_time.min, tzinfo=UTC)
-
-
-def ff_week_url_for_event(event_time_utc: str, *, now: datetime | None = None) -> str:
-    """URL trang lịch tuần FF tương ứng vị trí tuần của sự kiện (QĐ-F10).
-
-    Vị trí tuần tính theo UTC từ ``event_time_utc`` (tuần = Thứ 2 → Chủ nhật):
-    tuần hiện tại → ``?week=this``; kế sau → ``?week=next``; liền trước →
-    ``?week=last``; xa hơn → trang mặc định (declared fallback — legacy không
-    có URL tuần tùy ý).  ``now`` là seam kiểm thử; luôn mở qua
-    ``QDesktopServices.openUrl`` (chỉ mở link, không fetch)."""
-    try:
-        event_week = _week_start_utc(
-            datetime.fromisoformat(str(event_time_utc).replace("Z", "+00:00"))
-        )
-    except ValueError:
-        return FF_CALENDAR_BASE_URL
-    moment = now if now is not None else datetime.now(UTC)
-    current_week = _week_start_utc(moment)
-    delta_weeks = (event_week.date() - current_week.date()).days // 7
-    if delta_weeks == 0:
-        return FF_WEEK_THIS_URL
-    if delta_weeks == 1:
-        return FF_WEEK_NEXT_URL
-    if delta_weeks == -1:
-        return FF_WEEK_LAST_URL
-    return FF_CALENDAR_BASE_URL
-
 
 def _read_source_file(path: str) -> str:
     """Đọc file `.html` đã lưu — chạy TRONG worker (không block GUI; d.1588)."""
@@ -515,98 +485,74 @@ def _read_source_file(path: str) -> str:
         return fh.read()
 
 
-class _ElidedLabel(QLabel):
-    """QLabel cắt "…" khi text quá dài thay vì wrap (khuôn dashboard d.107-125
-    — dùng cho dòng panel QĐ-P2: một hàng, tiêu đề dài cắt "…")."""
+def _filter_label(text: str) -> QLabel:
+    """Nhãn/glyph ô lọc gọn — co theo chữ (Owner duyệt 26/09/2026).
 
-    def __init__(self, text: str = "", parent: QWidget | None = None) -> None:
-        super().__init__(text, parent)
-        self._full_text = text
-        self.setWordWrap(False)
-        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
-
-    def setText(self, text: str) -> None:
-        self._full_text = text or ""
-        super().setText(self._full_text)
-        self._apply_elide()
-
-    def resizeEvent(self, event) -> None:  # noqa: N802 - tên Qt
-        super().resizeEvent(event)
-        self._apply_elide()
-
-    def _apply_elide(self) -> None:
-        elided = self.fontMetrics().elidedText(
-            self._full_text, Qt.TextElideMode.ElideRight, self.width()
-        )
-        if elided != self.text():
-            super().setText(elided)
+    Chính sách ngang ``Fixed``: nhãn KHÔNG giãn khi cột lưới rộng hơn — nhãn
+    giãn đẩy ô nhập xa mất (defect 1920×1200@150%)."""
+    label = QLabel(text)
+    label.setObjectName("FormLabel")
+    label.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Preferred)
+    return label
 
 
-class _PendingPanel(QFrame):
-    """Khung panel "Sự kiện đang thiếu số liệu" giới hạn chiều cao bằng token
-    (QĐ-P1 — ``PANEL_LIST_MAX_HEIGHT`` = 180).
+def _filter_label_width() -> int:
+    """Bề rộng CỘT NHÃN đồng nhất cho mọi ô lọc (Owner yêu cầu 26/09/2026:
+    "sắp thẳng cột" — nhãn và ô nhập phải thẳng hàng giữa 2 dòng).
 
-    Điều khoản ca (plan §2): màn Tin tức nằm NGOÀI bộ density-lock hiện hành,
-    nên chiều cao panel khai báo qua override layout của ``QFrame``
-    (``sizeHint``/``minimumSizeHint``/``maximumHeight``) chứ KHÔNG gọi
-    ``setMaximumHeight`` — tránh sinh height-call mới bị audit density phase0/3
-    báo "new unreviewed" ngoài danh tính R9 (khuôn override
-    ``DialogBodyScroll.sizeHint``).  Observable vẫn đúng: ``maximumHeight() ==
-    PANEL_LIST_MAX_HEIGHT`` và panel cao đúng token khi hiển thị."""
-
-    def __init__(self, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self.setObjectName("NewsPendingPanel")
-        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(16, 14, 16, 14)
-        layout.setSpacing(10)
-
-    def sizeHint(self) -> QSize:
-        return QSize(200, LayoutTokens.PANEL_LIST_MAX_HEIGHT)
-
-    def minimumSizeHint(self) -> QSize:
-        return QSize(0, LayoutTokens.PANEL_LIST_MAX_HEIGHT)
-
-    def maximumHeight(self) -> int:
-        return LayoutTokens.PANEL_LIST_MAX_HEIGHT
+    Lấy bề rộng nhãn lớn nhất (đo qua ``ensurePolished`` để font QSS
+    ``font-weight: 600`` của FormLabel được tính) + biên an toàn kerning.
+    Tập đo gồm 6 nhãn ``FILTER_LABELS``.
+    Cột nhãn đồng nhất ⇒ mọi ô nhập bắt đầu tại cùng một tọa độ ⇒ thẳng cột
+    ở mọi chế độ xếp (kể cả khi lưới co xuống dòng)."""
+    widths = []
+    for text in FILTER_LABELS:
+        label = _filter_label(text)
+        label.ensurePolished()
+        widths.append(label.sizeHint().width())
+    return max(widths) + 4
 
 
-class _PendingScroll(QScrollArea):
-    """Vùng cuộn danh sách panel — khuôn ``DialogBodyScroll`` (widgetResizable
-    True + ScrollBarAsNeeded, ngang tắt); dần dần nội dung dài bị cuộn thay vì
-    nén bảng tin/toolbar."""
+def _filter_cell(label: str, *fields: QWidget, label_width: int) -> QWidget:
+    """Một ô lọc gọn: cột nhãn đồng nhất + các ô nhập co theo nội dung.
 
-    def __init__(self, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self.setObjectName("NewsPendingScroll")
-        self.setWidgetResizable(True)
-        self.setFrameShape(QFrame.Shape.NoFrame)
-        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+    Thay ``form_row`` (nhãn cố định 150px + ô giãn) cho card tìm kiếm —
+    6 ô × (150 + sàn ô) là nguyên nhân card phình to (sửa 26/09/2026).
+    Nhãn ``label_width`` đồng nhất mọi ô, chữ **căn trái** (Owner quyết
+    26/09/2026 — vòng 7) — cột nhãn đồng nhất giữ ô nhập dòng 1/dòng 2 cùng
+    cột lưới bắt đầu tại cùng tọa độ (thẳng cột — Owner yêu cầu 26/09/2026).
+    ``addStretch(1)`` cuối ô: phần bề ngang dư của cột dồn hết về SAU — không
+    rải vào giữa nhãn và ô (defect 1920×1200@150%: Qt chia dư đều, khe nhãn–ô
+    phình 76px)."""
+    widget = QWidget()
+    layout = QHBoxLayout(widget)
+    layout.setContentsMargins(0, 0, 0, 0)
+    layout.setSpacing(2)
+    label_widget = _filter_label(label)
+    label_widget.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+    label_widget.setFixedWidth(label_width)
+    layout.addWidget(label_widget)
+    for field in fields:
+        layout.addWidget(field)
+    layout.addStretch(1)
+    return widget
 
-    def sizeHint(self) -> QSize:
-        hint = super().sizeHint()
-        return QSize(hint.width(), LayoutTokens.PANEL_LIST_MAX_HEIGHT)
 
-    def minimumSizeHint(self) -> QSize:
-        return QSize(0, LayoutTokens.TABLE_ROW_HEIGHT)
+def _button_cell(field: QWidget) -> QWidget:
+    """Ô nút "Tìm kiếm" — MỘT PHẦN TỬ BÌNH THƯỜNG của dải lọc, ô cuối lưới
+    ngay sau ô "Khoảng ngày" (Owner duyệt 26/09/2026): nút nằm SÁT ô lọc trước nó
+    (khe = đúng gap lưới), KHÔNG bám mép phải cửa sổ — ``addStretch`` đặt SAU
+    nút dồn phần bề ngang dư của cột về bên PHẢI nút → nút bám trái ô, khoảng
+    trống thừa nằm ở rìa phải ngoài cùng; cửa sổ rộng bao nhiêu nút không
+    trôi dạt theo (thay ``_action_cell`` có spacer cột nhãn — cũ căn phải)."""
+    widget = QWidget()
+    layout = QHBoxLayout(widget)
+    layout.setContentsMargins(0, 0, 0, 0)
+    layout.setSpacing(2)
+    layout.addWidget(field)
+    layout.addStretch(1)
+    return widget
 
-
-class _PendingRow(QWidget):
-    """Một dòng của panel: một hàng cao đúng ``TABLE_ROW_HEIGHT``, không wrap —
-    chiều cao khai báo qua override layout (không gọi ``setFixedHeight`` —
-    tránh height-call mới trong audit density phase0/3, plan §2)."""
-
-    def __init__(self, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self.setObjectName("NewsPendingRow")
-
-    def sizeHint(self) -> QSize:
-        return QSize(0, LayoutTokens.TABLE_ROW_HEIGHT)
-
-    def minimumSizeHint(self) -> QSize:
-        return QSize(0, LayoutTokens.TABLE_ROW_HEIGHT)
 
 EVENT_ROW = "event"
 ITEM_ROW = "item"
@@ -884,8 +830,38 @@ class NewsTableModel(QAbstractTableModel):
         return None
 
 
+_DISPLAY_TZ: tzinfo | None = None
+_DEFAULT_TZ_NAME = "Asia/Ho_Chi_Minh"
+
+
+def _configure_display_timezone(name: str | None) -> tzinfo:
+    """Chốt múi giờ hiển thị của màn khi dựng (gọi từ ``NewsScreen._build_ui``).
+
+    Tên múi giờ đến từ SEAM ``news_controller.display_timezone()`` (controller
+    đọc ``settings.display.timezone`` — news_screen cấm import ``services``,
+    L1/E2; khuôn ``_fred_api_key`` d.473-484).  Khóa thiếu/hỏng → fallback
+    ``Asia/Ho_Chi_Minh`` (B4).  Cache module để ``_display_time`` chạy mỗi ô
+    bảng không đọc settings."""
+    global _DISPLAY_TZ
+    try:
+        _DISPLAY_TZ = ZoneInfo(name or _DEFAULT_TZ_NAME)
+    except Exception:
+        _DISPLAY_TZ = ZoneInfo(_DEFAULT_TZ_NAME)
+    return _DISPLAY_TZ
+
+
+def _display_timezone() -> tzinfo:
+    """Múi giờ hiển thị đang chốt của tầng trình bày (khóa
+    ``settings.display.timezone`` — Owner quyết 25/09/2026).  Chưa cấu hình
+    (chưa dựng màn) → fallback ``Asia/Ho_Chi_Minh`` — caller hợp lệ luôn gọi
+    sau ``_configure_display_timezone`` qua ``NewsScreen._build_ui``."""
+    return _DISPLAY_TZ if _DISPLAY_TZ is not None else ZoneInfo(_DEFAULT_TZ_NAME)
+
+
 def _display_time(value: str) -> str:
-    """Hiển thị mốc thời gian của dòng (giữ nguyên dạng ISO đã lưu nếu không đọc được)."""
+    """Hiển thị mốc thời gian của dòng theo múi giờ người dùng (khóa
+    `settings.display.timezone` — Owner quyết 25/09/2026; giữ nguyên dạng ISO
+    đã lưu nếu không đọc được)."""
     if not value:
         return NO_VALUE
     try:
@@ -894,18 +870,19 @@ def _display_time(value: str) -> str:
         return value
     if moment.tzinfo is None:
         moment = moment.replace(tzinfo=UTC)
-    return moment.astimezone(UTC).strftime("%d/%m/%Y %H:%M")
+    return moment.astimezone(_display_timezone()).strftime("%d/%m/%Y %H:%M")
 
 
 def _iso_to_qdatetime(value: str) -> QDateTime | None:
-    """Đọc một mốc ISO-8601 (UTC) thành ``QDateTime`` mang wall-time UTC."""
+    """Đọc một mốc ISO-8601 (UTC) thành ``QDateTime`` mang wall-time theo múi
+    giờ người dùng (khóa `settings.display.timezone` — Owner quyết 25/09/2026)."""
     try:
         moment = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
     except (TypeError, ValueError):
         return None
     if moment.tzinfo is None:
         moment = moment.replace(tzinfo=UTC)
-    moment = moment.astimezone(UTC).replace(tzinfo=None)
+    moment = moment.astimezone(_display_timezone()).replace(tzinfo=None)
     stamp = QDateTime(QDate(moment.year, moment.month, moment.day), QTime(moment.hour, moment.minute, moment.second))
     stamp.setTimeSpec(Qt.TimeSpec.UTC)
     return stamp
@@ -921,11 +898,13 @@ class UserNoteDialog(QDialog):
 
     Trường bắt buộc: giờ đăng, loại tin, nội dung, đồng tiền; tùy chọn: mức tác
     động (``impact_hint``) + URL (screen_design d.1595-1596).  Loại tin cố định
-    "Nhập tay" (D3); giờ đăng thu UTC (D2).  Thiếu trường bắt buộc → hiện lỗi
-    từng trường và KHÔNG gọi controller (không ghi DB); lỗi validate controller
-    trả về hiện lên đúng trường, form KHÔNG đóng.  Draft hợp lệ đi qua
-    ``NewsController.add_user_note`` (nhập) hoặc ``update_user_note`` (sửa — D1,
-    không tự dựng model, không tính ``dedupe_key``).
+    "Nhập tay" (D3); giờ đăng thu theo MÚI GIỜ NGƯỜI DÙNG đã chọn (D2 — Owner
+    quyết 25/09/2026), giá trị lưu ``published_utc`` vẫn UTC (contract §4.3).
+    Thiếu trường bắt buộc → hiện lỗi từng trường và KHÔNG gọi controller
+    (không ghi DB); lỗi validate controller trả về hiện lên đúng trường, form
+    KHÔNG đóng.  Draft hợp lệ đi qua ``NewsController.add_user_note`` (nhập)
+    hoặc ``update_user_note`` (sửa — D1, không tự dựng model, không tính
+    ``dedupe_key``).
     """
 
     def __init__(
@@ -956,8 +935,9 @@ class UserNoteDialog(QDialog):
         root.setContentsMargins(24, 24, 24, 24)
         root.setSpacing(10)
 
-        # Giờ đăng (UTC — D2): giá trị đặc biệt (bằng minimum) hiển thị rỗng =
-        # "chưa nhập", nên trường bắt buộc này thực sự có thể thiếu.
+        # Giờ đăng (theo MÚI GIỜ NGƯỜI DÙNG — D2, Owner quyết 25/09/2026): giá
+        # trị đặc biệt (bằng minimum) hiển thị rỗng = "chưa nhập", nên trường
+        # bắt buộc này thực sự có thể thiếu.
         self.time_edit = QDateTimeEdit(self._empty_moment)
         self.time_edit.setObjectName("NewsNoteTime")
         self.time_edit.setTimeSpec(Qt.TimeSpec.UTC)
@@ -1080,13 +1060,17 @@ class UserNoteDialog(QDialog):
         return self.time_edit.dateTime() <= self.time_edit.minimumDateTime()
 
     def time_value(self) -> datetime | None:
-        """Giờ đăng đang nhập (UTC) — ``None`` khi trường còn trống."""
+        """Giờ đăng đang nhập, quy về UTC cho controller — ``None`` khi trống.
+
+        Widget giờ mang wall-time theo múi giờ người dùng (khóa
+        ``settings.display.timezone`` — Owner quyết 25/09/2026); đọc thành mốc
+        UTC trước khi gửi (lưu trữ bất biến — contract §4.3 ``published_utc``).
+        ``toPyDateTime`` của QDateTime spec-UTC không mang tzinfo, nên wall-time
+        được gán tz là múi giờ người dùng (cùng khóa ``_iso_to_qdatetime``)."""
         if self._time_missing():
             return None
         moment = self.time_edit.dateTime().toPyDateTime()
-        if moment.tzinfo is None:
-            moment = moment.replace(tzinfo=UTC)
-        return moment.astimezone(UTC)
+        return moment.replace(tzinfo=_display_timezone()).astimezone(UTC)
 
     def currency_values(self) -> list[str]:
         """Danh sách mã đồng tiền đang nhập (phẩy ngăn cách) — D4."""
@@ -2000,26 +1984,35 @@ class NewsScreen(QWidget):
         self._rows: list[NewsRow] = []
         self._thread: QThread | None = None
         self._worker: NewsReadWorker | None = None
-        self._pending_events: list[CalendarEvent] = []
-        self._pending_thread: QThread | None = None
-        self._pending_worker: NewsReadWorker | None = None
         # (Đợt 3 — slot thread riêng của 2 nút FF và của xuất/nhập file đã được
         # gỡ cùng hai đường hành vi đó; màn chỉ còn worker đọc bảng + worker AI
-        # nằm trong chính dialog.  F4 thêm worker đọc panel thiếu số liệu.)
+        # nằm trong chính dialog.)
         self.toolbar_buttons: dict[str, QPushButton] = {}
         self.empty_state_buttons: dict[str, QPushButton] = {}
+        # Snapshot giá trị 7 control lọc tại lần áp gần nhất (vòng 6 — chốt mỗi
+        # ``reload_rows``); ``None`` = chưa từng nạp được (app giả) → tắt dirty.
+        self._applied_snapshot: tuple | None = None
         self.setObjectName("FormScreen")
         self._build_ui()
         self.reload_rows()
-        self._reload_pending()
 
     # -- dựng giao diện ---------------------------------------------------------
 
     def _build_ui(self) -> None:
+        # Múi giờ hiển thị — khóa settings.display.timezone qua seam controller
+        # (news_screen cấm import services, L1/E2; khuôn _fred_api_key).  Chốt
+        # lại mỗi lần dựng màn — điều hướng tới màn phản ánh khóa mới (Owner
+        # quyết 25/09/2026).  Controller thiếu/hỏng hành vi (test shell, app
+        # chưa cấu hình) → fallback Asia/Ho_Chi_Minh (B4).
+        try:
+            zone_name = self.news_controller.display_timezone()
+        except Exception:
+            zone_name = None
+        _configure_display_timezone(zone_name)
         root = QVBoxLayout(self)
         root.setContentsMargins(12, 10, 12, 10)
         root.setSpacing(8)
-        root.addWidget(page_header("Tin tức", "Quản lý tin"))
+        root.addWidget(page_header("Tin tức"))
 
         filter_card = card()
         filter_card.layout().setContentsMargins(12, 6, 12, 6)
@@ -2027,10 +2020,16 @@ class NewsScreen(QWidget):
         root.addWidget(filter_card)
 
         root.addWidget(self._table_card(), 1)
-        root.addWidget(self._pending_panel())
         root.addWidget(self._toolbar())
 
     def _filter_bar(self) -> QWidget:
+        """Card tìm kiếm tin (screen_design "Bố cục" d.1543-1545): ô lọc gọn
+        (nhãn co theo chữ + ô co theo nội dung) + nút "Tìm kiếm" cuối dải.
+
+        KHÔNG tự áp lọc khi chọn ô (Owner duyệt 26/09/2026) — đổi combo/ngày
+        không connect gì; bấm "Tìm kiếm" mới đọc lại DB theo cửa sổ ngày mới
+        rồi áp 5 bộ lọc (đổi ngày phải đọc lại DB nên nút gọi ``reload_rows``,
+        không lọc in-memory)."""
         self.kind_combo = self._enum_combo(
             "Loại tin",
             [(EVENT_ROW, EVENT_TEXT)]
@@ -2051,6 +2050,57 @@ class NewsScreen(QWidget):
             [(member.value, STATUS_TEXT[member.value]) for member in EventStatus]
             + [("excluded", EXCLUDED_TEXT)],
         )
+
+        self.date_from_input = QDateEdit()
+        self.date_from_input.setObjectName("NewsDateFrom")
+        self.date_from_input.setCalendarPopup(True)
+        self.date_from_input.setDisplayFormat("dd/MM/yyyy")
+        self.date_from_input.setButtonSymbols(QDateEdit.ButtonSymbols.NoButtons)
+        # Bề rộng theo CHỮ THẬT (Owner 26/09/2026 — bỏ sàn 110px cảm tính):
+        # ``sizeHint()`` của QDateEdit được Qt tính từ format "dd/MM/yyyy" theo
+        # font đang dùng và đã cộng frame + nút bật lịch/đệm — đủ hiển thị trọn
+        # số và dấu "/" ở mọi chữ số (worst-case "31/12/2026").
+        self.date_from_input.ensurePolished()
+        self.date_from_input.setMinimumWidth(self.date_from_input.sizeHint().width())
+        self.date_from_input.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
+        self.date_from_input.setDate(QDate.currentDate().addMonths(-1))
+
+        self.date_to_input = QDateEdit()
+        self.date_to_input.setObjectName("NewsDateTo")
+        self.date_to_input.setCalendarPopup(True)
+        self.date_to_input.setDisplayFormat("dd/MM/yyyy")
+        self.date_to_input.setButtonSymbols(QDateEdit.ButtonSymbols.NoButtons)
+        # Cùng phép đo theo font như ô ngày bắt đầu (Owner 26/09/2026).
+        self.date_to_input.ensurePolished()
+        self.date_to_input.setMinimumWidth(self.date_to_input.sizeHint().width())
+        self.date_to_input.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
+        self.date_to_input.setDate(QDate.currentDate())
+
+        label_width = _filter_label_width()
+        date_field = _filter_cell(
+            FILTER_LABELS[5],
+            self.date_from_input,
+            _filter_label(DATE_RANGE_ARROW_TEXT),
+            self.date_to_input,
+            label_width=label_width,
+        )
+
+        self.search_button = action_button(
+            SEARCH_BUTTON_TEXT,
+            primary=True,
+            color="success",
+            icon="search",
+            icon_role="selection_text",
+            icon_disabled_role="selection_text",
+        )
+        # Chính sách ngang ``Maximum``: nút không giãn full cột lưới (defect
+        # 1920×1200@150% — nút phình 612px).
+        self.search_button.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
+        self.search_button.clicked.connect(lambda: self.reload_rows())
+
+        # Dirty state (vòng 6 — Owner duyệt 26/09/2026): đổi 1 trong 7 control
+        # lọc (5 combo + 2 ngày) mà chưa bấm "Tìm kiếm" → nhấn nút qua property
+        # QSS ``filterDirty``; snapshot chốt lại mỗi lần ``reload_rows``.
         for combo in (
             self.kind_combo,
             self.currency_combo,
@@ -2058,61 +2108,83 @@ class NewsScreen(QWidget):
             self.source_combo,
             self.status_combo,
         ):
-            combo.currentIndexChanged.connect(lambda _index: self.refresh_rows())
+            combo.currentIndexChanged.connect(self._update_filter_dirty)
+        self.date_from_input.dateChanged.connect(self._update_filter_dirty)
+        self.date_to_input.dateChanged.connect(self._update_filter_dirty)
 
-        self.date_from_input = QDateEdit()
-        self.date_from_input.setObjectName("NewsDateFrom")
-        self.date_from_input.setCalendarPopup(True)
-        self.date_from_input.setDisplayFormat("dd/MM/yyyy")
-        self.date_from_input.setButtonSymbols(QDateEdit.ButtonSymbols.NoButtons)
-        self.date_from_input.setMinimumWidth(118)
-        self.date_from_input.setDate(QDate.currentDate().addMonths(-1))
-        self.date_from_input.dateChanged.connect(lambda _date: self.refresh_rows())
-
-        self.date_to_input = QDateEdit()
-        self.date_to_input.setObjectName("NewsDateTo")
-        self.date_to_input.setCalendarPopup(True)
-        self.date_to_input.setDisplayFormat("dd/MM/yyyy")
-        self.date_to_input.setButtonSymbols(QDateEdit.ButtonSymbols.NoButtons)
-        self.date_to_input.setMinimumWidth(118)
-        self.date_to_input.setDate(QDate.currentDate())
-        self.date_to_input.dateChanged.connect(lambda _date: self.refresh_rows())
-
-        date_field = QWidget()
-        date_layout = QHBoxLayout(date_field)
-        date_layout.setContentsMargins(0, 0, 0, 0)
-        date_layout.setSpacing(6)
-        date_layout.addWidget(self.date_from_input)
-        date_layout.addWidget(self.date_to_input)
-
-        # Lưới tự giảm cột khi thiếu bề ngang (khuôn ui/responsive_row.py): một
-        # hàng đầy đủ ở desktop, xuống nhiều hàng ở 800px — sàn bề ngang của màn
-        # là bề ngang MỘT hàng compact, không phải tổng cả hàng.
+        # Lưới fluid (khuôn ui/responsive_row.py, opt-in — Owner quyết
+        # 26/09/2026: tối đa 2 dòng — dòng 1: Loại tin/Đồng tiền/Tác động/
+        # Nguồn; dòng 2: Trạng thái/Khoảng ngày/nút "Tìm kiếm" — 7 ô, nút là ô
+        # cuối lưới). Mỗi ô tự định cỡ theo NỘI DUNG
+        # THẬT của nó (Owner 26/09/2026 — không dùng chung sàn); cột nhãn
+        # đồng nhất ``label_width`` mọi ô ⇒ ô nhập của các dòng cùng cột lưới
+        # bắt đầu tại cùng tọa độ (thẳng cột — Owner yêu cầu 26/09/2026).
+        # Fluid quét số cột [4..1] chọn số LỚN NHẤT vừa bề ngang thực tế — màn
+        # rộng (1920×1200@150% = 1280px logic) giữ nhiều cột, màn hẹp xuống
+        # dần tới 1 cột (bố cục chảy như flex-wrap, không bóp ô/tràn khung).
+        # Sàn bề ngang = compact 1 cột = Ô RỘNG NHẤT ⇒ màn vừa shell 800px.
         return ResponsiveGrid(
             widgets=[
-                form_row(FILTER_LABELS[0], self.kind_combo),
-                form_row(FILTER_LABELS[1], self.currency_combo),
-                form_row(FILTER_LABELS[2], self.impact_combo),
-                form_row(FILTER_LABELS[3], self.source_combo),
-                form_row(FILTER_LABELS[4], self.status_combo),
-                form_row(FILTER_LABELS[5], date_field),
+                _filter_cell(FILTER_LABELS[0], self.kind_combo, label_width=label_width),
+                _filter_cell(FILTER_LABELS[1], self.currency_combo, label_width=label_width),
+                _filter_cell(FILTER_LABELS[2], self.impact_combo, label_width=label_width),
+                _filter_cell(FILTER_LABELS[3], self.source_combo, label_width=label_width),
+                _filter_cell(FILTER_LABELS[4], self.status_combo, label_width=label_width),
+                date_field,
+                _button_cell(self.search_button),
             ],
-            columns=len(FILTER_LABELS),
-            compact_columns=2,
+            columns=4,
+            compact_columns=1,
             stretch=False,
+            fluid=True,
+        )
+
+    def _current_filter_values(self) -> tuple:
+        """Giá trị 7 control lọc (5 combo + 2 ngày) — vật liệu so snapshot dirty
+        (vòng 6)."""
+        return (
+            self._selected(self.kind_combo),
+            self._selected(self.currency_combo),
+            self._selected(self.impact_combo),
+            self._selected(self.source_combo),
+            self._selected(self.status_combo),
+            self.date_from_input.date(),
+            self.date_to_input.date(),
+        )
+
+    def _update_filter_dirty(self, *_args) -> None:
+        """Nhấn nút "Tìm kiếm" qua property QSS ``filterDirty`` khi bộ lọc lệch
+        lần áp cuối (vòng 6 — snapshot chốt mỗi ``reload_rows``; đặt property
+        qua ``set_dynamic_property`` — khuôn sẵn có của theme_manager, không
+        tự unpolish/polish). Chưa có snapshot (màn chưa nạp được — app giả của
+        test shell) thì bỏ qua."""
+        if self._applied_snapshot is None:
+            return
+        set_dynamic_property(
+            self.search_button,
+            "filterDirty",
+            self._current_filter_values() != self._applied_snapshot,
         )
 
     def _enum_combo(self, label: str, options: list[tuple[str, str]]) -> QComboBox:
-        """Combo lọc: mục đầu là "(tất cả …)" (khuôn repo), rồi đúng giá trị enum."""
+        """Combo lọc: mục đầu là "Tất cả" (rút gọn — Owner quyết 26/09/2026), rồi
+        đúng giá trị enum; ``label`` chỉ dùng đặt objectName cho QSS/kiểm thử."""
         combo = QComboBox()
         combo.setObjectName(f"NewsFilter{_COMBO_NAMES[label]}")
-        # Sàn bề ngang của control do lưới lo; combo không xin bề ngang theo
-        # item dài nhất (danh sách nguồn có nhãn dài) — nếu không, sàn của màn
-        # vượt 800px (điểm review của lô).
-        combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
-        combo.setMinimumContentsLength(12)
-        combo.setMinimumWidth(120)
-        combo.addItem(f"{ALL_PREFIX} {label.lower()}", None)
+        # Kích thước theo NỘI DUNG THẬT (Owner 26/09/2026 — mỗi ô một bề rộng
+        # riêng, không dùng chung sàn cho mọi combo): ``AdjustToContents`` bắt
+        # Qt đo chữ theo font đang dùng và trả ``sizeHint`` rộng đủ hiển thị
+        # TRỌN mục dài NHẤT trong danh sách lựa chọn (không phải mục mặc định
+        # "Tất cả" hay một contents-chữ cảm tính).  Combo nguồn có nhãn dài
+        # được phép rộng hơn; lưới fluid lo phần xuống hàng.
+        combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
+        # Chính sách ngang ``Maximum``: combo không giãn theo cột lưới (giãn thì
+        # ô trống thụt sau nhãn — defect 1920×1200@150%); bề ngang bám đúng
+        # ``sizeHint`` = chiều rộng mục dài nhất + padding/icon cuộn của Qt.
+        combo.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
+        # Mục đầu rút gọn "Tất cả" (Owner quyết 26/09/2026) — nhãn cạnh ô đã
+        # nói ô đó lọc gì, không lặp "Tất cả loại tin/đồng tiền/…".
+        combo.addItem(ALL_PREFIX, None)
         for value, text in options:
             combo.addItem(text, value)
         return combo
@@ -2174,29 +2246,6 @@ class NewsScreen(QWidget):
             return lambda: self.open_note_dialog()
         return lambda: None
 
-    def _pending_panel(self) -> QFrame:
-        """Panel "Sự kiện đang thiếu số liệu" (d.1544-1545, d.1613-1617): chỉ
-        hiển thị khi có sự kiện stale (ẩn khi rỗng — không phát minh nhãn rỗng).
-
-        QĐ-P1 — danh sách nằm trong ``QScrollArea`` (khuôn ``DialogBodyScroll``:
-        ``setWidgetResizable(True)`` + ``ScrollBarAsNeeded``, ngang tắt); panel
-        cao đúng ``LayoutTokens.PANEL_LIST_MAX_HEIGHT`` qua override layout của
-        ``_PendingPanel`` (plan §2: news screen ngoài density-lock — không gọi
-        ``setMaximumHeight``)."""
-        panel = _PendingPanel()
-        title = QLabel(PANEL_TITLE_TEXT)
-        title.setObjectName("PanelTitle")
-        panel.layout().addWidget(title)
-        self._pending_list = QWidget()
-        self._pending_layout = QVBoxLayout(self._pending_list)
-        self._pending_layout.setContentsMargins(0, 0, 0, 0)
-        self._pending_layout.setSpacing(2)
-        self._pending_scroll = _PendingScroll()
-        self._pending_scroll.setWidget(self._pending_list)
-        panel.layout().addWidget(self._pending_scroll)
-        self._pending_panel = panel
-        return panel
-
     def _toolbar(self) -> QWidget:
         toolbar = ResponsiveGrid(
             widgets=[self._toolbar_button(label) for label in TOOLBAR_LABELS],
@@ -2222,11 +2271,15 @@ class NewsScreen(QWidget):
     # -- đọc dữ liệu ------------------------------------------------------------
 
     def reload_rows(self) -> None:
-        """Đọc lại bảng trong worker nền (mở màn / đổi bộ lọc — screen_design)."""
+        """Đọc lại bảng trong worker nền (mở màn / bấm "Tìm kiếm" / sau ghi dữ liệu)."""
         if self.news_controller is None:
             self._rows = []
             self._apply_rows([])
             return
+        # Chốt snapshot dirty-state tại thời điểm áp bộ lọc (vòng 6) rồi tắt
+        # nhấn nút ngay — không chờ worker trả kết quả.
+        self._applied_snapshot = self._current_filter_values()
+        self._update_filter_dirty()
         self.shutdown()  # dừng lượt đọc còn dở (nếu có) trước khi mở lượt mới
         self._set_status(LOADING_TEXT)
         thread = QThread(self)
@@ -2251,7 +2304,6 @@ class NewsScreen(QWidget):
 
     def shutdown(self) -> None:
         """Dừng worker đọc nền (màn đóng / mở lượt đọc mới) — chờ có giới hạn."""
-        self._stop_pending_worker()
         thread = self._thread
         self._thread = None
         self._worker = None
@@ -2269,92 +2321,9 @@ class NewsScreen(QWidget):
         """Đóng màn thì dừng luôn worker đọc nền (không để thread sống ngoài màn).
 
         (Đợt 3 — trước đây còn dừng slot thread của 2 nút FF và của xuất/nhập
-        file; hai slot đó đã gỡ cùng hai đường hành vi.  F4 thêm worker đọc
-        panel thiếu số liệu.)"""
+        file; hai slot đó đã gỡ cùng hai đường hành vi.)"""
         self.shutdown()
         super().closeEvent(event)
-
-    # -- panel "Sự kiện đang thiếu số liệu" (d.1544-1545, d.1613-1617) -----------
-
-    def _reload_pending(self) -> None:
-        """Đọc ``events_pending_actual`` qua worker nền (khuôn đọc bảng hiện có
-        — contract §8: chỉ nuôi panel hướng dẫn, không phục vụ fetch tự động)."""
-        if self.news_controller is None:
-            self._show_pending([])
-            return
-
-        def read() -> list[CalendarEvent]:
-            return list(self.news_controller.events_pending_actual(datetime.now(UTC)))
-
-        self._stop_pending_worker()
-        thread = QThread(self)
-        worker = NewsReadWorker(read)
-        worker.moveToThread(thread)
-        thread.started.connect(worker.run)
-        worker.succeeded.connect(self._on_pending_loaded)
-        worker.failed.connect(lambda _message: self._show_pending([]))
-        worker.finished.connect(thread.quit)
-        worker.finished.connect(worker.deleteLater)
-        thread.finished.connect(thread.deleteLater)
-        thread.finished.connect(lambda: self._forget_pending_thread(thread))
-        self._pending_thread = thread
-        self._pending_worker = worker
-        thread.start()
-
-    def _forget_pending_thread(self, thread: QThread) -> None:
-        if self._pending_thread is thread:
-            self._pending_thread = None
-            self._pending_worker = None
-
-    def _stop_pending_worker(self) -> None:
-        thread = self._pending_thread
-        self._pending_thread = None
-        self._pending_worker = None
-        if thread is None:
-            return
-        try:
-            if thread.isRunning():
-                thread.quit()
-                thread.wait(2000)
-        except RuntimeError:
-            pass
-
-    def _on_pending_loaded(self, payload: object) -> None:
-        self._show_pending(list(payload) if isinstance(payload, list) else [])
-
-    def _show_pending(self, events: list[CalendarEvent]) -> None:
-        """Dựng lại nội dung panel — mỗi dòng một hàng cố định cao token, tiêu
-        đề cắt "…" khi dài (QĐ-P2); danh sách nằm trong vùng cuộn (QĐ-P1)."""
-        self._clear_layout(self._pending_layout)
-        self._pending_events = list(events)
-        for event in events:
-            row = _PendingRow()
-            row_layout = QHBoxLayout(row)
-            row_layout.setContentsMargins(0, 0, 0, 0)
-            row_layout.setSpacing(8)
-            label = _ElidedLabel(
-                f"{_display_time(event.event_time_utc)} · {event.currency} · {event.title}"
-            )
-            label.setObjectName("CardDetail")
-            row_layout.addWidget(label, 1)
-            button = action_button(OPEN_FF_TEXT)
-            button.clicked.connect(lambda _checked=False, ev=event: self._open_ff_page(ev))
-            row_layout.addWidget(button)
-            self._pending_layout.addWidget(row)
-        self._pending_panel.setVisible(bool(events))
-
-    @staticmethod
-    def _clear_layout(layout) -> None:
-        while layout.count():
-            item = layout.takeAt(0)
-            widget = item.widget()
-            if widget is not None:
-                widget.deleteLater()
-
-    def _open_ff_page(self, event: CalendarEvent) -> None:
-        """Mở trang lịch tuần FF bằng trình duyệt ngoài (QĐ-F4/F10 — chỉ
-        ``QDesktopServices.openUrl``; app không phát request mạng nào)."""
-        QDesktopServices.openUrl(QUrl(ff_week_url_for_event(event.event_time_utc)))
 
     def _notify(self, title: str, text: str, *, suggestion: str | None = None, on_suggestion=None) -> None:
         """QMessageBox khuôn ``journal_screen`` (D8) — gợi ý là nút AcceptRole."""
@@ -2403,13 +2372,12 @@ class NewsScreen(QWidget):
 
     def open_paste_dialog(self) -> None:
         """Mở dialog dán mã nguồn 2 pha (chặn) — sau "Cập nhật" làm mới bảng tin
-        + panel (d.1611-1612); "Hủy" reject = không ghi, không run (§6.1 bước 6)."""
+        (d.1611-1612); "Hủy" reject = không ghi, không run (§6.1 bước 6)."""
         if self.news_controller is None:
             return
         dialog = self.create_paste_dialog()
         if dialog.exec() == QDialog.DialogCode.Accepted:
             self.reload_rows()
-            self._reload_pending()
 
     def create_paste_dialog(self) -> PasteSourceDialog:
         """Dựng (không mở) dialog dán mã nguồn 2 pha."""
@@ -2537,16 +2505,17 @@ class NewsScreen(QWidget):
         return build_rows(list(events), list(items))
 
     def _window_bounds(self) -> tuple[str, str]:
-        """Khoảng ngày của bộ lọc → mốc ISO UTC (đầu ngày đầu, cuối ngày cuối)."""
+        """Khoảng ngày của bộ lọc → mốc ISO UTC (đầu ngày đầu, cuối ngày cuối).
+
+        Ngày người dùng chọn theo MÚI GIỜ NGƯỜI DÙNG (khóa
+        ``settings.display.timezone`` — Owner quyết 25/09/2026): 00:00/23:59 của
+        ngày chọn trong múi giờ đó, quy về UTC cho truy vấn (DB lưu UTC)."""
         start = self.date_from_input.date().toPyDate()
         end = self.date_to_input.date().toPyDate()
-        from_utc = datetime.combine(start, clock_time.min, tzinfo=UTC)
-        to_utc = datetime.combine(end, clock_time.max, tzinfo=UTC)
+        zone = _display_timezone()
+        from_utc = datetime.combine(start, clock_time.min, tzinfo=zone).astimezone(UTC)
+        to_utc = datetime.combine(end, clock_time.max, tzinfo=zone).astimezone(UTC)
         return _iso(from_utc), _iso(to_utc)
-
-    def refresh_rows(self) -> None:
-        """Áp lại bộ lọc hiển thị trên tập dòng đã đọc (không đọc lại DB)."""
-        self._apply_rows(self._rows)
 
     def _selected(self, combo: QComboBox) -> str | None:
         value = combo.currentData()
@@ -2578,7 +2547,7 @@ class NewsScreen(QWidget):
             return
         self.currency_combo.blockSignals(True)
         self.currency_combo.clear()
-        self.currency_combo.addItem(f"{ALL_PREFIX} {FILTER_LABELS[1].lower()}", None)
+        self.currency_combo.addItem(ALL_PREFIX, None)
         for code in codes:
             self.currency_combo.addItem(code, code)
         if current in codes:

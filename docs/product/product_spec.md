@@ -102,10 +102,9 @@ Tính năng tầng dữ liệu tin tức theo contract duy nhất
   như dữ liệu nhập tay.
 - **Màn Quản lý tin (Tin tức):** xem/lọc theo ngày, nhập/sửa tin tay, **dán
   mã nguồn trang ForexFactory** 2 pha (bóc tách → bảng xem trước chỉnh sửa
-  được → xác nhận cập nhật — kênh duy nhất của lịch kinh tế + actual) kèm
-  panel hướng dẫn "sự kiện đang thiếu số liệu". (Xuất/nhập file CSV-JSON đã
-  bãi bỏ đợt 3 — sao lưu thuộc về tệp database; bù ngày app không chạy bằng
-  dán mã nguồn trang của ngày cũ.)
+  được → xác nhận cập nhật — kênh duy nhất của lịch kinh tế + actual). (Xuất/nhập
+  file CSV-JSON đã bãi bỏ đợt 3 — sao lưu thuộc về tệp database; bù ngày app
+  không chạy bằng dán mã nguồn trang của ngày cũ.)
 - **AI nhận định xu hướng:** cửa sổ trong màn Quản lý tin gọi AI đánh giá xu
   hướng ngắn hạn/trung hạn/dài hạn của cặp tiền từ tin trong database. Kết
   quả **chỉ để người dùng tham khảo — không tham gia bất cứ quy trình nào**

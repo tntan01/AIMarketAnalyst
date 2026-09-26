@@ -974,12 +974,6 @@ class NewsController:
         the repository at read time."""
         return self._repo.events_in_range(from_utc, to_utc, currencies, include_non_impact)
 
-    def events_pending_actual(self, now: datetime) -> list[CalendarEvent]:
-        """Events past their grace window without an actual (§8) — from đợt 3
-        it feeds the guidance panel of the news screen, never an automatic
-        fetch (contract §8)."""
-        return self._repo.events_pending_actual(now)
-
     def items_in_range(
         self,
         from_utc: str,
@@ -1000,6 +994,23 @@ class NewsController:
         """Freshness of each signal (§8/§6.5) — delegated; the classification
         comes from ``core/news_freshness.py``."""
         return self._repo.store_state()
+
+    def display_timezone(self) -> str:
+        """Múi giờ hiển thị của tầng trình bày (Owner quyết 25/09/2026).
+
+        Đọc khóa ``settings.display.timezone`` (Settings cho chọn
+        ``Asia/Ho_Chi_Minh`` / ``Asia/Bangkok`` / ``UTC``) — seam trình bày cho
+        News UI (news_screen không được import ``services`` — L1/E2, khuôn
+        ``_fred_api_key`` d.473-484); khóa thiếu/hỏng → fallback
+        ``Asia/Ho_Chi_Minh`` (B4 — không im lặng lạc quan).  Dữ liệu lưu vẫn UTC
+        (§4.2/§6.1 bước 3) — chỉ tầng trình bày đổi múi giờ khi hiển thị."""
+        try:
+            from services.settings_service import SettingsService
+
+            name = str(SettingsService().load().display.timezone or "")
+        except Exception:
+            name = ""
+        return name or "Asia/Ho_Chi_Minh"
 
     # --- AI trend judgement (§9.1, plan L3.5) --------------------------------------
 

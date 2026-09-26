@@ -302,6 +302,13 @@ class ResponsiveGrid(QWidget):
     ``stretch=True`` (mặc định) cho các ô giãn đầy bề ngang — dùng cho lưới
     card. ``stretch=False`` giữ mỗi ô đúng bề ngang tự nhiên và xếp trái, đúng
     bố cục dãy nút hiện có, chỉ khác là biết xuống dòng khi thiếu chỗ.
+
+    ``fluid=True`` (opt-in — mặc định tắt): thay vì nhị phân "đủ chỗ thì đủ
+    ``columns`` cột, thiếu thì rơi về ``compact_columns``", lưới chọn **số
+    cột lớn nhất vừa bề ngang thực tế** trong khoảng
+    ``[compact_columns, columns]`` — tránh rơi thẳng về compact ở bề ngang
+    trung bình (vd 1920px scale 150% = 1280px logic). Dùng cho dải lọc co theo
+    nội dung; các lưới cũ giữ nguyên hành vi.
     """
 
     def __init__(
@@ -313,6 +320,7 @@ class ResponsiveGrid(QWidget):
         spacing: int = DEFAULT_SPACING,
         stretch: bool = True,
         item_min_width: int | None = None,
+        fluid: bool = False,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -324,6 +332,7 @@ class ResponsiveGrid(QWidget):
         )
         self._spacing = spacing
         self._stretch = stretch
+        self._fluid = fluid
         # Bề ngang tối thiểu của MỘT ô, khi caller biết rõ nội dung cần bao
         # nhiêu (widget tự báo minimum ~0 vì nhãn dùng elide thì không dùng được).
         self._item_min_width = item_min_width
@@ -374,6 +383,20 @@ class ResponsiveGrid(QWidget):
 
         return self._line_width(self._columns)
 
+    def _fitted_columns(self) -> int:
+        """Số cột lớn nhất vừa bề ngang hiện tại (chế độ fluid).
+
+        Quét từ ``columns`` xuống ``compact_columns``; không mức nào vừa thì
+        về ``compact_columns`` (sàn). Chỉ dùng khi ``fluid=True``."""
+
+        widgets = self._visible_widgets()
+        if not widgets:
+            return self._compact_columns
+        for count in range(self._columns, self._compact_columns - 1, -1):
+            if self._line_width(count) <= self.width():
+                return count
+        return self._compact_columns
+
     def column_count(self) -> int:
         """Số cột đang dùng — điểm neo cho test hành vi."""
 
@@ -388,11 +411,14 @@ class ResponsiveGrid(QWidget):
         self._relayout()
 
     def _relayout(self, *, force: bool = False) -> None:
-        target = (
-            self._compact_columns
-            if self.width() < self.required_width()
-            else self._columns
-        )
+        if self._fluid:
+            target = self._fitted_columns()
+        else:
+            target = (
+                self._compact_columns
+                if self.width() < self.required_width()
+                else self._columns
+            )
         if target == self._active_columns and not force:
             return
 

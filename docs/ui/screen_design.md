@@ -1300,8 +1300,16 @@ Display Settings (Cài đặt hiển thị)
 Language (ngôn ngữ):
 [ Vietnamese (tiếng Việt) ▼ ]
 
-Timezone (múi giờ):
+Timezone (múi giờ — khóa `display.timezone`):
 [ Asia/Ho_Chi_Minh (giờ Việt Nam) ▼ ]
+
+Options (lựa chọn múi giờ):
+- Asia/Ho_Chi_Minh (giờ Việt Nam — mặc định)
+- Asia/Bangkok (giờ Thái Lan)
+- UTC (giờ quốc tế)
+
+Mọi cột thời gian toàn app hiển thị theo múi giờ đã chọn; dữ liệu lưu trữ vẫn
+UTC, chỉ tầng trình bày đổi múi giờ khi hiển thị.
 
 Term Explanation Mode (chế độ giải thích thuật ngữ):
 [ Always Show (luôn hiển thị) ▼ ]
@@ -1534,15 +1542,13 @@ ForexFactory để cập nhật lịch kinh tế + actual** (kênh duy nhất �
 ### Bố cục
 
 ```text
-[ Tin tức (Quản lý tin)                                        ]
+[ Tin tức                                                      ]
 
-[ Bộ lọc: Loại tin ▼ | Đồng tiền ▼ | Tác động ▼ | Nguồn ▼ | Trạng thái ▼ | Khoảng ngày ]
+[ Loại tin [Tất cả ▼] | Đồng tiền [Tất cả ▼] | Tác động [Tất cả ▼] | Nguồn [Tất cả ▼] ]
+[ Trạng thái [Tất cả ▼] | Khoảng ngày [dd/MM/yyyy] → [dd/MM/yyyy] | [ Tìm kiếm ] ]
 
 [ Bảng tin ]
   Thời gian | Loại | Nguồn | Đồng tiền | Tiêu đề/Nội dung | Tác động | Thực tế | Trạng thái | Chi tiết
-
-[ Panel "Sự kiện đang thiếu số liệu": danh sách sự kiện `stale` (từ
-  events_pending_actual) + link trang FF tương ứng cần mở để dán mã nguồn ]
 
 [ Thanh công cụ: Dán mã nguồn trang | Nhập tin | AI nhận định xu hướng ]
 ```
@@ -1552,9 +1558,42 @@ ForexFactory để cập nhật lịch kinh tế + actual** (kênh duy nhất �
   `scheduled`/`released`/`stale` (sự kiện) và cờ `excluded` (tin văn bản) bằng
   badge theo semantic palette của style guide. Nhãn tiếng Việt theo **Từ điển
   hiển thị** bên dưới.
-- **Bộ lọc:** theo `kind` (sự kiện/headline/phát biểu/nhập tay), đồng tiền,
-  `impact`, `source`, trạng thái, khoảng ngày — giá trị enum lấy đúng từ vựng
-  miền trong contract (S5), nhãn tiếng Việt theo **Từ điển hiển thị** bên dưới.
+- **Múi giờ hiển thị:** mọi cột thời gian trên màn (bảng tin, bảng xem trước
+  dán mã nguồn, dialog chi tiết) hiển thị theo **múi giờ người dùng đã chọn**
+  trong Settings — khóa `display.timezone`, 3 lựa chọn `Asia/Ho_Chi_Minh` /
+  `Asia/Bangkok` / `UTC` (mặc định `Asia/Ho_Chi_Minh`). Dữ liệu lưu trong
+  database vẫn UTC (`event_time_utc`/`day_key` — contract §4.2): chỉ tầng trình
+  bày đổi múi giờ khi hiển thị, không đổi giá trị lưu trữ.
+- **Bộ lọc (card tìm kiếm — thiết kế lại 26/09/2026, Owner duyệt):** chia
+  **2 dòng cố định** (Owner quyết 26/09/2026) — dòng 1: Loại tin, Đồng tiền,
+  Tác động, Nguồn; dòng 2: Trạng thái, Khoảng ngày, nút "Tìm
+  kiếm" (ô cuối lưới, phần tử bình thường của dải lọc). **Thẳng
+  cột** (Owner yêu cầu 26/09/2026): cột nhãn **đồng nhất bề rộng** mọi ô (bằng
+  nhãn rộng nhất), chữ nhãn **căn trái** (Owner quyết 26/09/2026) — ô nhập của
+  dòng 1
+  và dòng 2 cùng cột lưới bắt đầu tại **cùng tọa độ** (vd ô nhập Loại tin thẳng
+  với ô nhập Trạng thái). Ô nhập/combo co theo nội dung (bỏ
+  nhãn form cứng + ô giãn khiến card phình to); hẹp thật (800px shell) dải lọc
+  co xuống dòng thêm theo chế độ fluid của khuôn ResponsiveGrid — cột nhãn
+  đồng nhất giữ alignment ở mọi chế độ; nhãn/ô/nút **không giãn nở** theo cột
+  (phần bề ngang dư dồn về sau ô — riêng nút "Tìm kiếm" bám trái ô, phần dư
+  nằm ở rìa phải ngoài cùng, không neo mép phải cửa sổ). Theo `kind`
+  (sự kiện/headline/phát biểu/nhập tay), đồng tiền, `impact`, `source`,
+  trạng thái, khoảng ngày — giá trị enum lấy đúng từ vựng miền trong contract
+  (S5), nhãn tiếng Việt theo **Từ điển hiển thị** bên dưới. Mục đầu của mọi
+  combo là **"Tất tất"** (rút gọn — Owner quyết 26/09/2026: nhãn cạnh ô đã nói
+  ô đó lọc gì, không lặp "Tất tất loại tin/đồng tiền/…").
+- **Nút "Tìm kiếm"** (ô cuối dải lọc, nút bám trái — phần dư dồn về sau nút,
+  không neo mép phải cửa sổ — primary màu success kèm
+  icon `search` — cùng khuôn CSS nút
+  hành động của hệ thống như "Bóc tách"/"Nhận định"): **chỉ tìm khi bấm nút** —
+  chọn ô lọc/đổi ngày KHÔNG tự áp (Owner quyết 26/09/2026). Bấm nút → đọc lại
+  database theo cửa sổ ngày mới rồi áp các bộ lọc; mở màn vẫn tự nạp 1 lượt mặc
+  định (khoảng ngày mặc định giữ nguyên). Khi giá trị các ô lọc **lệch lần áp
+  gần nhất** (đổi ô mà chưa bấm nút), nút được **nhấn bằng property QSS
+  `filterDirty`** (viền màu cảnh báo — chỉ đổi màu, không đổi kích thước) cho
+  tới lần bấm kế tiếp: chỉ báo "bộ lọc đã đổi, chưa áp" (Owner duyệt
+  26/09/2026).
 - **Chi tiết dòng:** dialog xem đầy đủ nội dung/provenance (nguồn, giờ fetch,
   `raw_json` nếu có); với tin văn bản có URL thì kèm liên kết ngoài.
 
@@ -1570,7 +1609,7 @@ thị):
 | Cờ `excluded` (tin văn bản) | `excluded` = "Đã loại trừ" |
 | `kind` (tin văn bản) | `headline` = "Headline" · `statement` = "Phát biểu" · `user_note` = "Nhập tay" |
 | `impact` / `impact_hint` | `high` = "Cao" · `medium` = "Trung bình" · `low` = "Thấp" · `non` = "Không đáng kể" |
-| `source` | `ff_json` = "ForexFactory (lịch — dữ liệu cũ)" · `ff_html` = "ForexFactory (mã nguồn trang)" · `google_news_rss` = "Google News" · `fxstreet_rss` = "FXStreet" · `investing_rss` = "Investing" · `fred` = "FRED" · `config_fallback` = "Cấu hình dự phòng" · `user` = "Nhập tay" · `import` = "Nhập file (dữ liệu cũ)" |
+| `source` | `ff_json` = "ForexFactory (lịch — dữ liệu cũ)" · `ff_html` = "Forex Factory" · `google_news_rss` = "Google News" · `fxstreet_rss` = "FXStreet" · `investing_rss` = "Investing" · `fred` = "FRED" · `config_fallback` = "Cấu hình dự phòng" · `user` = "Nhập tay" · `import` = "Nhập file (dữ liệu cũ)" |
 | `direction` (verdict AI) | `bullish` = "Tăng" · `bearish` = "Giảm" · `neutral` = "Trung lập" · `insufficient_data` = "Không đủ dữ liệu" |
 | `confidence` (verdict AI) | `high` = "Cao" · `medium` = "Trung bình" · `low` = "Thấp" · `none` = "Không có" |
 | `horizon` (verdict AI) | `short` = "Ngắn hạn" · `mid` = "Trung hạn" · `long` = "Dài hạn" |
@@ -1592,7 +1631,7 @@ người dùng xác nhận trước khi ghi):
     lịch, JSON hỏng): thông báo rõ nguyên nhân, dialog giữ nguyên pha 1 để
     dán lại.
   - **Pha 2 — bảng xem trước + xác nhận:** bảng dữ liệu kinh tế đã bóc —
-    cột: Thời gian (UTC) | Đồng tiền | Sự kiện | Tác động | Dự báo | Kỳ trước
+    cột: Thời gian | Đồng tiền | Sự kiện | Tác động | Dự báo | Kỳ trước
     | **Thực tế (actual từ chính source)** | Trạng thái dòng (badge theo
     semantic palette, nhãn đúng Từ điển hiển thị: Mới / Sẽ cập nhật / Xung
     đột — giữ nhập tay / Đã sửa); kèm dòng đếm số quan sát lãi suất bóc
@@ -1609,13 +1648,7 @@ người dùng xác nhận trước khi ghi):
     hành) và **"Hủy"** (loại bỏ cả chỉnh sửa, không ghi, không sinh lượt
     ingest). Không bỏ chọn/xóa dòng — ghi toàn bộ lô (all-or-nothing).
 - Sau "Cập nhật": hiện **tóm tắt**: số bản ghi mới / cập nhật / xung đột (sự
-  kiện + lãi suất); bảng tin chính và panel bên dưới tự làm mới.
-- **Panel "Sự kiện đang thiếu số liệu"** (danh sách `stale` từ
-  `events_pending_actual` — contract §8): mỗi dòng hiện sự kiện + nút mở
-  trang FF tương ứng bằng trình duyệt mặc định (chỉ mở link — app không tự
-  fetch), giúp người dùng biết cần dán nguồn của ngày/trang nào; dán xong
-  panel tự làm mới. Danh sách hiển thị trong vùng cuộn giới hạn chiều cao
-  theo LayoutTokens; mỗi dòng một hàng, tiêu đề quá dài cắt "…".
+  kiện + lãi suất); bảng tin chính tự làm mới.
 
 ### Hành vi nhập/sửa tin
 
@@ -1631,7 +1664,7 @@ người dùng xác nhận trước khi ghi):
 ### Trạng thái tải và rỗng
 
 - **Bảng tin:** đọc database qua worker nền (`NewsController` → `NewsRepository`)
-  khi mở màn và khi đổi bộ lọc; hiện chỉ báo loading trong lúc đọc. Kết quả
+  khi mở màn và khi bấm nút "Tìm kiếm"; hiện chỉ báo loading trong lúc đọc. Kết quả
   rỗng → empty state "Không có tin trong khoảng lọc" kèm hành động gợi ý:
   nới khoảng ngày / "Dán mã nguồn trang" / "Nhập tin".
 - **Dialog AI nhận định:** trong lúc chờ verdict hiện progress + disable nút
@@ -1685,5 +1718,7 @@ Lịch sử nhận định của phạm vi này (mới nhất trước)
   ResponsiveRow/Grid) và tuân thủ contract kích thước cửa sổ tối thiểu 800×500.
 - Trạng thái: khung màn + nhập/sửa tin + dialog AI **IMPLEMENTED** (nghiệm thu
   23/09/2026); các thay đổi **đợt 3+4 (24/09/2026)** — gỡ 2 nút FF + xuất/nhập
-  file, thêm dialog dán mã nguồn **2 pha (bảng xem trước + xác nhận)** + panel
-  thiếu số liệu — **IMPLEMENTED** (ca "Nguồn dán FF" nghiệm thu 25/09/2026).
+  file, thêm dialog dán mã nguồn **2 pha (bảng xem trước + xác nhận)** —
+  **IMPLEMENTED** (ca "Nguồn dán FF" nghiệm thu 25/09/2026). Panel "Sự kiện
+  đang thiếu actual" đã có từ ca đó bị **GỠ** (Owner quyết 26/09/2026 — bỏ
+  tính năng khỏi hệ thống, theo contract §13).
