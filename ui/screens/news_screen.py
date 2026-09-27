@@ -31,13 +31,13 @@ ForexFactory).  Gợi ý "Nhập actual bằng tay" cũng bỏ (dán source là 
 duy nhất — contract §13 đợt 3).  Nhãn hiển thị nguồn đổi 3 chuỗi theo Từ điển
 đợt 3 (``ff_html`` = "Forex Factory", ``ff_json`` = "ForexFactory
 (lịch — dữ liệu cũ)", ``import`` = "Nhập file (dữ liệu cũ)" — nhãn cũ phục vụ
-dữ liệu cũ, GIỮ); empty state gợi ý "Dán mã nguồn trang".
+dữ liệu cũ, GIỮ).
 
 **Lô F4 — dialog dán mã nguồn 2 pha** (screen_design
 "Hành vi dán mã nguồn trang ForexFactory" d.1579-1617 + "Bố cục" d.1544-1547 +
 từ điển d.1577; contract §6.1 đợt 3+4; QĐ-F6/F9): toolbar
-**[ Dán mã nguồn trang | Nhập tin | AI nhận định xu hướng ]** — nút đầu và nút
-empty state cùng nhãn mở ``PasteSourceDialog`` (2 pha).  Pha 1: dán source hoặc
+**[ Dán mã nguồn trang | Nhập tin | AI nhận định xu hướng ]** — nút đầu mở
+``PasteSourceDialog`` (2 pha).  Pha 1: dán source hoặc
 chọn file `.html` (đọc file TRONG WORKER — không block GUI) → "Bóc tách" →
 ``controller.parse_pasted_source`` trong ``NewsReadWorker`` (khuôn D10 — không
 processEvents); lỗi parse → thông báo theo ``PARSE_ERROR_TEXT`` (L3 — ánh xạ mã
@@ -137,8 +137,11 @@ Khai báo đọc-hiểu (V2):
   theo trạng thái đó (screen_design yêu cầu cột Trạng thái hiển thị cờ này).
 * Khi ``app`` không cấp ``news_controller`` (app giả của bộ test shell —
   ``tools/capture_ui_style_baseline._fake_app`` — không có thuộc tính này và
-  file đó ngoài sổ điểm chạm), màn **không đọc gì** và hiện empty state: không
+  file đó ngoài sổ điểm chạm), màn **không đọc gì** và để bảng rỗng: không
   tự dựng controller thật để tránh mở ``news.db`` trong test của màn khác.
+* Kết quả lọc rỗng → bảng không có dòng nào, **không** hiện thông báo rỗng/không
+  thêm nút gợi ý (các nút hành vi đã có sẵn ở thanh công cụ) — Owner quyết
+  27/09/2026.
 * Bố cục dùng ``ResponsiveGrid`` (khuôn ``ui/responsive_row.py``) cho dãy bộ lọc
   và thanh công cụ. Dải lọc bật chế độ **fluid** (opt-in 26/09/2026): số cột
   lấy lớn nhất vừa bề ngang thực tế trong [1..đầy] — không rơi thẳng về compact
@@ -303,18 +306,10 @@ TOOLBAR_LABELS: tuple[str, ...] = (
 # DB theo cửa sổ ngày mới).
 SEARCH_BUTTON_TEXT = "Tìm kiếm"
 DATE_RANGE_ARROW_TEXT = "→"  # nối 2 ô ngày trong cụm "Khoảng ngày"
-EMPTY_TEXT = "Không có tin trong khoảng lọc"
 LOADING_TEXT = "Đang tải..."
 DETAIL_TEXT = "Chi tiết"
 ALL_PREFIX = "Tất cả"
 NO_VALUE = "—"
-
-# Nút gợi ý empty state (screen_design "Trạng thái tải và rỗng" d.1634-1635:
-# "nới khoảng ngày / 'Dán mã nguồn trang' / 'Nhập tin'").  "Dán mã nguồn trang"
-# = nút thanh công cụ thứ nhất (F4 — cùng nhãn, cùng handler `open_paste_dialog`);
-# "Nhập tin" đi thẳng form nhập tay.
-PASTE_SOURCE_TEXT = TOOLBAR_LABELS[0]
-EMPTY_STATE_LABELS: tuple[str, ...] = (TOOLBAR_LABELS[0], TOOLBAR_LABELS[1])
 
 # Nhãn dùng trong dialog chi tiết (đều đã có nguồn: nhãn cột hoặc câu chữ screen_design).
 PROVENANCE_LABELS: tuple[str, ...] = ("Thời gian", "Nguồn", "Giờ fetch", "Liên kết")
@@ -1988,7 +1983,6 @@ class NewsScreen(QWidget):
         # gỡ cùng hai đường hành vi đó; màn chỉ còn worker đọc bảng + worker AI
         # nằm trong chính dialog.)
         self.toolbar_buttons: dict[str, QPushButton] = {}
-        self.empty_state_buttons: dict[str, QPushButton] = {}
         # Snapshot giá trị 7 control lọc tại lần áp gần nhất (vòng 6 — chốt mỗi
         # ``reload_rows``); ``None`` = chưa từng nạp được (app giả) → tắt dirty.
         self._applied_snapshot: tuple | None = None
@@ -2222,29 +2216,7 @@ class NewsScreen(QWidget):
         )
         self.status_message.setVisible(False)
         table_card.layout().addWidget(self.status_message)
-
-        self.empty_actions = QWidget()
-        empty_layout = QHBoxLayout(self.empty_actions)
-        empty_layout.setContentsMargins(0, 0, 0, 0)
-        empty_layout.setSpacing(8)
-        empty_layout.addStretch(1)
-        for label in EMPTY_STATE_LABELS:
-            button = action_button(label)
-            button.clicked.connect(self._empty_action_handler(label))
-            empty_layout.addWidget(button)
-            self.empty_state_buttons[label] = button
-        empty_layout.addStretch(1)
-        table_card.layout().addWidget(self.empty_actions)
         return table_card
-
-    def _empty_action_handler(self, label: str):
-        """Nút gợi ý empty state (d.1634-1635): "Dán mã nguồn trang" đi thẳng
-        dialog dán (F4 — cùng handler nút toolbar); "Nhập tin" đi form nhập tay."""
-        if label == TOOLBAR_LABELS[0]:
-            return lambda: self.open_paste_dialog()
-        if label == TOOLBAR_LABELS[1]:
-            return lambda: self.open_note_dialog()
-        return lambda: None
 
     def _toolbar(self) -> QWidget:
         toolbar = ResponsiveGrid(
@@ -2532,11 +2504,7 @@ class NewsScreen(QWidget):
         )
         self._sync_currency_options(rows)
         self.table_model.set_rows(visible)
-        if not visible:
-            self._show_empty_state()
-        else:
-            self.status_message.setVisible(False)
-            self.empty_actions.setVisible(False)
+        self.status_message.setVisible(False)
 
     def _sync_currency_options(self, rows: list[NewsRow]) -> None:
         """Danh mục đồng tiền của bộ lọc lấy từ chính dữ liệu đã đọc (không bịa danh sách)."""
@@ -2554,18 +2522,9 @@ class NewsScreen(QWidget):
             self.currency_combo.setCurrentIndex(codes.index(current) + 1)
         self.currency_combo.blockSignals(False)
 
-    def _show_empty_state(self) -> None:
-        set_rich_html(
-            self.status_message,
-            empty_state_html(EMPTY_TEXT, tone=EMPTY_TONE, icon="search", icon_role="muted"),
-        )
-        self.status_message.setVisible(True)
-        self.empty_actions.setVisible(True)
-
     def _set_status(self, message: str) -> None:
         set_rich_html(self.status_message, empty_state_html(message, tone=EMPTY_TONE))
         self.status_message.setVisible(True)
-        self.empty_actions.setVisible(False)
 
     def _on_rows_loaded(self, payload: object) -> None:
         self._rows = list(payload) if isinstance(payload, list) else []
@@ -2574,7 +2533,6 @@ class NewsScreen(QWidget):
     def _on_rows_failed(self, message: str) -> None:
         set_rich_html(self.status_message, empty_state_html(message, tone="danger", icon="alert-triangle", icon_role="danger"))
         self.status_message.setVisible(True)
-        self.empty_actions.setVisible(False)
 
     # -- chi tiết dòng ----------------------------------------------------------
 

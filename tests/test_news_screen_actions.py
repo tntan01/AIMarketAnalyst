@@ -588,22 +588,10 @@ class TestRowActions:
         assert _wait_until(lambda: len(controller.item_calls) > reads_before)
 
 
-# ---- 6. empty state + ranh giới lô --------------------------------------------
+# ---- 6. ranh giới lô -----------------------------------------------------------
 
 
-class TestEmptyStateAndBoundaries:
-    def test_empty_state_buttons_are_enabled_and_wired(self):
-        """F4 — empty state gợi ý "Dán mã nguồn trang" (nối dialog dán — không
-        còn giữ chỗ) + "Nhập tin" (đi thẳng form)."""
-        controller = FakeNewsController(events=[], items=[])
-        screen = _screen(controller)
-        _wait_until(lambda: screen.empty_actions.isVisible())
-
-        assert set(screen.empty_state_buttons) == {news.PASTE_SOURCE_TEXT, news.TOOLBAR_LABELS[1]}
-        for label, button in screen.empty_state_buttons.items():
-            assert button.isEnabled() is True
-            assert button.receivers(button.clicked) >= 1
-
+class TestBoundaries:
     def test_the_three_toolbar_buttons_are_wired(self):
         """F4: toolbar đúng 3 nút [ Dán mã nguồn trang | Nhập tin | AI nhận định
         xu hướng ] — cả ba đã nối hành vi."""
@@ -617,19 +605,6 @@ class TestEmptyStateAndBoundaries:
             assert button.receivers(button.clicked) >= 1
         assert news.TOOLBAR_LABELS[0] not in skipped
         assert screen.toolbar_buttons[news.TOOLBAR_LABELS[0]].isEnabled() is True
-
-    def test_empty_state_paste_button_opens_the_paste_dialog(self):
-        """Nút empty state "Dán mã nguồn trang" đi thẳng dialog dán (cùng handler
-        với nút toolbar — d.1634-1635)."""
-        controller = FakeNewsController(events=[], items=[])
-        screen = _screen(controller)
-        _wait_until(lambda: screen.empty_actions.isVisible())
-
-        opened: list[str] = []
-        screen.open_paste_dialog = lambda: opened.append("paste")  # type: ignore[method-assign]
-
-        screen.empty_state_buttons[news.PASTE_SOURCE_TEXT].click()
-        assert opened == ["paste"]
 
 
 # ---- 8. (gỡ đợt 3: 2 nút "Xuất file"/"Nhập file" — test của hành vi bị xóa) ----

@@ -1665,8 +1665,9 @@ người dùng xác nhận trước khi ghi):
 
 - **Bảng tin:** đọc database qua worker nền (`NewsController` → `NewsRepository`)
   khi mở màn và khi bấm nút "Tìm kiếm"; hiện chỉ báo loading trong lúc đọc. Kết quả
-  rỗng → empty state "Không có tin trong khoảng lọc" kèm hành động gợi ý:
-  nới khoảng ngày / "Dán mã nguồn trang" / "Nhập tin".
+  rỗng → bảng không có dòng nào; **không** hiện thông báo rỗng và **không** thêm
+  nút gợi ý (các nút "Dán mã nguồn trang" / "Nhập tin" đã có sẵn ở thanh công cụ —
+  Owner quyết 27/09/2026).
 - **Dialog AI nhận định:** trong lúc chờ verdict hiện progress + disable nút
   "Nhận định" (lời gọi chạy worker nền — đã quy định ở mục dưới); lỗi provider
   → thông báo `friendly_error()`.

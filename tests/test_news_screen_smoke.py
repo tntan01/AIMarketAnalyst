@@ -453,23 +453,16 @@ class TestLoadingAndEmptyState:
         assert controller.item_calls and controller.item_calls[0][2] is False  # excluded=1 vẫn đọc
         assert screen.status_message.isVisible() is False
 
-    def test_empty_filter_shows_the_registered_empty_state(self):
+    def test_empty_filter_leaves_the_table_empty_without_message(self):
         screen = _screen()
         _wait_until(lambda: screen.table_model.rowCount() > 0)
 
         screen._apply_rows([])  # không có dòng nào trong khoảng lọc
 
         assert screen.table_model.rowCount() == 0
-        assert news.EMPTY_TEXT in screen.status_message.toPlainText()
-        assert screen.status_message.isVisible() is True
-        assert screen.empty_actions.isVisible() is True
-        # F4: "Dán mã nguồn trang" (bật — đi dialog dán) + "Nhập tin" (đi form).
-        assert set(screen.empty_state_buttons) == {
-            news.PASTE_SOURCE_TEXT,
-            news.TOOLBAR_LABELS[1],
-        }
-        assert screen.empty_state_buttons[news.PASTE_SOURCE_TEXT].isEnabled() is True
-        assert screen.empty_state_buttons[news.TOOLBAR_LABELS[1]].isEnabled() is True
+        # Không có tin → chỉ để bảng rỗng, không thông báo/không nút gợi ý
+        # (các nút hành vi đã có sẵn ở thanh công cụ — Owner quyết 27/09/2026).
+        assert screen.status_message.isVisible() is False
 
     def test_reading_error_is_reported_without_crashing(self):
         screen = _screen()
