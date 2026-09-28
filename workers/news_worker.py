@@ -59,7 +59,7 @@ from PyQt6.QtCore import QObject, QTimer, pyqtSignal, pyqtSlot
 from controllers.news_controller import NewsController
 from workers.base_worker import WorkerState
 
-__all__ = ["NewsReadWorker", "NewsWorker"]
+__all__ = ["NewsAiBatchWorker", "NewsReadWorker", "NewsWorker"]
 
 # Unit conversion only (the cadences themselves are policy values, R4).
 _MINUTE_MS = 60_000
@@ -167,6 +167,51 @@ class NewsWorker(QObject):
             return
         self.state = WorkerState.FINISHED
         self.yields_succeeded.emit(result)
+
+
+class NewsAiBatchWorker(QObject):
+    """Runs the "Nhận định tất cả" batch in a background thread (plan B4).
+
+    One call per run — ``NewsController.analyze_all_trends`` — with an
+    ``on_scope_done`` callback that becomes the ``progress`` signal (number of
+    scopes done + scope name).  No domain logic: the loop, the per-scope
+    fail-open behaviour and the counting live in the controller (contract §3 —
+    a worker only wraps concurrency).  A run always ends with ``finished``.
+    """
+
+    progress = pyqtSignal(int, str)  # (scopes done, scope name)
+    succeeded = pyqtSignal(object)  # BatchTrendResult
+    failed = pyqtSignal(str)
+    finished = pyqtSignal()
+
+    def __init__(self, controller: NewsController) -> None:
+        super().__init__()
+        self._controller = controller
+        self._done = 0
+        self.state = WorkerState.IDLE
+
+    @pyqtSlot()
+    def run(self) -> None:
+        """Run the batch once (in the thread this worker was moved to)."""
+        self._done = 0
+        self.state = WorkerState.RUNNING
+        try:
+            result = self._controller.analyze_all_trends(
+                on_scope_done=self._on_scope_done
+            )
+        except Exception as exc:
+            self.state = WorkerState.FAILED
+            self.failed.emit(str(exc))
+        else:
+            self.state = WorkerState.FINISHED
+            self.succeeded.emit(result)
+        finally:
+            self.finished.emit()
+
+    def _on_scope_done(self, scope: str, _result: object) -> None:
+        """One scope finished — emit the typed progress packet."""
+        self._done += 1
+        self.progress.emit(self._done, scope)
 
 
 class NewsReadWorker(QObject):

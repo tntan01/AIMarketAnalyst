@@ -25,6 +25,7 @@ import hashlib
 import inspect
 import json
 import os
+import json
 import sqlite3
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -35,8 +36,11 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from config.paths import PROJECT_ROOT
 from controllers import app_controller as app_controller_module
+from controllers import news_controller as news_controller_module
 from controllers.app_controller import AppController
 from controllers.news_controller import (
+    BatchScopeResult,
+    BatchTrendResult,
     NewsController,
     SourceIngestResult,
     SourcePreview,
@@ -95,6 +99,7 @@ class FakeRepository:
         self.upsert_items_calls: list[list[NewsItem]] = []
         self.upsert_items_result = UpsertItemsResult(inserted=1, updated=0)
         self.record_run_calls: list[IngestRun] = []
+        self.add_verdict_calls: list[list[TrendVerdict]] = []
         self.record_run_result = 42
         self.set_excluded_result = 1
         self.delete_user_note_result = 1
@@ -161,6 +166,11 @@ class FakeRepository:
     def verdicts_for(self, scope_type: VerdictScopeType, scope_value: str, limit: int) -> list[TrendVerdict]:
         self._record("verdicts_for", (scope_type, scope_value, limit), {})
         return self.verdict_history
+
+    def add_verdicts(self, verdicts: list[TrendVerdict]) -> int:
+        self._record("add_verdicts", (verdicts,), {})
+        self.add_verdict_calls.append(list(verdicts))
+        return len(verdicts)
 
 
 class FakeRssProducer:
@@ -1159,6 +1169,163 @@ class TestAiMarketContextRead:
 
         assert preview.rate_available is False
         assert preview.yields_available is False
+
+
+# ---- 4c. batch "Nhận định tất cả" (§9.1 bước 7, D1/D2) --------------------------
+
+
+class FakeAIService:
+    """Fake ``AIService``: trả cùng một payload hợp lệ, đếm lời gọi, tùy chọn
+    raise ở lần gọi thứ N (mô phỏng một phạm vi lỗi)."""
+
+    def __init__(self, payload: str, *, error_after: int | None = None) -> None:
+        self.payload = payload
+        self.error_after = error_after
+        self.calls: list[str] = []
+
+    def analyze(self, prompt: str) -> str:
+        self.calls.append(prompt)
+        if self.error_after is not None and len(self.calls) == self.error_after:
+            raise RuntimeError("AI boom")
+        return self.payload
+
+
+class _FakeProvider:
+    def __init__(self, api_key: str = "key-1") -> None:
+        self.api_key = api_key
+        self.provider = "deepseek"
+        self.model = "deepseek-v4-flash"
+        self.base_url = ""
+
+
+def _batch_verdict_json(ids: list[int]) -> str:
+    return json.dumps(
+        {
+            "short": {"direction": "bullish", "confidence": "high", "rationale": "x", "evidence_item_ids": ids},
+            "mid": {"direction": "neutral", "confidence": "medium", "rationale": "x", "evidence_item_ids": ids},
+            "long": {"direction": "insufficient_data", "confidence": "none", "rationale": "x", "evidence_item_ids": []},
+        }
+    )
+
+
+def _batch_event(row_id: int) -> CalendarEvent:
+    return CalendarEvent(
+        day_key="2026-09-21",
+        event_time_utc="2026-09-21T08:00:00Z",
+        currency="USD",
+        title="FOMC Meeting",
+        impact=EventImpact.HIGH,
+        status=EventStatus.SCHEDULED,
+        source=EventSource.FF_JSON,
+        dedupe_key=f"e{row_id}",
+        fetched_at="2026-09-21T01:00:00Z",
+        id=row_id,
+    )
+
+
+def _batch_controller(ai: FakeAIService, repo: FakeRepository | None = None) -> NewsController:
+    return NewsController(
+        repo=repo if repo is not None else FakeRepository(),
+        policy=_policy(),
+        rss_producer=FakeRssProducer(),
+        bond_yield_producer=FakeBondYieldProducer(),
+        ai_service=ai,
+        ai_config_provider=lambda: _FakeProvider(),
+        schedule_starter=FakeStarter(),
+    )
+
+
+class TestAiAssetScopes:
+    def test_eleven_assets_derived_from_supported_symbols(self):
+        controller = _controller(repo=FakeRepository())
+
+        scopes = controller.AI_ASSET_SCOPES
+
+        assert len(scopes) == 11
+        assert set(scopes) == {
+            "AUD", "CAD", "CHF", "EUR", "GBP", "JPY", "NZD", "USD", "XAU", "XAG", "BTC",
+        }
+        assert len(set(scopes)) == 11  # unique
+        assert scopes == tuple(dict.fromkeys(scopes))  # stable order, no repeats
+
+    def test_derived_from_the_symbols_constant(self, monkeypatch):
+        monkeypatch.setattr(
+            news_controller_module, "SUPPORTED_SYMBOLS", ["AAA/BBB", "CCC/AAA"]
+        )
+        controller = _controller(repo=FakeRepository())
+
+        assert controller.AI_ASSET_SCOPES == ("AAA", "BBB", "CCC")
+
+
+class TestAnalyzeAllTrends:
+    def test_all_eleven_ok_in_order_and_stored(self):
+        repo = FakeRepository()
+        repo.events = [_batch_event(1), _batch_event(2), _batch_event(3)]
+        ai = FakeAIService(_batch_verdict_json([1, 2, 3]))
+        controller = _batch_controller(ai, repo)
+        seen: list[str] = []
+
+        result = controller.analyze_all_trends(on_scope_done=lambda scope, _r: seen.append(scope))
+
+        assert isinstance(result, BatchTrendResult)
+        assert len(result.results) == 11
+        assert all(isinstance(entry, BatchScopeResult) for entry in result.results)
+        assert [entry.scope for entry in result.results] == list(controller.AI_ASSET_SCOPES)
+        assert (result.ok, result.insufficient, result.error) == (11, 0, 0)
+        assert seen == list(controller.AI_ASSET_SCOPES)  # callback đúng 11 lần, đúng thứ tự
+        assert len(ai.calls) == 11
+        assert sum(len(call) for call in repo.add_verdict_calls) == 33  # 11 × 3
+
+    def test_one_ai_error_does_not_stop_the_batch(self):
+        repo = FakeRepository()
+        repo.events = [_batch_event(1), _batch_event(2), _batch_event(3)]
+        ai = FakeAIService(_batch_verdict_json([1, 2, 3]), error_after=3)
+        controller = _batch_controller(ai, repo)
+        seen: list[str] = []
+
+        result = controller.analyze_all_trends(on_scope_done=lambda scope, _r: seen.append(scope))
+
+        assert len(result.results) == 11
+        assert (result.ok, result.error) == (10, 1)
+        assert len(seen) == 11  # phạm vi lỗi vẫn báo callback, lô không dừng
+        failed = [
+            entry for entry in result.results
+            if not entry.result.ok and not entry.result.insufficient
+        ]
+        assert len(failed) == 1 and failed[0].result.error_message
+
+    def test_raised_analyze_trend_is_caught_and_batch_continues(self, monkeypatch):
+        repo = FakeRepository()
+        repo.events = [_batch_event(1), _batch_event(2), _batch_event(3)]
+        ai = FakeAIService(_batch_verdict_json([1, 2, 3]))
+        controller = _batch_controller(ai, repo)
+        original = controller.analyze_trend
+
+        def flaky(scope_type: str, scope_value: str, now=None):
+            if scope_value == "CHF":
+                raise RuntimeError("boom")
+            return original(scope_type, scope_value, now)
+
+        monkeypatch.setattr(controller, "analyze_trend", flaky)
+
+        result = controller.analyze_all_trends()
+
+        assert len(result.results) == 11
+        assert (result.ok, result.error) == (10, 1)
+        assert len(ai.calls) == 10  # scope raise chưa từng chạm AI; phần còn lại chạy
+
+    def test_insufficient_scopes_never_call_the_ai(self):
+        repo = FakeRepository()  # không có tin/sự kiện → mọi phạm vi dưới floor
+        ai = FakeAIService(_batch_verdict_json([1]))
+        controller = _batch_controller(ai, repo)
+        seen: list[str] = []
+
+        result = controller.analyze_all_trends(on_scope_done=lambda scope, _r: seen.append(scope))
+
+        assert result.insufficient == 11
+        assert (result.ok, result.error) == (0, 0)
+        assert ai.calls == []  # fail-closed: không gọi AI (B4)
+        assert len(seen) == 11
 
 
 # ---- 5. worker (bọc concurrency, không logic nghiệp vụ) -------------------------

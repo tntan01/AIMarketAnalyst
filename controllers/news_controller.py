@@ -127,6 +127,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 
+from config.constants import SUPPORTED_SYMBOLS
 from core.news_models import (
     CalendarEvent,
     ImpactHint,
@@ -175,6 +176,8 @@ from services.news_repository import (
 
 __all__ = [
     "AiScopePreview",
+    "BatchScopeResult",
+    "BatchTrendResult",
     "NewsController",
     "SourceIngestResult",
     "SourcePreview",
@@ -253,7 +256,9 @@ class AiScopePreview:
     fail-closed — no prompt exists, so the AI is never called (B4).
 
     ``rate_available``/``yields_available`` report whether the market-context
-    block (§9.1 bước 3, đợt 5) has anything to render; they never affect the
+    block (§9.1 bước 3, đợt 5) has anything to render, and ``context`` carries
+    the typed market context itself so the detail tab can display the values
+    (the UI formats; it never derives — L1/S2).  Context never affects the
     floor (C4)."""
 
     scope_type: str
@@ -264,11 +269,35 @@ class AiScopePreview:
     min_items: int
     rate_available: bool
     yields_available: bool
+    context: MarketContext
 
     @property
     def insufficient(self) -> bool:
         """True when the considered rows are below ``ai_min_items``."""
         return self.event_count + self.item_count < self.min_items
+
+
+@dataclass(frozen=True, slots=True)
+class BatchScopeResult:
+    """One scope's outcome inside a batch run (plan B4, D2)."""
+
+    scope: str
+    result: "TrendAnalysisResult"
+
+
+@dataclass(frozen=True, slots=True)
+class BatchTrendResult:
+    """Typed outcome of ``analyze_all_trends`` (plan B4, contract §9.1 bước 7).
+
+    ``results`` holds one entry per scope in iteration order (available even for
+    a scope that errored — its ``TrendAnalysisResult`` carries the friendly
+    error and counts as ``error``).  The three counters summarize the run for
+    the dialog; one failing scope never stops the batch (D2)."""
+
+    results: tuple[BatchScopeResult, ...]
+    ok: int
+    insufficient: int
+    error: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -1060,13 +1089,31 @@ class NewsController:
 
     # --- AI trend judgement (§9.1, plan L3.5) --------------------------------------
 
+    @property
+    def AI_ASSET_SCOPES(self) -> tuple[str, ...]:
+        """The single-asset scopes of the AI judgement (contract §9.3 khoản 1).
+
+        Derived from ``SUPPORTED_SYMBOLS`` in first-seen order — the unique
+        single codes of the pairs are exactly the 11 assets (AUD CAD CHF EUR
+        GBP JPY NZD USD XAU XAG BTC).  Never a hard-coded list (B5): changing
+        ``SUPPORTED_SYMBOLS`` changes this set; the UI consumes it, it does not
+        invent one."""
+        scopes: list[str] = []
+        for symbol in SUPPORTED_SYMBOLS:
+            for code in str(symbol).split("/"):
+                code = code.strip()
+                if code and code not in scopes:
+                    scopes.append(code)
+        return tuple(scopes)
+
     def ai_scope_preview(self, scope_type: str, scope_value: str, now: datetime | None = None) -> AiScopePreview:
         """§9.1 step 2 — counts + floor of one scope, NO AI call.
 
         The dialog shows "Cửa sổ tin: <window_days> ngày gần nhất — <N> tin/sự
         kiện liên quan" (d.1629) from this preview and, when ``insufficient``,
         shows "Không đủ dữ liệu nhận định" (d.1642) and never calls the AI
-        (fail-closed, B4 — the same floor the builder enforces)."""
+        (fail-closed, B4 — the same floor the builder enforces).  The typed
+        ``context`` is carried for the detail tab's context line (UI formats)."""
         context, outcome = self._ai_context_and_outcome(scope_type, scope_value, now)
         return AiScopePreview(
             scope_type=scope_type,
@@ -1077,6 +1124,7 @@ class NewsController:
             min_items=outcome.min_items,
             rate_available=bool(context.rates),
             yields_available=context.yields is not None,
+            context=context,
         )
 
     def analyze_trend(
@@ -1152,6 +1200,42 @@ class NewsController:
         the ONLY consumer of verdict history (contract §9.2).  ``limit`` is a
         presentation value of the dialog (B5 — no policy key involved)."""
         return self._repo.verdicts_for(VerdictScopeType(scope_type), scope_value, limit)
+
+    def analyze_all_trends(
+        self,
+        now: datetime | None = None,
+        on_scope_done: Callable[[str, TrendAnalysisResult], None] | None = None,
+    ) -> BatchTrendResult:
+        """Batch "Nhận định tất cả" — ONE sequential pass over the 11 asset
+        scopes (contract §9.1 bước 7, D1/D2).
+
+        Each scope goes through the existing ``analyze_trend`` (no second copy
+        of the AI-call path).  A scope that raises is caught and recorded as an
+        error result; the batch **continues** to the next scope (D2).  A scope
+        below ``ai_min_items`` is ``insufficient`` and calls no AI (B4, already
+        enforced in ``analyze_trend``).  ``on_scope_done`` is called once per
+        scope (Qt-free — the worker wraps it into a progress signal); the
+        controller never creates a thread.  Counts classify each scope's typed
+        result: ``ok`` / ``insufficient`` / ``error``."""
+        results: list[BatchScopeResult] = []
+        ok = insufficient = error = 0
+        for scope in self.AI_ASSET_SCOPES:
+            try:
+                result = self.analyze_trend("currency", scope, now)
+            except Exception as exc:
+                result = TrendAnalysisResult(ok=False, error_message=str(exc))
+            results.append(BatchScopeResult(scope=scope, result=result))
+            if result.ok:
+                ok += 1
+            elif result.insufficient:
+                insufficient += 1
+            else:
+                error += 1
+            if on_scope_done is not None:
+                on_scope_done(scope, result)
+        return BatchTrendResult(
+            results=tuple(results), ok=ok, insufficient=insufficient, error=error
+        )
 
     # --- AI helpers ---------------------------------------------------------------
 

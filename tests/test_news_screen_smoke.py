@@ -543,3 +543,50 @@ def test_screen_minimum_width_fits_the_shell_content_width(width):
     content_width = width - 48  # rail 48px (ui/main_window.py)
 
     assert screen.minimumSizeHint().width() <= content_width
+
+
+# ---- 8. cửa sổ AI nhận định 3 tab (đợt 5 — B4) ---------------------------------
+
+
+class _FakeAiController:
+    """Controller tối thiểu cho dialog 3 tab — không gọi AI khi mở."""
+
+    AI_ASSET_SCOPES = ("EUR", "USD", "XAU")
+
+    def ai_scope_preview(self, scope_type, scope_value):
+        return SimpleNamespace(
+            window_days=7,
+            event_count=0,
+            item_count=0,
+            insufficient=True,
+            context=None,
+        )
+
+    def verdicts_for(self, scope_type, scope_value, limit):
+        return []
+
+    def analyze_trend(self, scope_type, scope_value):
+        raise AssertionError("AI không được gọi khi mở dialog")
+
+    def analyze_all_trends(self, now=None, on_scope_done=None):
+        raise AssertionError("batch không được chạy khi mở dialog")
+
+
+class TestAiDialogThreeTabs:
+    def test_open_dialog_has_three_tabs_defaulting_to_overview(self):
+        app = _app()
+        dialog = news.AiTrendDialog(_FakeAiController(), None)
+        try:
+            dialog.show()
+            app.processEvents()
+
+            assert dialog._tabs.count() == 3
+            assert dialog._tabs.tabText(0) == news.AI_TAB_OVERVIEW_TEXT
+            assert dialog._tabs.tabText(1) == news.AI_TAB_DETAIL_TEXT
+            assert dialog._tabs.tabText(2) == news.AI_TAB_PAIR_TEXT
+            assert dialog._tabs.currentIndex() == 0  # mặc định "Tổng quan"
+            assert dialog._overview_model.rowCount() == 3  # theo AI_ASSET_SCOPES giả
+        finally:
+            dialog._shutdown_ai()
+            dialog.close()
+            app.processEvents()

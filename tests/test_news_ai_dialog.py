@@ -28,6 +28,8 @@ from PyQt6.QtWidgets import QApplication, QLabel, QPushButton
 from config.constants import SUPPORTED_SYMBOLS
 from controllers.news_controller import (
     AiScopePreview,
+    BatchScopeResult,
+    BatchTrendResult,
     NewsController,
     PARSE_FAIL_TEXT,
     TrendAnalysisResult,
@@ -41,6 +43,8 @@ from core.news_models import (
     NewsItem,
     NewsItemKind,
     NewsItemSource,
+    RateObservation,
+    RateSource,
     TrendVerdict,
     VerdictConfidence,
     VerdictDirection,
@@ -48,7 +52,10 @@ from core.news_models import (
     VerdictScopeType,
 )
 from core.news_policy import load_news_policy
+from core.rate_trend import RateTrend
 from core.trend_prompt_builder import MarketContext, build_trend_prompt
+from core.yield_context import YieldContext
+from services.news_repository import CurrencyRateTrend
 from ui.screens import news_screen as news
 from ui.screens.news_screen import NewsScreen
 
@@ -349,6 +356,56 @@ def _app() -> QApplication:
     return _APP
 
 
+def _derived_scopes() -> tuple[str, ...]:
+    """11 tài sản rút từ SUPPORTED_SYMBOLS (khuôn controller.AI_ASSET_SCOPES)."""
+    scopes: list[str] = []
+    for symbol in SUPPORTED_SYMBOLS:
+        for code in symbol.split("/"):
+            code = code.strip()
+            if code and code not in scopes:
+                scopes.append(code)
+    return tuple(scopes)
+
+
+def _batch_result(ok: int = 11, insufficient: int = 0, error: int = 0) -> BatchTrendResult:
+    results = tuple(
+        BatchScopeResult(scope=scope, result=TrendAnalysisResult(ok=True))
+        for scope in _derived_scopes()
+    )
+    return BatchTrendResult(results=results, ok=ok, insufficient=insufficient, error=error)
+
+
+def _rate_context(currency: str = "USD", rate: float = 5.5) -> CurrencyRateTrend:
+    return CurrencyRateTrend(
+        currency=currency,
+        latest=RateObservation(
+            currency=currency,
+            rate=rate,
+            observed_at="2026-09-18",
+            source=RateSource.FRED,
+            fetched_at="2026-09-19T00:00:00Z",
+            id=1,
+        ),
+        previous=None,
+        trend=RateTrend.HOLD,
+    )
+
+
+def _yield_context() -> YieldContext:
+    return YieldContext(
+        yield_2y=3.72,
+        observed_at_2y="2026-09-18",
+        yield_10y=3.91,
+        observed_at_10y="2026-09-18",
+        be10y=2.36,
+        observed_at_be10y="2026-09-18",
+        delta_2y=-0.08,
+        delta_10y=0.02,
+        spread_2y10y=0.19,
+        real_yield_10y=1.55,
+    )
+
+
 class FakeAiController:
     """Controller giả của dialog: trả preview/result/history THẬT, ghi lời gọi."""
 
@@ -359,17 +416,23 @@ class FakeAiController:
         history: list[TrendVerdict] | None = None,
         events: list[CalendarEvent] | None = None,
         items: list[NewsItem] | None = None,
+        verdicts_by_scope: dict[str, list[TrendVerdict]] | None = None,
+        batch_result: BatchTrendResult | None = None,
     ) -> None:
         self.preview = preview
         self.result = result if result is not None else TrendAnalysisResult(ok=True)
         self.history = list(history or [])
         self.events = list(events or [])
         self.items = list(items or [])
+        self.verdicts_by_scope = dict(verdicts_by_scope or {})
+        self.batch_result = batch_result
         self.preview_calls: list[tuple[str, str]] = []
         self.history_calls: list[tuple[str, str, int]] = []
         self.analyze_calls: list[tuple[str, str]] = []
+        self.batch_calls: list[object] = []
         self.gate: threading.Event | None = None
         self.analyze_error: Exception | None = None
+        self.AI_ASSET_SCOPES = _derived_scopes()
 
     def ai_scope_preview(self, scope_type, scope_value):
         self.preview_calls.append((scope_type, scope_value))
@@ -383,8 +446,18 @@ class FakeAiController:
             raise self.analyze_error
         return self.result
 
+    def analyze_all_trends(self, now=None, on_scope_done=None):
+        self.batch_calls.append(on_scope_done)
+        result = self.batch_result if self.batch_result is not None else _batch_result()
+        if on_scope_done is not None:
+            for entry in result.results:
+                on_scope_done(entry.scope, entry.result)
+        return result
+
     def verdicts_for(self, scope_type, scope_value, limit):
         self.history_calls.append((scope_type, scope_value, limit))
+        if scope_value in self.verdicts_by_scope:
+            return list(self.verdicts_by_scope[scope_value])[:limit]
         return list(self.history)
 
     def events_in_range(self, from_utc, to_utc, currencies=None, include_non_impact=True):
@@ -457,18 +530,19 @@ def _preview(
     events: int = 0,
     items: int = 3,
     min_items: int = 3,
-    rate_available: bool = False,
-    yields_available: bool = False,
+    context: MarketContext | None = None,
 ) -> AiScopePreview:
+    context = context if context is not None else MarketContext()
     return AiScopePreview(
-        scope_type="pair",
-        scope_value="EUR/USD",
+        scope_type="currency",
+        scope_value="USD",
         window_days=7,
         event_count=events,
         item_count=items,
         min_items=min_items,
-        rate_available=rate_available,
-        yields_available=yields_available,
+        rate_available=bool(context.rates),
+        yields_available=context.yields is not None,
+        context=context,
     )
 
 
@@ -524,8 +598,12 @@ def _header_text(dialog: news.AiTrendDialog, horizon: str) -> str:
     return card["header"].text() + " " + card["direction"].text()
 
 
+def _select_detail(dialog: news.AiTrendDialog, scope: str = "USD") -> None:
+    dialog._detail_combo.setCurrentIndex(dialog._detail_combo.findData(scope))
+
+
 class TestAiDialogSmoke:
-    def test_dialog_shows_registered_labels_and_scope_sources(self):
+    def test_default_tab_is_overview_and_open_calls_no_ai(self):
         controller = FakeAiController(_preview())
         dialog = _dialog(controller)
 
@@ -533,28 +611,60 @@ class TestAiDialogSmoke:
         advisory = dialog.findChild(QLabel, "NewsAiAdvisory")
         assert advisory is not None
         assert advisory.text() == news.AI_ADVISORY_TEXT  # nguyên văn d.1638, thường trực
-        # Phạm vi: SUPPORTED_SYMBOLS (tiêu thụ — không bịa) rồi các đồng tiền rút từ cặp.
-        items = [dialog._scope_combo.itemData(i) for i in range(dialog._scope_combo.count())]
-        pairs = [data for data in items if data[0] == "pair"]
-        assert [data[1] for data in pairs] == list(SUPPORTED_SYMBOLS)
-        currencies = [data[1] for data in items if data[0] == "currency"]
-        assert "JPY" in currencies and "EUR" in currencies and "XAU" in currencies
-        assert controller.preview_calls[0] == ("pair", "EUR/USD")
-        # Dòng đếm (§9.1 bước 2) — chuỗi mockup d.1629.
-        assert dialog._count_label.text() == news.AI_COUNT_TEXT.format(window_days=7, count=3)
+        assert dialog._tabs.count() == 3
+        assert [dialog._tabs.tabText(i) for i in range(3)] == [
+            news.AI_TAB_OVERVIEW_TEXT,
+            news.AI_TAB_DETAIL_TEXT,
+            news.AI_TAB_PAIR_TEXT,
+        ]
+        assert dialog._tabs.currentIndex() == 0  # mặc định "Tổng quan"
+        # Mở dialog chỉ ĐỌC — không gọi AI (kể cả batch).
+        assert controller.analyze_calls == []
+        assert controller.batch_calls == []
 
-    def test_scope_switch_reads_the_new_scope_preview(self):
+    def test_overview_grid_lists_eleven_assets(self):
         controller = FakeAiController(_preview())
         dialog = _dialog(controller)
-        currency_index = next(
-            i for i in range(dialog._scope_combo.count())
-            if dialog._scope_combo.itemData(i)[0] == "currency"
+
+        assert dialog._overview_table.model() is dialog._overview_model
+        assert dialog._overview_model.rowCount() == 11
+        scopes = [dialog._overview_model.scope_at(i) for i in range(11)]
+        assert scopes == list(controller.AI_ASSET_SCOPES)
+        assert news.AI_OVERVIEW_COLUMNS == (
+            "Tài sản", "Ngắn hạn", "Trung hạn", "Dài hạn", "Verdict lúc",
         )
 
-        dialog._scope_combo.setCurrentIndex(currency_index)
-        _app().processEvents()
+    def test_detail_combo_and_count_come_from_the_controller(self):
+        controller = FakeAiController(_preview())
+        dialog = _dialog(controller)
 
-        assert controller.preview_calls[-1] == ("currency", dialog._scope_combo.itemData(currency_index)[1])
+        items = [
+            dialog._detail_combo.itemData(i)
+            for i in range(dialog._detail_combo.count())
+        ]
+        assert items == list(controller.AI_ASSET_SCOPES)
+        assert controller.preview_calls[0] == ("currency", controller.AI_ASSET_SCOPES[0])
+        assert dialog._count_label.text() == news.AI_COUNT_TEXT.format(window_days=7, count=3)
+
+    def test_detail_context_line_renders_typed_values(self):
+        context = MarketContext(
+            rates=(_rate_context("USD", 5.5),), yields=_yield_context()
+        )
+        controller = FakeAiController(_preview(context=context))
+        dialog = _dialog(controller)
+
+        text = dialog._context_label.text()
+        assert "Lãi suất 5.50% (hold)" in text
+        assert "US 2Y 3.72% (-0.08)" in text
+        assert "US 10Y 3.91% (+0.02)" in text
+        assert "Spread 2Y10Y +0.19" in text
+        assert "Real yield 1.55%" in text
+
+    def test_detail_context_line_dash_when_missing(self):
+        controller = FakeAiController(_preview())  # context rỗng
+        dialog = _dialog(controller)
+
+        assert dialog._context_label.text() == f"{news.AI_CONTEXT_PREFIX} —"
 
     def test_insufficient_preview_shows_message_and_never_calls_ai(self):
         controller = FakeAiController(_preview(items=2), result=TrendAnalysisResult(ok=False, insufficient=True))
@@ -566,6 +676,84 @@ class TestAiDialogSmoke:
 
         assert controller.analyze_calls == []  # KHÔNG gọi AI (B4)
         assert dialog._status_label.text() == news.AI_INSUFFICIENT_TEXT
+
+
+class TestAiOverview:
+    @staticmethod
+    def _row(dialog, scope: str = "USD") -> int:
+        scopes = [
+            dialog._overview_model.scope_at(i)
+            for i in range(dialog._overview_model.rowCount())
+        ]
+        return scopes.index(scope)
+
+    def test_latest_verdict_per_horizon_is_shown(self):
+        from PyQt6.QtCore import Qt
+
+        news._configure_display_timezone("Asia/Ho_Chi_Minh")
+        verdicts = {
+            "USD": [
+                _verdict(VerdictHorizon.SHORT, created_at="2026-09-23T09:00:00Z"),
+                _verdict(
+                    VerdictHorizon.MID,
+                    direction=VerdictDirection.BEARISH,
+                    confidence=VerdictConfidence.LOW,
+                ),
+                _verdict(
+                    VerdictHorizon.LONG,
+                    direction=VerdictDirection.NEUTRAL,
+                    confidence=VerdictConfidence.MEDIUM,
+                ),
+            ]
+        }
+        controller = FakeAiController(_preview(), verdicts_by_scope=verdicts)
+        dialog = _dialog(controller)
+        model = dialog._overview_model
+        row = self._row(dialog)
+
+        assert "▲" in model.data(model.index(row, 1), Qt.ItemDataRole.DisplayRole)
+        assert "▼" in model.data(model.index(row, 2), Qt.ItemDataRole.DisplayRole)
+        assert model.data(model.index(row, 4), Qt.ItemDataRole.DisplayRole) == "23/09/2026 16:00"
+
+    def test_never_judged_scope_shows_chua_co(self):
+        from PyQt6.QtCore import Qt
+
+        controller = FakeAiController(_preview())  # không có verdict nào
+        dialog = _dialog(controller)
+        model = dialog._overview_model
+        row = self._row(dialog)
+
+        assert model.data(model.index(row, 1), Qt.ItemDataRole.DisplayRole) == news.NO_VALUE
+        assert (
+            model.data(model.index(row, 4), Qt.ItemDataRole.DisplayRole)
+            == news.AI_NO_VERDICT_TEXT
+        )
+
+    def test_row_click_switches_to_the_detail_scope(self):
+        controller = FakeAiController(_preview())
+        dialog = _dialog(controller)
+        row = self._row(dialog)
+
+        dialog._on_overview_clicked(dialog._overview_model.index(row, 0))
+
+        assert dialog._tabs.currentWidget() is dialog._detail_tab
+        assert dialog._detail_combo.currentData() == "USD"
+
+    def test_batch_button_runs_the_batch_and_reloads_the_grid(self):
+        controller = FakeAiController(
+            _preview(), batch_result=_batch_result(ok=9, insufficient=1, error=1)
+        )
+        dialog = _dialog(controller)
+        reads_before = len(controller.history_calls)
+
+        dialog._batch_button.click()
+        assert _wait_until(lambda: len(controller.batch_calls) == 1)
+        assert _wait_until(lambda: dialog._batch_button.isEnabled())
+
+        assert dialog._batch_status.text() == news.AI_BATCH_SUMMARY_TEXT.format(
+            ok=9, insufficient=1, error=1
+        )
+        assert len(controller.history_calls) > reads_before  # lưới nạp lại
 
 
 class TestAiDialogAnalysis:
@@ -582,6 +770,7 @@ class TestAiDialogAnalysis:
         controller = FakeAiController(_preview(), result=_result(*verdicts))
         controller.gate = threading.Event()
         dialog = _dialog(controller)
+        _select_detail(dialog, "USD")
 
         dialog._analyze_button.click()
         assert _wait_until(lambda: not dialog._analyze_button.isEnabled())
@@ -605,7 +794,7 @@ class TestAiDialogAnalysis:
         assert dialog._cards["mid"]["conf"].text() == "Trung bình"
         assert dialog._cards["long"]["conf"].text() == "Không có"
         assert dialog._cards["short"]["rationale"].text() == "Lập luận tiếng Việt."
-        assert controller.analyze_calls == [("pair", "EUR/USD")]
+        assert controller.analyze_calls == [("currency", "USD")]
 
     def test_failed_result_shows_friendly_message_without_cards(self):
         controller = FakeAiController(
@@ -613,12 +802,13 @@ class TestAiDialogAnalysis:
             result=TrendAnalysisResult(ok=False, error_message="AI không trả về JSON hợp lệ."),
         )
         dialog = _dialog(controller)
+        _select_detail(dialog, "USD")
 
         dialog._analyze_button.click()
         assert _wait_until(lambda: dialog._analyze_button.isEnabled())
         assert dialog._status_label.text() == "AI không trả về JSON hợp lệ."
-        assert dialog._cards["short"]["frame"].isVisible() is False
-        assert controller.analyze_calls == [("pair", "EUR/USD")]
+        assert dialog._cards["short"]["frame"].isHidden() is True
+        assert controller.analyze_calls == [("currency", "USD")]
 
     def test_worker_exception_shows_the_message(self):
         controller = FakeAiController(_preview())
@@ -641,8 +831,9 @@ class TestAiDialogHistory:
         ]
         controller = FakeAiController(_preview(), history=history)
         dialog = _dialog(controller)
+        _select_detail(dialog, "USD")
 
-        assert controller.history_calls == [("pair", "EUR/USD", news.AI_HISTORY_LIMIT)]
+        assert ("currency", "USD", news.AI_HISTORY_LIMIT) in controller.history_calls
         texts = [label.text() for label in dialog._history_layout.parent().findChildren(QLabel)]
         assert any("23/09/2026 16:00" in t and "Dài hạn" in t and "Trung lập" in t for t in texts)
         assert any("22/09/2026 16:00" in t and "Ngắn hạn" in t and "Tăng" in t for t in texts)
@@ -683,6 +874,68 @@ class TestAiDialogEvidence:
         assert len(selected) == 1
         row = screen.table_model.rows[selected[0].row()]
         assert row.item is not None and row.item.id == evidence_id  # nhảy đúng dòng dẫn chứng
+
+
+class TestAiPair:
+    def test_pair_tab_is_read_only_on_open(self):
+        controller = FakeAiController(_preview())
+        dialog = _dialog(controller)
+
+        assert dialog._pair_combo.count() == len(SUPPORTED_SYMBOLS)
+        assert [
+            dialog._pair_combo.itemData(i) for i in range(dialog._pair_combo.count())
+        ] == list(SUPPORTED_SYMBOLS)
+        assert controller.analyze_calls == []
+        assert controller.batch_calls == []
+
+    def test_pair_bias_rendered_from_component_verdicts(self):
+        verdicts = {
+            "EUR": [
+                _verdict(VerdictHorizon.SHORT, direction=VerdictDirection.BULLISH, confidence=VerdictConfidence.HIGH)
+            ],
+            "USD": [
+                _verdict(VerdictHorizon.SHORT, direction=VerdictDirection.BEARISH, confidence=VerdictConfidence.LOW)
+            ],
+        }
+        controller = FakeAiController(_preview(), verdicts_by_scope=verdicts)
+        dialog = _dialog(controller)
+        row = dialog._pair_rows["short"]
+
+        assert row["base"].text() == "EUR: ▲ Tăng (Cao)"
+        assert row["quote"].text() == "USD: ▼ Giảm (Thấp)"
+        assert row["bias"].text() == f"{news.AI_PAIR_BIAS_PREFIX} Nghiêng tăng"
+        assert controller.analyze_calls == []  # không gọi AI
+
+    def test_missing_leg_bias_is_unclear(self):
+        controller = FakeAiController(
+            _preview(),
+            verdicts_by_scope={"EUR": [_verdict(VerdictHorizon.SHORT)]},
+        )
+        dialog = _dialog(controller)
+
+        assert (
+            dialog._pair_rows["short"]["bias"].text()
+            == f"{news.AI_PAIR_BIAS_PREFIX} Không rõ"
+        )
+
+    def test_pair_note_is_always_shown(self):
+        controller = FakeAiController(_preview())
+        dialog = _dialog(controller)
+
+        labels = [label.text() for label in dialog._pair_tab.findChildren(QLabel)]
+        assert news.AI_PAIR_NOTE_TEXT in labels
+
+    def test_deep_dive_calls_analyze_trend_pair(self):
+        controller = FakeAiController(_preview(), result=_result(_verdict(VerdictHorizon.SHORT)))
+        dialog = _dialog(controller)
+
+        dialog._pair_deep_button.click()
+        assert _wait_until(lambda: dialog._pair_deep_button.isEnabled())
+
+        assert ("pair", "EUR/USD") in controller.analyze_calls
+        # isHidden() reflects the card's own setVisible (the pair tab itself is
+        # not the current tab, so isVisible() would be False regardless).
+        assert _wait_until(lambda: not dialog._pair_cards["short"]["frame"].isHidden())
 
 
 # ---------------------------------------------------------------------------
