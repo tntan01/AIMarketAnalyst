@@ -1,17 +1,18 @@
 """Contract tests for the News domain models (contract §5, plan lô L1.3).
 
-``core/news_models.py`` is the single owner of the six domain models
+``core/news_models.py`` is the single owner of the seven domain models
 (registered at contract §11b).  Its contract, verified here:
 
-* every frozen string enum of §2/§4.2-§4.6 pins the EXACT persisted string —
+* every frozen string enum of §2/§4.2-§4.7 pins the EXACT persisted string —
   renaming a member value is red;
-* every enum set of the models matches the CHECK constraints of the L1.2
-  migration ``data/migrations/news/001_create_news_db.sql`` in BOTH
-  directions (no value the model allows can be rejected, no value SQL
-  allows may be missing from the model) — the SQL text is read as the
-  machine source of truth;
-* for the 5 table-mapped models the dataclass field set matches the column
-  set (PRAGMA table_info on a temp DB that applied the migration) one-to-one,
+* every enum set of the models matches the CHECK constraints of the applied
+  news schema (``data/migrations/news/*.sql``; the CHECK sets are parsed from
+  ``sqlite_master`` after every migration so a rebuilt table reports its
+  final set) in BOTH directions (no value the model allows can be rejected,
+  no value SQL allows may be missing from the model) — the SQL text is read
+  as the machine source of truth;
+* for the 6 table-mapped models the dataclass field set matches the column
+  set (PRAGMA table_info on a temp DB that applied the migrations) one-to-one,
   with exactly the three deliberate domain renames for the JSON columns
   (``currencies_json``→``currencies``, ``evidence_item_ids_json``→
   ``evidence_item_ids``, ``input_snapshot_json``→``input_snapshot``);
@@ -37,6 +38,9 @@ from pathlib import Path
 import pytest
 
 from core.news_models import (
+    BondYieldMaturity,
+    BondYieldObservation,
+    BondYieldSource,
     CalendarEvent,
     EventImpact,
     EventSource,
@@ -60,13 +64,10 @@ from core.news_models import (
     calendar_event_dedupe_key,
 )
 
-MIGRATION_SQL = (
-    Path(__file__).resolve().parents[1]
-    / "data"
-    / "migrations"
-    / "news"
-    / "001_create_news_db.sql"
+NEWS_MIGRATIONS_DIR = (
+    Path(__file__).resolve().parents[1] / "data" / "migrations" / "news"
 )
+MIGRATION_SQLS = sorted(NEWS_MIGRATIONS_DIR.glob("*.sql"))
 NEWS_MODELS_PY = (
     Path(__file__).resolve().parents[1] / "core" / "news_models.py"
 )
@@ -106,12 +107,19 @@ ENUM_EXPECTED_VALUES: dict[type, dict[str, str]] = {
         "FF_HTML": "ff_html",
         "CONFIG_FALLBACK": "config_fallback",
     },
+    BondYieldMaturity: {
+        "TWO_YEAR": "2y",
+        "TEN_YEAR": "10y",
+        "BREAKEVEN_10Y": "be10y",
+    },
+    BondYieldSource: {"FRED": "fred", "YAHOO": "yahoo"},
     IngestProducer: {
         "FF_CRAWLER": "ff_crawler",
         "RSS": "rss",
         "FRED": "fred",
         "USER": "user",
         "ON_DEMAND_LOOKUP": "on_demand_lookup",
+        "BOND_YIELD": "bond_yield",
     },
     IngestRunStatus: {"OK": "ok", "PARTIAL": "partial", "FAILED": "failed"},
     VerdictScopeType: {"PAIR": "pair", "CURRENCY": "currency"},
@@ -144,6 +152,8 @@ ENUM_SQL_COLUMNS: dict[type, str] = {
     NewsItemSource: "news_items.source",
     ImpactHint: "news_items.impact_hint",
     RateSource: "interest_rates.source",
+    BondYieldMaturity: "bond_yields.maturity",
+    BondYieldSource: "bond_yields.source",
     VerdictScopeType: "ai_trend_verdicts.scope_type",
     VerdictHorizon: "ai_trend_verdicts.horizon",
     VerdictDirection: "ai_trend_verdicts.direction",
@@ -160,6 +170,7 @@ TABLE_MODELS: dict[str, type] = {
     "news_events": CalendarEvent,
     "news_items": NewsItem,
     "interest_rates": RateObservation,
+    "bond_yields": BondYieldObservation,
     "ai_trend_verdicts": TrendVerdict,
     "ingest_runs": IngestRun,
 }
@@ -187,6 +198,7 @@ OPTIONAL_FIELDS: dict[type, set[str]] = {
     },
     NewsItem: {"id", "content", "url", "impact_hint", "speaker_role"},
     RateObservation: {"id"},
+    BondYieldObservation: {"id"},
     TrendVerdict: {"id"},
     IngestRun: {"id", "error_type", "error_detail"},
     StoreState: {
@@ -230,6 +242,14 @@ MODEL_KWARGS: dict[type, dict[str, object]] = {
         "source": RateSource.FRED,
         "fetched_at": "2026-09-21T01:00:00Z",
     },
+    BondYieldObservation: {
+        "currency": "USD",
+        "maturity": BondYieldMaturity.TEN_YEAR,
+        "value": 4.25,
+        "observed_at": "2026-09-20",
+        "source": BondYieldSource.FRED,
+        "fetched_at": "2026-09-21T01:00:00Z",
+    },
     TrendVerdict: {
         "created_at": "2026-09-21T09:00:00Z",
         "scope_type": VerdictScopeType.PAIR,
@@ -265,6 +285,7 @@ MODEL_CLASSES: list[type] = [
     CalendarEvent,
     NewsItem,
     RateObservation,
+    BondYieldObservation,
     TrendVerdict,
     IngestRun,
     StoreState,
@@ -281,7 +302,8 @@ def _fresh_conn(tmp_path: Path) -> sqlite3.Connection:
 
 
 def _apply_migration(conn: sqlite3.Connection) -> None:
-    conn.executescript(MIGRATION_SQL.read_text(encoding="utf-8"))
+    for migration in MIGRATION_SQLS:
+        conn.executescript(migration.read_text(encoding="utf-8"))
 
 
 def _sql_enum_sets(sql: str) -> dict[str, set[str]]:
@@ -293,7 +315,7 @@ def _sql_enum_sets(sql: str) -> dict[str, set[str]]:
     """
     sets: dict[str, set[str]] = {}
     for table_match in re.finditer(
-        r"CREATE TABLE\s+(?:IF NOT EXISTS\s+)?(\w+)\s*\((.*?)\)\s*;",
+        r"CREATE TABLE\s+(?:IF NOT EXISTS\s+)?[\"']?(\w+)[\"']?\s*\((.*?)\)\s*;",
         sql,
         re.DOTALL,
     ):
@@ -306,6 +328,29 @@ def _sql_enum_sets(sql: str) -> dict[str, set[str]]:
             if values:
                 sets[f"{table}.{column}"] = values
     return sets
+
+
+def _applied_schema_enum_sets() -> dict[str, set[str]]:
+    """CHECK sets parsed from the FINAL applied schema (all news migrations).
+
+    Reads ``sqlite_master`` after applying every migration, so a table rebuilt
+    by a later migration reports its final CHECK set.  002 rebuilds
+    ``ingest_runs`` to add ``bond_yield``; parsing the 001 file text alone
+    would report the superseded five-value producer set.
+    """
+    conn = sqlite3.connect(":memory:")
+    try:
+        _apply_migration(conn)
+        statements = [
+            row[0]
+            for row in conn.execute(
+                "SELECT sql FROM sqlite_master "
+                "WHERE type='table' AND sql IS NOT NULL"
+            )
+        ]
+    finally:
+        conn.close()
+    return _sql_enum_sets("\n".join(f"{statement};" for statement in statements))
 
 
 def _temp_columns(conn: sqlite3.Connection, table: str) -> set[str]:
@@ -341,6 +386,14 @@ def _insert_probe_row(
         "interest_rates": {
             "currency": "USD",
             "rate": 5.5,
+            "observed_at": "2026-09-20",
+            "source": "fred",
+            "fetched_at": "2026-09-21T01:00:00Z",
+        },
+        "bond_yields": {
+            "currency": "USD",
+            "maturity": "2y",
+            "value": 4.25,
             "observed_at": "2026-09-20",
             "source": "fred",
             "fetched_at": "2026-09-21T01:00:00Z",
@@ -404,7 +457,7 @@ class TestEnumPinning:
 class TestEnumVsSqlCheckConstraint:
     """Two-way cross-check with the L1.2 CHECK constraints (§4, V3(a))."""
 
-    SQL_SETS = _sql_enum_sets(MIGRATION_SQL.read_text(encoding="utf-8"))
+    SQL_SETS = _applied_schema_enum_sets()
 
     @pytest.mark.parametrize(
         "enum_cls",
@@ -441,9 +494,9 @@ class TestEnumVsSqlCheckConstraint:
         assert "news_items.excluded" not in self.SQL_SETS
 
     def test_every_text_enum_column_is_cross_checked(self):
-        # Pin that the cross-check table covers exactly the 13 string sets the
-        # migration declares — adding a new enum column without registering it
-        # (or dropping one) is red.
+        # Pin that the cross-check table covers exactly the 15 string sets the
+        # applied schema declares — adding a new enum column without
+        # registering it (or dropping one) is red.
         assert set(self.SQL_SETS) == set(ENUM_SQL_COLUMNS.values())
 
 

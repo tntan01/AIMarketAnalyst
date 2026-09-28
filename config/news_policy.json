@@ -4,6 +4,7 @@
   "rss_poll_interval_minutes": 15,
   "rss_window_hours": 24,
   "fred_refresh_hours": 6,
+  "bond_yield_refresh_hours": 6,
   "event_stale_grace_minutes": 15,
   "ingest_freshness_hours": 2,
   "ingest_runs_retention_days": 30,
@@ -29,6 +30,7 @@
   "_provenance": {
     "rss_window_hours": "kế thừa runtime hiện hành (bằng chứng: đang chạy) — contract §7",
     "fred_refresh_hours": "kế thừa runtime hiện hành (bằng chứng: đang chạy) — interest_rate_service._CACHE_TTL = timedelta(hours=6) (services/interest_rate_service.py:42; xác nhận docs/macro/macro_score_architecture.md §12: TTL 6 giờ)",
+    "bond_yield_refresh_hours": "= giá trị khóa fred_refresh_hours (Owner chốt đợt 5 28/09/2026 — không sinh số mới; contract §7)",
     "ai_horizons": "nguyên văn contract §7 — ngắn: trong ngày–3 ngày (day 0–3); trung: 1–4 tuần (week 1–4); dài: 1–6 tháng (month 1–6). Giữ nguyên đơn vị gốc Owner viết, không quy đổi ra ngày."
   }
 }

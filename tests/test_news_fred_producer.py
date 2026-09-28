@@ -121,6 +121,7 @@ def _policy(**overrides) -> NewsPolicy:
         "rss_poll_interval_minutes": 15,
         "rss_window_hours": 24,
         "fred_refresh_hours": 6,
+        "bond_yield_refresh_hours": 6,
         "event_stale_grace_minutes": 15,
         "ingest_freshness_hours": 2,
         "ingest_runs_retention_days": 30,

@@ -1,14 +1,15 @@
 """News domain models - the typed seam of the News domain (contract section 5).
 
-This module declares the six domain models of the News domain plus the frozen
+This module declares the seven domain models of the News domain plus the frozen
 string enums (V3(a) - machine-read closed value sets, section 2) they use:
 
-* ``CalendarEvent``    -> ``news_events`` (section 4.2)
-* ``NewsItem``         -> ``news_items`` (section 4.3)
-* ``RateObservation``  -> ``interest_rates`` (section 4.4)
-* ``TrendVerdict``     -> ``ai_trend_verdicts`` (section 4.5)
-* ``IngestRun``        -> ``ingest_runs`` (section 4.6)
-* ``StoreState``       -> derived, never a table row (sections 5, 6.5, 8)
+* ``CalendarEvent``        -> ``news_events`` (section 4.2)
+* ``NewsItem``             -> ``news_items`` (section 4.3)
+* ``RateObservation``      -> ``interest_rates`` (section 4.4)
+* ``BondYieldObservation`` -> ``bond_yields`` (section 4.7, batch B1)
+* ``TrendVerdict``         -> ``ai_trend_verdicts`` (section 4.5)
+* ``IngestRun``            -> ``ingest_runs`` (section 4.6)
+* ``StoreState``           -> derived, never a table row (sections 5, 6.5, 8)
 
 Field names follow the columns of the L1.2 migration
 (``data/migrations/news/001_create_news_db.sql``) one-to-one, so the schema is
@@ -222,6 +223,51 @@ class RateObservation:
     id: int | None = None
 
 
+# --- bond_yields enums (section 4.7, batch B1) ------------------------------
+
+
+class BondYieldMaturity(_StringEnum):
+    """Maturity bucket of a bond yield observation (section 4.7).
+
+    ``be10y`` is the 10-year inflation breakeven (FRED ``T10YIE``) - the input
+    to the derived real yield.
+    """
+
+    TWO_YEAR = "2y"
+    TEN_YEAR = "10y"
+    BREAKEVEN_10Y = "be10y"
+
+
+class BondYieldSource(_StringEnum):
+    """Provenance of a bond yield observation (section 4.7).
+
+    ``yahoo`` only ever occurs for ``2y``/``10y`` - the fallback channel; the
+    breakeven has no fallback (section 6.6).
+    """
+
+    FRED = "fred"
+    YAHOO = "yahoo"
+
+
+@dataclass(frozen=True, slots=True)
+class BondYieldObservation:
+    """One recorded government bond yield reading of a currency (section 4.7).
+
+    Delta over the window, the 2y-10y spread and the derived real yield
+    (``10y - be10y``) are never stored - they are derived at read time by
+    ``core/yield_context.py`` (batch B2), so this model carries only the raw
+    observation.
+    """
+
+    currency: str
+    maturity: BondYieldMaturity
+    value: float
+    observed_at: str
+    source: BondYieldSource
+    fetched_at: str
+    id: int | None = None
+
+
 # --- ai_trend_verdicts enums (section 4.5) ---------------------------------
 
 
@@ -297,6 +343,7 @@ class IngestProducer(_StringEnum):
     FRED = "fred"
     USER = "user"
     ON_DEMAND_LOOKUP = "on_demand_lookup"
+    BOND_YIELD = "bond_yield"
 
 
 class IngestRunStatus(_StringEnum):

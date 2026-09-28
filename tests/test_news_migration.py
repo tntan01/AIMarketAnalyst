@@ -1,19 +1,21 @@
 """Migration test — news.db schema (plan lô L1.2, contract §4.1-§4.6).
 
-``data/migrations/news/001_create_news_db.sql`` is pure SQL applied to a fresh
-temporary DB via ``sqlite3`` (the real migration runner is written in L2.1 —
-this batch only proves the SQL matches the authoritative contract column by
-column and plays well with a version-controlled runner).
+``data/migrations/news/*.sql`` is pure SQL applied to a fresh temporary DB
+via ``sqlite3`` (the real migration runner is ``NewsRepository.migrate``).
+This batch proves the SQL matches the authoritative contract column by column,
+plays well with a version-controlled runner, and that the 002 rebuild of
+``ingest_runs`` never loses existing rows.
 
 Verified here:
 
-* all 5 tables exist with EXACTLY the columns/types/notnull/defaults of
-  contract §4.2-§4.6 (PRAGMA table_info), and all indexes of §4.2/§4.3
+* all 6 tables exist with EXACTLY the columns/types/notnull/defaults of
+  contract §4.2-§4.7 (PRAGMA table_info), and all indexes of §4.2/§4.3/§4.7
   (PRAGMA index_list/index_info), including the partial ``status='stale'``
   index;
-* ``dedupe_key`` UNIQUE really bites on ``news_events``/``news_items`` and
-  ``interest_rates.UNIQUE(currency, observed_at, source)`` really bites;
-* enum CHECK constraints match exactly the frozen string sets of §4.2-§4.6
+* ``dedupe_key`` UNIQUE really bites on ``news_events``/``news_items``,
+  ``interest_rates.UNIQUE(currency, observed_at, source)`` and
+  ``bond_yields.UNIQUE(currency, maturity, observed_at, source)`` really bite;
+* enum CHECK constraints match exactly the frozen string sets of §4.2-§4.7
   (a stray value is rejected — values are persisted, never invented);
 * re-application is idempotent: the schema uses IF NOT EXISTS AND a
   ``schema_migrations`` version check in the same layout as
@@ -34,10 +36,12 @@ from pathlib import Path
 import pytest
 
 from config.paths import PROJECT_ROOT, app_data_dir, journal_db_path, news_db_path
+from services.news_repository import NewsRepository
 
 MIGRATIONS_DIR = PROJECT_ROOT / "data" / "migrations"
 NEWS_MIGRATIONS_DIR = MIGRATIONS_DIR / "news"
 NEWS_SQL = NEWS_MIGRATIONS_DIR / "001_create_news_db.sql"
+NEWS_MIGRATIONS = sorted(NEWS_MIGRATIONS_DIR.glob("*.sql"))
 
 SPEC_PATH = PROJECT_ROOT / "packaging" / "pyinstaller.spec"
 
@@ -67,7 +71,7 @@ def _apply_news_like_runner(conn: sqlite3.Connection) -> None:
         row[0]
         for row in conn.execute("SELECT version FROM schema_migrations").fetchall()
     }
-    for migration in sorted((NEWS_MIGRATIONS_DIR).glob("*.sql")):
+    for migration in NEWS_MIGRATIONS:
         version = migration.stem
         if version in applied:
             continue
@@ -124,6 +128,16 @@ INTEREST_RATES_COLUMNS: dict[str, tuple[str, int, None | str]] = {
     "fetched_at": ("TEXT", 1, None),
 }
 
+BOND_YIELDS_COLUMNS: dict[str, tuple[str, int, None | str]] = {
+    "id": ("INTEGER", 0, None),
+    "currency": ("TEXT", 1, None),
+    "maturity": ("TEXT", 1, None),
+    "value": ("REAL", 1, None),
+    "observed_at": ("TEXT", 1, None),
+    "source": ("TEXT", 1, None),
+    "fetched_at": ("TEXT", 1, None),
+}
+
 AI_TREND_VERDICTS_COLUMNS: dict[str, tuple[str, int, None | str]] = {
     "id": ("INTEGER", 0, None),
     "created_at": ("TEXT", 1, None),
@@ -155,6 +169,7 @@ EXPECTED_TABLES: dict[str, dict[str, tuple[str, int, None | str]]] = {
     "news_events": NEWS_EVENTS_COLUMNS,
     "news_items": NEWS_ITEMS_COLUMNS,
     "interest_rates": INTEREST_RATES_COLUMNS,
+    "bond_yields": BOND_YIELDS_COLUMNS,
     "ai_trend_verdicts": AI_TREND_VERDICTS_COLUMNS,
     "ingest_runs": INGEST_RUNS_COLUMNS,
 }
@@ -237,6 +252,21 @@ class TestIndexes:
         ]
         assert cols == ["kind", "published_utc"]
 
+    def test_bond_yields_index_columns(self, tmp_path):
+        conn = _fresh_conn(tmp_path)
+        _apply_news_like_runner(conn)
+        index_names = {
+            row["name"] for row in conn.execute("PRAGMA index_list(bond_yields)")
+        }
+        assert "idx_bond_yields_currency_maturity_observed_at" in index_names
+        cols = [
+            row["name"]
+            for row in conn.execute(
+                "PRAGMA index_info(idx_bond_yields_currency_maturity_observed_at)"
+            )
+        ]
+        assert cols == ["currency", "maturity", "observed_at"]
+
 
 def _news_event_row(dedupe: str = "hash-a") -> tuple:
     return (
@@ -284,6 +314,23 @@ def _rate_row(currency: str, observed_at: str, source: str) -> tuple:
     )
 
 
+def _bond_yield_row(
+    *,
+    currency: str = "USD",
+    maturity: str = "2y",
+    observed_at: str = "2026-09-20",
+    source: str = "fred",
+) -> tuple:
+    return (
+        currency,
+        maturity,
+        4.25,
+        observed_at,
+        source,
+        "2026-09-21T01:00:00Z",
+    )
+
+
 _NEWS_EVENT_COLUMNS = (
     "day_key,event_time_utc,currency,title,impact,forecast,previous,actual,"
     "actual_updated_at,status,source,dedupe_key,raw_json,fetched_at"
@@ -295,6 +342,8 @@ _NEWS_ITEM_COLUMNS = (
 )
 
 _RATE_COLUMNS = "currency,rate,observed_at,source,fetched_at"
+
+_BOND_YIELD_COLUMNS = "currency,maturity,value,observed_at,source,fetched_at"
 
 
 class TestUniques:
@@ -340,6 +389,33 @@ class TestUniques:
         conn.execute(
             f"INSERT INTO interest_rates ({_RATE_COLUMNS}) VALUES (?,?,?,?,?)",
             _rate_row("USD", "2026-09-20", "ff_html"),
+        )
+
+    def test_bond_yields_unique_quadruplet(self, tmp_path):
+        conn = _fresh_conn(tmp_path)
+        _apply_news_like_runner(conn)
+        conn.execute(
+            f"INSERT INTO bond_yields ({_BOND_YIELD_COLUMNS}) VALUES (?,?,?,?,?,?)",
+            _bond_yield_row(),
+        )
+        # trùng đủ (currency, maturity, observed_at, source) → từ chối
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute(
+                f"INSERT INTO bond_yields ({_BOND_YIELD_COLUMNS}) VALUES (?,?,?,?,?,?)",
+                _bond_yield_row(),
+            )
+        # nguồn khác / kỳ hạn khác / ngày khác → được phép
+        conn.execute(
+            f"INSERT INTO bond_yields ({_BOND_YIELD_COLUMNS}) VALUES (?,?,?,?,?,?)",
+            _bond_yield_row(source="yahoo"),
+        )
+        conn.execute(
+            f"INSERT INTO bond_yields ({_BOND_YIELD_COLUMNS}) VALUES (?,?,?,?,?,?)",
+            _bond_yield_row(maturity="10y"),
+        )
+        conn.execute(
+            f"INSERT INTO bond_yields ({_BOND_YIELD_COLUMNS}) VALUES (?,?,?,?,?,?)",
+            _bond_yield_row(observed_at="2026-09-19"),
         )
 
     def test_same_dedupe_different_content_is_still_a_duplicate(self, tmp_path):
@@ -428,7 +504,14 @@ class TestEnumCheckConstraints:
     def test_ingest_runs_accepts_every_contract_enum_value(self, tmp_path):
         conn = _fresh_conn(tmp_path)
         _apply_news_like_runner(conn)
-        for producer in ("ff_crawler", "rss", "fred", "user", "on_demand_lookup"):
+        for producer in (
+            "ff_crawler",
+            "rss",
+            "fred",
+            "user",
+            "on_demand_lookup",
+            "bond_yield",
+        ):
             conn.execute(
                 "INSERT INTO ingest_runs (producer, started_at, finished_at, status, items_written) "
                 "VALUES (?, ?, ?, ?, ?)",
@@ -439,6 +522,51 @@ class TestEnumCheckConstraints:
                 "INSERT INTO ingest_runs (producer, started_at, finished_at, status, items_written) "
                 "VALUES (?, ?, ?, ?, ?)",
                 ("fred", "2026-09-21T01:00:00Z", "2026-09-21T01:01:00Z", status, 1),
+            )
+
+    def test_ingest_runs_accepts_bond_yield_producer(self, tmp_path):
+        # §4.6 (đợt 5): the rebuilt CHECK admits the new ``bond_yield`` value.
+        conn = _fresh_conn(tmp_path)
+        _apply_news_like_runner(conn)
+        conn.execute(
+            "INSERT INTO ingest_runs (producer, started_at, finished_at, status, items_written) "
+            "VALUES (?, ?, ?, ?, ?)",
+            ("bond_yield", "2026-09-21T01:00:00Z", "2026-09-21T01:01:00Z", "ok", 3),
+        )
+        assert conn.execute("SELECT COUNT(*) FROM ingest_runs").fetchone()[0] == 1
+
+    @pytest.mark.parametrize("bad_maturity", ["1y", "5y", "BE10Y", "be10", ""])
+    def test_bond_yields_maturity_rejects_stray_values(self, tmp_path, bad_maturity):
+        conn = _fresh_conn(tmp_path)
+        _apply_news_like_runner(conn)
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute(
+                f"INSERT INTO bond_yields ({_BOND_YIELD_COLUMNS}) VALUES (?,?,?,?,?,?)",
+                _bond_yield_row(maturity=bad_maturity),
+            )
+
+    @pytest.mark.parametrize("bad_source", ["FRED", "bloomberg", "investing", ""])
+    def test_bond_yields_source_rejects_stray_values(self, tmp_path, bad_source):
+        conn = _fresh_conn(tmp_path)
+        _apply_news_like_runner(conn)
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute(
+                f"INSERT INTO bond_yields ({_BOND_YIELD_COLUMNS}) VALUES (?,?,?,?,?,?)",
+                _bond_yield_row(source=bad_source),
+            )
+
+    def test_bond_yields_accepts_every_contract_enum_value(self, tmp_path):
+        conn = _fresh_conn(tmp_path)
+        _apply_news_like_runner(conn)
+        for maturity in ("2y", "10y", "be10y"):
+            conn.execute(
+                f"INSERT INTO bond_yields ({_BOND_YIELD_COLUMNS}) VALUES (?,?,?,?,?,?)",
+                _bond_yield_row(maturity=maturity),
+            )
+        for observed_at, source in (("2026-10-01", "fred"), ("2026-10-02", "yahoo")):
+            conn.execute(
+                f"INSERT INTO bond_yields ({_BOND_YIELD_COLUMNS}) VALUES (?,?,?,?,?,?)",
+                _bond_yield_row(observed_at=observed_at, source=source),
             )
 
 
@@ -457,9 +585,10 @@ class TestIdempotentVersioning:
         _apply_news_like_runner(conn)
 
         assert _table_names(conn) == first_tables
-        assert conn.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()[0] == 1
+        applied = conn.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()[0]
+        assert applied == len(NEWS_MIGRATIONS)
         assert conn.execute("SELECT COUNT(*) FROM news_events").fetchone()[0] == count_before
-        assert conn.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()[0] == 1
+        assert conn.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()[0] == applied
 
     def test_raw_sql_reapply_is_idempotent_via_if_not_exists(self, tmp_path):
         # Ngay cả áp SQL trực tiếp lần 2 (bỏ qua version) cũng không lỗi,
@@ -469,6 +598,104 @@ class TestIdempotentVersioning:
         sql = NEWS_SQL.read_text(encoding="utf-8")
         conn.executescript(sql)
         assert "schema_migrations" in _table_names(conn)
+
+
+class TestMigration002IngestRunsRebuild:
+    """002 rebuilds ``ingest_runs`` (§4.6) — must not lose rows, must be idempotent.
+
+    SQLite cannot ALTER a CHECK constraint, so 002 copies the old table into
+    ``ingest_runs_v2`` (CHECK + ``bond_yield``), drops the old one and renames.
+    The critical case of the batch: a database already carrying 001 data must
+    survive the rebuild.
+    """
+
+    def _seed_001_with_one_run(self, db_path: Path) -> None:
+        conn = sqlite3.connect(db_path)
+        try:
+            conn.executescript(NEWS_SQL.read_text(encoding="utf-8"))
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS schema_migrations "
+                "(version TEXT PRIMARY KEY, applied_at_utc TEXT NOT NULL)"
+            )
+            conn.execute(
+                "INSERT INTO schema_migrations (version, applied_at_utc) VALUES (?, ?)",
+                ("001_create_news_db", "2026-09-21T00:00:00Z"),
+            )
+            conn.execute(
+                "INSERT INTO ingest_runs (producer, started_at, finished_at, status, items_written) "
+                "VALUES (?, ?, ?, ?, ?)",
+                ("fred", "2026-09-21T01:00:00Z", "2026-09-21T01:01:00Z", "ok", 7),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def test_002_preserves_existing_ingest_runs_rows(self, tmp_path):
+        db_path = tmp_path / "news_legacy.db"
+        self._seed_001_with_one_run(db_path)
+
+        NewsRepository(db_path=db_path, migrations_dir=NEWS_MIGRATIONS_DIR)
+
+        conn = sqlite3.connect(db_path)
+        try:
+            rows = conn.execute(
+                "SELECT producer, items_written FROM ingest_runs ORDER BY id"
+            ).fetchall()
+            assert rows == [("fred", 7)]
+            versions = {
+                row[0] for row in conn.execute("SELECT version FROM schema_migrations")
+            }
+            assert versions == {migration.stem for migration in NEWS_MIGRATIONS}
+            # the rebuilt CHECK now admits the new producer value
+            conn.execute(
+                "INSERT INTO ingest_runs (producer, started_at, finished_at, status, items_written) "
+                "VALUES (?, ?, ?, ?, ?)",
+                ("bond_yield", "2026-09-22T01:00:00Z", "2026-09-22T01:01:00Z", "ok", 3),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def test_migrate_is_idempotent_and_keeps_rows(self, tmp_path):
+        repo = NewsRepository(
+            db_path=tmp_path / "news.db", migrations_dir=NEWS_MIGRATIONS_DIR
+        )
+        conn = sqlite3.connect(repo.db_path)
+        try:
+            conn.execute(
+                "INSERT INTO ingest_runs (producer, started_at, finished_at, status, items_written) "
+                "VALUES (?, ?, ?, ?, ?)",
+                ("fred", "2026-09-21T01:00:00Z", "2026-09-21T01:01:00Z", "ok", 2),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        repo.migrate()  # second apply — versions already recorded, must be a no-op
+
+        conn = sqlite3.connect(repo.db_path)
+        try:
+            assert (
+                conn.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()[0]
+                == len(NEWS_MIGRATIONS)
+            )
+            assert (
+                conn.execute("SELECT COUNT(*) FROM ingest_runs").fetchone()[0] == 1
+            )
+        finally:
+            conn.close()
+
+    def test_rebuild_leaves_no_transient_v2_table(self, tmp_path):
+        repo = NewsRepository(
+            db_path=tmp_path / "news.db", migrations_dir=NEWS_MIGRATIONS_DIR
+        )
+        conn = sqlite3.connect(repo.db_path)
+        try:
+            tables = _table_names(conn)
+        finally:
+            conn.close()
+        assert "ingest_runs" in tables
+        assert "ingest_runs_v2" not in tables
 
 
 class TestQd2JournalIsolation:

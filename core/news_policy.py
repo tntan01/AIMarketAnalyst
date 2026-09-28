@@ -49,6 +49,7 @@ MANDATORY_KEYS: Final[frozenset[str]] = frozenset(
         "rss_poll_interval_minutes",
         "rss_window_hours",
         "fred_refresh_hours",
+        "bond_yield_refresh_hours",
         "event_stale_grace_minutes",
         "ingest_freshness_hours",
         "ingest_runs_retention_days",
@@ -63,6 +64,7 @@ POSITIVE_INT_FIELDS: Final[tuple[str, ...]] = (
     "rss_poll_interval_minutes",
     "rss_window_hours",
     "fred_refresh_hours",
+    "bond_yield_refresh_hours",
     "event_stale_grace_minutes",
     "ingest_freshness_hours",
     "ingest_runs_retention_days",
@@ -175,6 +177,7 @@ class NewsPolicy:
     rss_poll_interval_minutes: int
     rss_window_hours: int
     fred_refresh_hours: int
+    bond_yield_refresh_hours: int
     event_stale_grace_minutes: int
     ingest_freshness_hours: int
     ingest_runs_retention_days: int
@@ -218,6 +221,10 @@ class NewsPolicy:
             ),
             fred_refresh_hours=_require_positive_int(
                 _require_key(data, "fred_refresh_hours"), "fred_refresh_hours"
+            ),
+            bond_yield_refresh_hours=_require_positive_int(
+                _require_key(data, "bond_yield_refresh_hours"),
+                "bond_yield_refresh_hours",
             ),
             event_stale_grace_minutes=_require_positive_int(
                 _require_key(data, "event_stale_grace_minutes"),

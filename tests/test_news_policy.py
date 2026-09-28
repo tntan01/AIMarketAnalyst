@@ -45,6 +45,7 @@ OWNER_DECIDED_VALUES = {
     "rss_poll_interval_minutes": 15,
     "rss_window_hours": 24,
     "fred_refresh_hours": 6,
+    "bond_yield_refresh_hours": 6,
     "event_stale_grace_minutes": 15,
     "ingest_freshness_hours": 2,
     "ingest_runs_retention_days": 30,
@@ -129,6 +130,17 @@ class TestInheritedRuntimeValues:
     def test_inherited_values_carry_the_evidence_label(self, key):
         provenance = _config_data()["_provenance"]
         assert "kế thừa runtime hiện hành (bằng chứng: đang chạy)" in provenance[key]
+
+    def test_bond_yield_refresh_hours_equals_fred_refresh_hours(self):
+        # B5 (đợt 5): the new key is the value of ``fred_refresh_hours`` --
+        # no new number is fabricated (Owner chốt 28/09/2026, contract §7).
+        policy = load_news_policy()
+        assert policy.bond_yield_refresh_hours == policy.fred_refresh_hours
+
+    def test_bond_yield_refresh_hours_carries_its_provenance_note(self):
+        provenance = _config_data()["_provenance"]
+        assert "fred_refresh_hours" in provenance["bond_yield_refresh_hours"]
+        assert "Owner chốt đợt 5" in provenance["bond_yield_refresh_hours"]
 
 
 class TestFailClosedLoad:
