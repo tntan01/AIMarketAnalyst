@@ -38,9 +38,14 @@ from core.news_models import (
     NewsItem,
     NewsItemKind,
     NewsItemSource,
+    RateObservation,
+    RateSource,
 )
 from core.news_policy import HorizonDefinition
-from core.trend_prompt_builder import TrendPromptOutcome, build_trend_prompt
+from core.rate_trend import RateTrend
+from core.trend_prompt_builder import MarketContext, TrendPromptOutcome, build_trend_prompt
+from core.yield_context import YieldContext
+from services.news_repository import CurrencyRateTrend
 
 BUILDER_PY = Path(builder.__file__)
 NOW = datetime(2026, 9, 22, 10, 0, tzinfo=UTC)
@@ -90,12 +95,51 @@ def _item(row_id: int | None = 22, **overrides: object) -> NewsItem:
     return NewsItem(**data)  # type: ignore[arg-type]
 
 
+def _rate_context(
+    currency: str = "USD",
+    rate: float = 5.5,
+    observed_at: str = "2026-09-18",
+    trend: RateTrend = RateTrend.HOLD,
+) -> CurrencyRateTrend:
+    return CurrencyRateTrend(
+        currency=currency,
+        latest=RateObservation(
+            currency=currency,
+            rate=rate,
+            observed_at=observed_at,
+            source=RateSource.FRED,
+            fetched_at="2026-09-19T00:00:00Z",
+            id=1,
+        ),
+        previous=None,
+        trend=trend,
+    )
+
+
+def _yield_context(**overrides: object) -> YieldContext:
+    data: dict[str, object] = {
+        "yield_2y": 3.72,
+        "observed_at_2y": "2026-09-18",
+        "yield_10y": 3.91,
+        "observed_at_10y": "2026-09-18",
+        "be10y": 2.36,
+        "observed_at_be10y": "2026-09-18",
+        "delta_2y": -0.08,
+        "delta_10y": 0.02,
+        "spread_2y10y": 0.19,
+        "real_yield_10y": 1.55,
+    }
+    data.update(overrides)
+    return YieldContext(**data)  # type: ignore[arg-type]
+
+
 def _build(
     events: list[CalendarEvent] | None = None,
     items: list[NewsItem] | None = None,
     *,
     scope_type: str = "pair",
     scope_value: str = "EUR/USD",
+    context: MarketContext | None = None,
     now: datetime = NOW,
     window_days: int = 7,
     horizons: dict[str, HorizonDefinition] | None = None,
@@ -106,6 +150,7 @@ def _build(
         scope_value=scope_value,
         events=events if events is not None else [_event()],
         items=items if items is not None else [_item()],
+        context=context if context is not None else MarketContext(),
         now=now,
         window_days=window_days,
         horizons=horizons if horizons is not None else _horizons(),
@@ -177,6 +222,33 @@ class TestPromptStabilityAndHash:
         assert prompt is not None
         assert len(prompt.prompt_hash) == 64
         assert set(prompt.prompt_hash) <= set("0123456789abcdef")
+
+    def test_market_context_block_changed_the_frame_hash_exactly_once(self):
+        # C5 (đợt 5): adding the market-context block re-hashed the frame ONCE;
+        # this pins the new value so a later accidental frame edit is red
+        # (B4 must not change the frame again).
+        prompt = _build().prompt
+
+        assert prompt is not None
+        assert (
+            prompt.prompt_hash
+            == "d261c7cc5ef9949c78347a6d3cca2c9e70486091425f689e7b39fb9cb45fe46f"
+        )
+
+    def test_hash_is_independent_of_the_market_context(self):
+        # The hash covers the frame, never the data: different contexts (even
+        # none) keep the same hash while the rendered prompt differs.
+        empty = _build(context=MarketContext()).prompt
+        full = _build(
+            context=MarketContext(
+                rates=(_rate_context(),), yields=_yield_context()
+            )
+        ).prompt
+
+        assert empty is not None and full is not None
+        assert empty.prompt_hash == full.prompt_hash
+        assert "market context: none" in empty.text
+        assert "policy rate USD" in full.text
 
 
 # ---- 2. ngưỡng ai_min_items (fail-closed, §9.1 bước 2) -------------------------
@@ -337,6 +409,111 @@ class TestEvidenceAndSnapshot:
         assert "- mid: week 2-4" in outcome.prompt.text
 
 
+# ---- 4b. khối "Market context" (§9.1 bước 3, C1-C4) -----------------------------
+
+
+class TestMarketContextBlock:
+    def test_full_context_renders_each_line(self):
+        outcome = _build(
+            context=MarketContext(
+                rates=(
+                    _rate_context("USD", 5.5, "2026-09-18", RateTrend.HOLD),
+                    _rate_context("EUR", 2.0, "2026-09-18", RateTrend.CUT),
+                ),
+                yields=_yield_context(),
+            )
+        )
+
+        assert outcome.prompt is not None
+        text = outcome.prompt.text
+        assert "Market context (for reasoning only - do NOT cite as evidence):" in text
+        assert "- policy rate USD: 5.50 (hold), observed 2026-09-18" in text
+        assert "- policy rate EUR: 2.00 (cut), observed 2026-09-18" in text
+        assert (
+            "- treasury 2y: 3.72 (delta -0.08 in window), 10y: 3.91 (delta 0.02)"
+            in text
+        )
+        assert "- spread 2y10y: 0.19; real yield 10y: 1.55" in text
+
+    def test_empty_context_renders_the_none_line(self):
+        outcome = _build(context=MarketContext())
+
+        assert outcome.prompt is not None
+        assert "market context: none" in outcome.prompt.text
+        assert "Market context (for reasoning only" not in outcome.prompt.text
+
+    def test_missing_rate_omits_only_its_line(self):
+        outcome = _build(context=MarketContext(rates=(_rate_context("USD"),)))
+
+        assert outcome.prompt is not None
+        assert "- policy rate USD:" in outcome.prompt.text
+        assert "policy rate EUR:" not in outcome.prompt.text
+
+    def test_missing_yields_omits_the_treasury_block(self):
+        outcome = _build(context=MarketContext(rates=(_rate_context(),)))
+
+        assert outcome.prompt is not None
+        assert "- policy rate USD:" in outcome.prompt.text
+        assert "treasury 2y:" not in outcome.prompt.text
+        assert "spread 2y10y:" not in outcome.prompt.text
+
+    def test_missing_subfields_render_as_dash(self):
+        outcome = _build(
+            context=MarketContext(
+                rates=(_rate_context(),),
+                yields=_yield_context(
+                    be10y=None,
+                    observed_at_be10y=None,
+                    real_yield_10y=None,
+                    delta_2y=None,
+                ),
+            )
+        )
+
+        assert outcome.prompt is not None
+        text = outcome.prompt.text
+        assert "treasury 2y: 3.72 (delta - in window)" in text
+        assert "real yield 10y: -" in text
+
+    def test_context_never_counts_toward_the_floor(self):
+        # C4: below ai_min_items the prompt stays None even with a full context.
+        outcome = _build(
+            events=[_event()],
+            items=[],
+            context=MarketContext(
+                rates=(_rate_context(),), yields=_yield_context()
+            ),
+            min_items=2,
+        )
+
+        assert outcome.insufficient_data is True
+        assert outcome.prompt is None
+
+    def test_context_is_never_citable_and_not_in_the_snapshot(self):
+        prompt = _build(
+            context=MarketContext(
+                rates=(
+                    _rate_context("USD", rate=5.5),
+                    _rate_context("EUR", rate=2.0),
+                ),
+                yields=_yield_context(),
+            )
+        ).prompt
+
+        assert prompt is not None
+        # evidence ids are only the printed rows (11 and 22), never context data
+        assert prompt.evidence_item_ids == (11, 22)
+        # §4.5 snapshot unchanged - no context field
+        assert prompt.snapshot == {
+            "window_days": 7,
+            "from_utc": "2026-09-15T10:00:00Z",
+            "to_utc": "2026-09-22T10:00:00Z",
+            "event_count": 1,
+            "item_count": 1,
+        }
+        assert "5.50" not in str(prompt.snapshot)
+
+
 # ---- 5. ranh giới lớp + hàm thuần (L1/L2/L3) -----------------------------------
 
 
@@ -377,8 +554,10 @@ class TestPurityAndLayerBoundary:
             "collections.abc",
             "dataclasses",
             "datetime",
+            "typing",
             "core.news_models",
             "core.news_policy",
+            "core.yield_context",
         }
 
     def test_module_source_is_ascii_no_vietnamese_display_strings(self):
@@ -410,6 +589,7 @@ class TestPurityAndLayerBoundary:
             "scope_value",
             "events",
             "items",
+            "context",
             "now",
             "window_days",
             "horizons",

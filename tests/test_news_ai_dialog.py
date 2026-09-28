@@ -48,7 +48,7 @@ from core.news_models import (
     VerdictScopeType,
 )
 from core.news_policy import load_news_policy
-from core.trend_prompt_builder import build_trend_prompt
+from core.trend_prompt_builder import MarketContext, build_trend_prompt
 from ui.screens import news_screen as news
 from ui.screens.news_screen import NewsScreen
 
@@ -219,6 +219,7 @@ class TestHappyPath:
             scope_value="EUR/USD",
             events=controller.events_in_range(WIDE_FROM, NOW_ISO),
             items=controller.items_in_range(WIDE_FROM, NOW_ISO),
+            context=MarketContext(),
             now=NOW,
             window_days=policy.ai_window_days,
             horizons=policy.ai_horizons,
@@ -451,7 +452,14 @@ def _wait_until(predicate, timeout: float = 5.0) -> bool:
     return predicate()
 
 
-def _preview(*, events: int = 0, items: int = 3, min_items: int = 3) -> AiScopePreview:
+def _preview(
+    *,
+    events: int = 0,
+    items: int = 3,
+    min_items: int = 3,
+    rate_available: bool = False,
+    yields_available: bool = False,
+) -> AiScopePreview:
     return AiScopePreview(
         scope_type="pair",
         scope_value="EUR/USD",
@@ -459,6 +467,8 @@ def _preview(*, events: int = 0, items: int = 3, min_items: int = 3) -> AiScopeP
         event_count=events,
         item_count=items,
         min_items=min_items,
+        rate_available=rate_available,
+        yields_available=yields_available,
     )
 
 

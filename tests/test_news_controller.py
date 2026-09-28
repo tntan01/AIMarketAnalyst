@@ -67,9 +67,11 @@ from core.news_models import (
 )
 from core.news_policy import NewsPolicy
 from core.rate_trend import RateTrend
+from core.yield_context import YieldContext
 from services.ff_source_parser import ParseErrorKind, RowDisposition
 from services.news_repository import (
     ActualConflict,
+    BondYieldSnapshot,
     CurrencyRateTrend,
     NewsRepository,
     UpsertItemsResult,
@@ -101,6 +103,7 @@ class FakeRepository:
         self.events: list[CalendarEvent] = []
         self.items: list[NewsItem] = []
         self.rates: list[CurrencyRateTrend] = []
+        self.yields_snapshots: list[BondYieldSnapshot] = []
         self.state = StoreState(
             events_state=StoreStatus.FRESH,
             items_state=StoreStatus.FRESH,
@@ -146,6 +149,10 @@ class FakeRepository:
     def latest_rates(self, currencies: list[str]) -> list[CurrencyRateTrend]:
         self._record("latest_rates", (currencies,), {})
         return self.rates
+
+    def latest_bond_yields(self, currencies: list[str]) -> list[BondYieldSnapshot]:
+        self._record("latest_bond_yields", (currencies,), {})
+        return self.yields_snapshots
 
     def store_state(self) -> StoreState:
         self._record("store_state", (), {})
@@ -1046,6 +1053,112 @@ class TestReadDelegation:
         history = controller.verdicts_for("pair", "EUR/USD", 5)
         assert repo.calls == [("verdicts_for", ("pair", "EUR/USD", 5), {})]  # (b) truyền đúng
         assert history is repo.verdict_history  # (c) trả nguyên trạng list[TrendVerdict] (C3)
+
+
+# ---- 4b. market context của AI (§9.1 bước 3, C1-C3) ------------------------------
+
+
+def _rate_trend(
+    currency: str = "USD",
+    rate: float = 5.5,
+    observed_at: str = "2026-09-18",
+) -> CurrencyRateTrend:
+    return CurrencyRateTrend(
+        currency=currency,
+        latest=RateObservation(
+            currency=currency,
+            rate=rate,
+            observed_at=observed_at,
+            source=RateSource.FRED,
+            fetched_at="2026-09-19T00:00:00Z",
+            id=1,
+        ),
+        previous=None,
+        trend=RateTrend.HOLD,
+    )
+
+
+def _yield_snapshot() -> BondYieldSnapshot:
+    return BondYieldSnapshot(
+        currency="USD",
+        context=YieldContext(
+            yield_2y=3.72,
+            observed_at_2y="2026-09-18",
+            yield_10y=3.91,
+            observed_at_10y="2026-09-18",
+            be10y=2.36,
+            observed_at_be10y="2026-09-18",
+            delta_2y=-0.08,
+            delta_10y=0.02,
+            spread_2y10y=0.19,
+            real_yield_10y=1.55,
+        ),
+        observations=(),
+    )
+
+
+class TestAiMarketContextRead:
+    def test_currency_scope_reads_that_currency_and_usd_yields(self):
+        repo = FakeRepository()
+        repo.rates = [_rate_trend("EUR")]
+        controller = _controller(repo=repo)
+
+        context = controller._ai_market_context("currency", "EUR")
+
+        assert ("latest_rates", (["EUR"],), {}) in repo.calls
+        assert ("latest_bond_yields", (["USD"],), {}) in repo.calls
+        assert [r.currency for r in context.rates] == ["EUR"]
+        assert context.yields is None  # no snapshot -> None (B4)
+
+    @pytest.mark.parametrize("code", ["XAU", "XAG", "BTC"])
+    def test_usd_priced_assets_use_the_usd_rate(self, code):
+        repo = FakeRepository()
+        repo.rates = [_rate_trend("USD")]
+        controller = _controller(repo=repo)
+
+        context = controller._ai_market_context("currency", code)
+
+        assert ("latest_rates", (["USD"],), {}) in repo.calls
+        assert [r.currency for r in context.rates] == ["USD"]
+
+    def test_pair_scope_reads_both_sides(self):
+        repo = FakeRepository()
+        repo.rates = [_rate_trend("EUR"), _rate_trend("USD")]
+        controller = _controller(repo=repo)
+
+        context = controller._ai_market_context("pair", "EUR/USD")
+
+        assert ("latest_rates", (["EUR", "USD"],), {}) in repo.calls
+        assert [r.currency for r in context.rates] == ["EUR", "USD"]
+
+    def test_yields_come_from_the_usd_snapshot(self):
+        repo = FakeRepository()
+        repo.yields_snapshots = [_yield_snapshot()]
+        controller = _controller(repo=repo)
+
+        context = controller._ai_market_context("currency", "JPY")
+
+        assert context.yields is not None
+        assert context.yields.real_yield_10y == 1.55
+
+    def test_preview_reports_context_availability(self):
+        repo = FakeRepository()
+        repo.rates = [_rate_trend("USD")]
+        repo.yields_snapshots = [_yield_snapshot()]
+        controller = _controller(repo=repo)
+
+        preview = controller.ai_scope_preview("currency", "USD")
+
+        assert preview.rate_available is True
+        assert preview.yields_available is True
+
+    def test_preview_without_context_reports_unavailable(self):
+        controller = _controller(repo=FakeRepository())
+
+        preview = controller.ai_scope_preview("currency", "USD")
+
+        assert preview.rate_available is False
+        assert preview.yields_available is False
 
 
 # ---- 5. worker (bọc concurrency, không logic nghiệp vụ) -------------------------

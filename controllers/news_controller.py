@@ -143,7 +143,12 @@ from core.news_models import (
     news_item_dedupe_key,
 )
 from core.news_policy import NewsPolicy, load_news_policy
-from core.trend_prompt_builder import TrendPrompt, TrendPromptOutcome, build_trend_prompt
+from core.trend_prompt_builder import (
+    MarketContext,
+    TrendPrompt,
+    TrendPromptOutcome,
+    build_trend_prompt,
+)
 from core.trend_verdict_parser import TrendParseOutcome, parse_trend_verdict
 from services.ai_service import AIProviderConfig, AIService
 from services.ff_source_parser import (
@@ -161,6 +166,7 @@ from services.news_producers.fred_rate_producer import FredRateProducer, RateFet
 from services.news_producers.rss_producer import RssCollectionResult, RssProducer
 from services.news_repository import (
     ActualConflict,
+    BondYieldSnapshot,
     CurrencyRateTrend,
     NewsRepository,
     UpsertEventsResult,
@@ -230,6 +236,12 @@ class UserNoteResult:
 NO_AI_CONFIG_TEXT = "Chưa cấu hình AI Provider hoặc API key trong Settings."
 PARSE_FAIL_TEXT = "AI không trả về JSON hợp lệ."
 
+# Assets priced in USD (contract §9.3 khoản 4): their scope reads the USD rate
+# and USD bond-yield context (C3).  The full 11-asset scope list is a batch B4
+# concern (derived from SUPPORTED_SYMBOLS); here only the USD-priced trio named
+# by the contract is needed.
+_USD_PRICED_ASSETS: frozenset[str] = frozenset({"XAU", "XAG", "BTC"})
+
 
 @dataclass(frozen=True, slots=True)
 class AiScopePreview:
@@ -238,7 +250,11 @@ class AiScopePreview:
     The dialog shows the count line before judging ("Cửa sổ tin: <ai_window_days>
     ngày gần nhất — <N> tin/sự kiện liên quan", screen_design d.1629) and only
     then offers the judge button; ``insufficient`` (below ``ai_min_items``) is
-    fail-closed — no prompt exists, so the AI is never called (B4)."""
+    fail-closed — no prompt exists, so the AI is never called (B4).
+
+    ``rate_available``/``yields_available`` report whether the market-context
+    block (§9.1 bước 3, đợt 5) has anything to render; they never affect the
+    floor (C4)."""
 
     scope_type: str
     scope_value: str
@@ -246,6 +262,8 @@ class AiScopePreview:
     event_count: int
     item_count: int
     min_items: int
+    rate_available: bool
+    yields_available: bool
 
     @property
     def insufficient(self) -> bool:
@@ -1049,7 +1067,7 @@ class NewsController:
         kiện liên quan" (d.1629) from this preview and, when ``insufficient``,
         shows "Không đủ dữ liệu nhận định" (d.1642) and never calls the AI
         (fail-closed, B4 — the same floor the builder enforces)."""
-        outcome = self._ai_outcome(scope_type, scope_value, now)
+        context, outcome = self._ai_context_and_outcome(scope_type, scope_value, now)
         return AiScopePreview(
             scope_type=scope_type,
             scope_value=scope_value,
@@ -1057,6 +1075,8 @@ class NewsController:
             event_count=outcome.event_count,
             item_count=outcome.item_count,
             min_items=outcome.min_items,
+            rate_available=bool(context.rates),
+            yields_available=context.yields is not None,
         )
 
     def analyze_trend(
@@ -1140,18 +1160,56 @@ class NewsController:
     ) -> TrendPromptOutcome:
         """The prompt outcome for one scope — the single data-read path shared
         by the preview and the analysis (they agree on counts and the floor)."""
+        return self._ai_context_and_outcome(scope_type, scope_value, now)[1]
+
+    def _ai_context_and_outcome(
+        self, scope_type: str, scope_value: str, now: datetime | None
+    ) -> tuple[MarketContext, TrendPromptOutcome]:
+        """The market context + prompt outcome of one scope (§9.1 bước 2-3).
+
+        Reads the scope's rows once and builds both together, so the preview and
+        the analysis see the same counts, floor and context.  The context is a
+        reasoning aid only — it is never part of the floor check (C4)."""
         moment = now if now is not None else datetime.now(UTC)
         events, items = self._ai_rows(scope_type, scope_value, moment)
-        return build_trend_prompt(
+        context = self._ai_market_context(scope_type, scope_value)
+        outcome = build_trend_prompt(
             scope_type=scope_type,
             scope_value=scope_value,
             events=events,
             items=items,
+            context=context,
             now=moment,
             window_days=self._policy.ai_window_days,
             horizons=self._policy.ai_horizons,
             min_items=self._policy.ai_min_items,
         )
+        return context, outcome
+
+    def _ai_market_context(self, scope_type: str, scope_value: str) -> MarketContext:
+        """Build the market context of one scope (§9.1 bước 3 - C1-C3).
+
+        Rate context (C1): the scope currency alone; both sides for a pair; the
+        USD rate for XAU/XAG/BTC (priced in USD, §9.3 khoản 4).  Bond-yield
+        context (C2): the USD ``latest_bond_yields`` context for every scope
+        (phase 1 only USD carries yields); an empty repository result yields
+        ``None`` (B4).  This layer only forwards typed models — it derives
+        nothing (the trend and yield derivations belong to ``core/``)."""
+        rates = tuple(
+            self._repo.latest_rates(self._ai_rate_currencies(scope_type, scope_value))
+        )
+        snapshots: list[BondYieldSnapshot] = self._repo.latest_bond_yields(["USD"])
+        yields = snapshots[0].context if snapshots else None
+        return MarketContext(rates=rates, yields=yields)
+
+    @staticmethod
+    def _ai_rate_currencies(scope_type: str, scope_value: str) -> list[str]:
+        """The currencies whose policy rate the context prints for one scope."""
+        if scope_type == "currency":
+            code = str(scope_value)
+            # XAU/XAG/BTC are priced in USD — their rate context is USD (C3).
+            return ["USD"] if code in _USD_PRICED_ASSETS else [code]
+        return [part.strip() for part in str(scope_value).split("/") if part.strip()]
 
     def _ai_rows(
         self, scope_type: str, scope_value: str, moment: datetime

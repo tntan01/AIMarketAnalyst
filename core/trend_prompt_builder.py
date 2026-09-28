@@ -11,6 +11,14 @@ into the prompt - inventing events, figures, dates or citation ids is forbidden.
 The prompt therefore carries every row it may be judged on, each with its domain
 id, and ``core/trend_verdict_parser.py`` refuses a verdict citing anything else.
 
+**Market context (batch B3, section 9.1 step 3 - C1-C3):** the prompt also
+renders a reasoning-aid block (policy rate + trend, treasury 2y/10y with deltas,
+2y10y spread, real yield) from a typed ``MarketContext``.  The context never
+counts toward the ``ai_min_items`` floor and carries no row id, so it can never
+be cited as evidence (C4); it is not written to ``input_snapshot`` (section 4.5
+unchanged).  Its rating types arrive through ``Protocol``s declared here, so
+``core/`` still never imports ``services/`` (L1).
+
 Purity and layering (the review point of this batch):
 
 * **Pure (L2).**  No I/O, no network, no clock beyond the ``now`` parameter, no
@@ -21,7 +29,9 @@ Purity and layering (the review point of this batch):
   its unit** (day/week/month, L1.1 decision) instead of converting it to days.
 * **Layer-clean (L1).**  Imports only stdlib + ``core.news_models`` +
   ``core.news_policy`` (the typed ``HorizonDefinition`` the caller already
-  holds); never services/ui/controllers/Qt.
+  holds) + ``core.yield_context`` (the typed context); never
+  services/ui/controllers/Qt - the rate context arrives through the ``Protocol``
+  declared here, not through a ``services`` import.
 * **No display string (L3).**  The source stays ASCII and English: the prompt is
   machine input for the model, never shown to the user.  The Vietnamese the
   contract requires is the model's ``rationale`` output, which the prompt asks
@@ -44,6 +54,7 @@ import hashlib
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from typing import Protocol
 
 from core.news_models import (
     CalendarEvent,
@@ -52,8 +63,68 @@ from core.news_models import (
     VerdictDirection,
 )
 from core.news_policy import HorizonDefinition
+from core.yield_context import YieldContext
 
-__all__ = ["TrendPrompt", "TrendPromptOutcome", "build_trend_prompt"]
+__all__ = [
+    "MarketContext",
+    "RateContextLike",
+    "TrendPrompt",
+    "TrendPromptOutcome",
+    "build_trend_prompt",
+]
+
+
+# ---------------------------------------------------------------------------
+# Market context (section 9.1 step 3, batch B3 - C1-C3)
+# ---------------------------------------------------------------------------
+
+
+class RateReadingLike(Protocol):
+    """Structural view of the rate reading the prompt prints - the two fields of
+    ``RateObservation`` the context line needs.
+
+    A Protocol (not an import) because ``core/`` must never depend on
+    ``services/`` (L1): the caller passes the real
+    ``services.news_repository.CurrencyRateTrend`` and the type checker accepts
+    it structurally."""
+
+    rate: float
+    observed_at: str
+
+
+class TrendValueLike(Protocol):
+    """Structural view of the derived trend enum (``core/rate_trend.RateTrend``):
+    only its frozen ``value`` is rendered."""
+
+    value: str
+
+
+class RateContextLike(Protocol):
+    """Structural view of one ``CurrencyRateTrend`` the prompt needs
+    (``currency`` + ``latest`` + ``trend``).
+
+    Declared here as a ``Protocol`` so the builder stays free of a
+    ``core -> services`` import (L1, import-linter gate); the caller passes the
+    real repository model."""
+
+    currency: str
+    latest: RateReadingLike
+    trend: TrendValueLike
+
+
+@dataclass(frozen=True, slots=True)
+class MarketContext:
+    """Optional market context for one prompt (section 9.1 step 3, batch B3).
+
+    ``rates`` holds 0..2 policy-rate contexts (one for a currency scope, both
+    sides for a pair); ``yields`` holds the USD bond-yield context, or ``None``
+    when none is available (B4).  Context is **reasoning aid only**: it is not
+    counted toward the ``ai_min_items`` floor (C4) and its values are never
+    citable as evidence (they carry no row id here).  An empty instance is
+    ``MarketContext()`` - the prompt then renders ``market context: none``."""
+
+    rates: tuple[RateContextLike, ...] = ()
+    yields: YieldContext | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -85,6 +156,7 @@ Rules:
 
 Scope: {scope_label}
 Data window: the last {window_days} day(s), {from_utc} to {to_utc} (UTC).
+{market_context}
 
 Horizons - judge each one and use these exact keys:
 {horizon_frame}
@@ -117,6 +189,22 @@ _NEWS_LINE_TEMPLATE = (
 _SCHEMA_LINE_TEMPLATE = (
     '  "{horizon}": {{"direction": "{directions}", "confidence": "{confidences}", '
     '"rationale": "{rationale}", "evidence_item_ids": [{evidence}]}}{comma}'
+)
+
+# Market-context fragments (section 9.1 step 3, batch B3).  The block is a
+# reasoning aid; it carries no row id, so it can never be cited as evidence.
+_MARKET_CONTEXT_HEADER = (
+    "Market context (for reasoning only - do NOT cite as evidence):"
+)
+_MARKET_CONTEXT_NONE = "market context: none"
+_RATE_CONTEXT_LINE_TEMPLATE = (
+    "- policy rate {currency}: {rate} ({trend}), observed {observed_at}"
+)
+_YIELD_TREASURY_LINE_TEMPLATE = (
+    "- treasury 2y: {y2} (delta {d2} in window), 10y: {y10} (delta {d10})"
+)
+_YIELD_SPREAD_LINE_TEMPLATE = (
+    "- spread 2y10y: {spread}; real yield 10y: {real}"
 )
 
 _ABSENT = "-"
@@ -259,6 +347,50 @@ def _data_block(events: Sequence[CalendarEvent], items: Sequence[NewsItem]) -> s
     return "\n".join(lines) if lines else _ABSENT
 
 
+def _number(value: float | None) -> str:
+    """Render a context number to two decimals; a missing value prints ``-``
+    (the ``_ABSENT`` form) - no figure is invented (B4)."""
+    return _ABSENT if value is None else f"{value:.2f}"
+
+
+def _market_context_block(context: MarketContext) -> str:
+    """The market-context section (section 9.1 step 3, batch B3).
+
+    One policy-rate line per item in ``context.rates``; the treasury/spread
+    lines only when ``context.yields is not None`` (missing sub-fields print
+    ``-``).  With neither rate nor yields the whole block is the single line
+    ``market context: none``.  The block carries no row id, so nothing in it is
+    citable as evidence (C4)."""
+    lines = [
+        _RATE_CONTEXT_LINE_TEMPLATE.format(
+            currency=_text(rate.currency),
+            rate=_number(rate.latest.rate),
+            trend=_text(rate.trend.value),
+            observed_at=_text(rate.latest.observed_at),
+        )
+        for rate in context.rates
+    ]
+    yields = context.yields
+    if yields is not None:
+        lines.append(
+            _YIELD_TREASURY_LINE_TEMPLATE.format(
+                y2=_number(yields.yield_2y),
+                d2=_number(yields.delta_2y),
+                y10=_number(yields.yield_10y),
+                d10=_number(yields.delta_10y),
+            )
+        )
+        lines.append(
+            _YIELD_SPREAD_LINE_TEMPLATE.format(
+                spread=_number(yields.spread_2y10y),
+                real=_number(yields.real_yield_10y),
+            )
+        )
+    if not lines:
+        return _MARKET_CONTEXT_NONE
+    return "\n".join([_MARKET_CONTEXT_HEADER, *lines])
+
+
 def _skeleton(horizons: Mapping[str, HorizonDefinition]) -> str:
     """Canonical text of the frame - the thing ``prompt_hash`` hashes.
 
@@ -272,6 +404,11 @@ def _skeleton(horizons: Mapping[str, HorizonDefinition]) -> str:
         _EVENT_LINE_TEMPLATE,
         _NEWS_LINE_TEMPLATE,
         _SCHEMA_LINE_TEMPLATE,
+        _MARKET_CONTEXT_HEADER,
+        _MARKET_CONTEXT_NONE,
+        _RATE_CONTEXT_LINE_TEMPLATE,
+        _YIELD_TREASURY_LINE_TEMPLATE,
+        _YIELD_SPREAD_LINE_TEMPLATE,
     ]
     parts.extend(
         f"{key}|{span.unit}|{span.min_value}|{span.max_value}"
@@ -308,6 +445,7 @@ def build_trend_prompt(
     scope_value: str,
     events: Sequence[CalendarEvent],
     items: Sequence[NewsItem],
+    context: MarketContext,
     now: datetime,
     window_days: int,
     horizons: Mapping[str, HorizonDefinition],
@@ -324,7 +462,10 @@ def build_trend_prompt(
     shown exactly the data the caller decided on.
 
     The floor is checked first: fewer than ``min_items`` rows in total yields no
-    prompt at all (fail-closed, B4) and the AI is never called.
+    prompt at all (fail-closed, B4) and the AI is never called.  ``context`` is
+    rendered as the reasoning-aid block of section 9.1 step 3 (batch B3): it is
+    **never** counted toward the floor (C4), its values carry no row id and so
+    cannot be cited, and it is not part of ``snapshot``.
 
     ``prompt_hash`` covers the frame only; the returned ``snapshot`` carries the
     window and the counts for the verdict rows."""
@@ -349,6 +490,7 @@ def build_trend_prompt(
         window_days=window_days,
         from_utc=from_utc,
         to_utc=to_utc,
+        market_context=_market_context_block(context),
         horizon_frame=_horizon_frame(horizons),
         event_count=event_count,
         item_count=item_count,
