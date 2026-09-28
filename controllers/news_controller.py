@@ -153,6 +153,10 @@ from services.ff_source_parser import (
     finalize_edited_batch,
     parse_calendar_source,
 )
+from services.news_producers.bond_yield_producer import (
+    BondYieldFetchResult,
+    BondYieldProducer,
+)
 from services.news_producers.fred_rate_producer import FredRateProducer, RateFetchResult
 from services.news_producers.rss_producer import RssCollectionResult, RssProducer
 from services.news_repository import (
@@ -497,7 +501,7 @@ def _read_active_ai_provider() -> object | None:
 
 
 class NewsController:
-    """Thin orchestration over ``NewsRepository`` + the three producers (M5/§3)."""
+    """Thin orchestration over ``NewsRepository`` + the four producers (M5/§3)."""
 
     def __init__(
         self,
@@ -505,6 +509,7 @@ class NewsController:
         policy: NewsPolicy | None = None,
         rss_producer: RssProducer | None = None,
         fred_producer: FredRateProducer | None = None,
+        bond_yield_producer: BondYieldProducer | None = None,
         *,
         ai_service: object | None = None,
         ai_config_provider: Callable[[], object] | None = None,
@@ -516,6 +521,7 @@ class NewsController:
             rss_producer if rss_producer is not None else RssProducer(self._repo, self._policy)
         )
         self._fred_producer = fred_producer
+        self._bond_yield_producer = bond_yield_producer
         # AI seams (L3.5 — khuôn d.275-282): injected fakes for tests; the
         # production default resolves settings.ai.active_provider() lazily per
         # analyze turn (khuôn scanner_controller d.720-728).
@@ -572,6 +578,28 @@ class NewsController:
                 self._repo, self._policy, api_key=_fred_api_key()
             )
         return self._fred_producer
+
+    @property
+    def bond_yields_refresh_hours(self) -> int:
+        """Bond-yield refresh cadence — read from the bond-yield producer's
+        ``refresh_hours``, i.e. the ``bond_yield_refresh_hours`` policy key (R4)."""
+        return self._yield_producer().refresh_hours
+
+    def refresh_bond_yields(self) -> BondYieldFetchResult:
+        """Run ONE bond-yield refresh round (delegated to
+        ``bond_yield_producer``).  The API key is read from the settings when
+        this producer is first built (``_yield_producer``), exactly like the
+        FRED rate producer."""
+        return self._yield_producer().fetch_round()
+
+    def _yield_producer(self) -> BondYieldProducer:
+        """The bond-yield producer, built on first use so its API key is current
+        at round time; an injected producer wins (tests, alternate deployments)."""
+        if self._bond_yield_producer is None:
+            self._bond_yield_producer = BondYieldProducer(
+                self._repo, self._policy, api_key=_fred_api_key()
+            )
+        return self._bond_yield_producer
 
     # --- app-startup turn (plan L3.6, QĐ-F2 — đợt 3: purge + schedule only) ------
 

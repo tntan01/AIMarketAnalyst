@@ -390,16 +390,18 @@ class StoreStatus(_StringEnum):
 class StoreState:
     """Freshness summary of the whole store (section 8, ``store_state()``).
 
-    Reports one ``StoreStatus`` per signal (``events``, ``items``, ``rates``)
-    plus the last successful ingest time of each signal (from ``ingest_runs``;
-    ``None`` when the signal never had a successful run).  Two explicitly
-    typed components, field by field - never a bare dict across the boundary
-    (C3).
+    Reports one ``StoreStatus`` per signal (``events``, ``items``, ``rates``,
+    ``yields``) plus the last successful ingest time of each signal (from
+    ``ingest_runs``; ``None`` when the signal never had a successful run).
+    Two explicitly typed components, field by field - never a bare dict across
+    the boundary (C3).
     """
 
     events_state: StoreStatus
     items_state: StoreStatus
     rates_state: StoreStatus
+    yields_state: StoreStatus
     events_last_success_at: str | None = None
     items_last_success_at: str | None = None
     rates_last_success_at: str | None = None
+    yields_last_success_at: str | None = None

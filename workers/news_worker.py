@@ -9,12 +9,14 @@ whose intervals come from the controller's policy-derived properties (R4 — no
 operational number in this file; only the milliseconds-per-minute/hour unit
 conversion is local).
 
-Two rounds exist in this layer — the ones §13 keeps on a timer:
+Three rounds exist in this layer — the ones §13 keeps on a timer:
 
 * ``run_news_round`` → ``NewsController.poll_news`` (RSS poll,
   ``rss_poll_interval_minutes``).
 * ``run_rates_round`` → ``NewsController.refresh_rates`` (FRED refresh,
   ``fred_refresh_hours``).
+* ``run_yields_round`` → ``NewsController.refresh_bond_yields`` (bond-yield
+  refresh, ``bond_yield_refresh_hours`` — đợt 5).
 
 ForexFactory has no poll (Owner decision, contract §6.1/§13): its four turns are
 event-driven and belong to the news screen (L3.3) and the app-startup turn
@@ -71,6 +73,8 @@ class NewsWorker(QObject):
     news_failed = pyqtSignal(str)
     rates_succeeded = pyqtSignal(object)  # RateFetchResult
     rates_failed = pyqtSignal(str)
+    yields_succeeded = pyqtSignal(object)  # BondYieldFetchResult
+    yields_failed = pyqtSignal(str)
 
     def __init__(self, controller: NewsController, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -88,6 +92,10 @@ class NewsWorker(QObject):
         self._rates_timer.setInterval(controller.rates_refresh_hours * _HOUR_MS)
         self._rates_timer.timeout.connect(self.run_rates_round)
 
+        self._yields_timer = QTimer(self)
+        self._yields_timer.setInterval(controller.bond_yields_refresh_hours * _HOUR_MS)
+        self._yields_timer.timeout.connect(self.run_yields_round)
+
     # --- schedule (owned here; started by the batches that own the entry points) ---
 
     @property
@@ -100,17 +108,24 @@ class NewsWorker(QObject):
         """FRED refresh cadence actually programmed into the timer (policy key)."""
         return self._rates_timer.interval() // _HOUR_MS
 
+    @property
+    def yields_interval_hours(self) -> int:
+        """Bond-yield refresh cadence actually programmed into the timer (policy key)."""
+        return self._yields_timer.interval() // _HOUR_MS
+
     @pyqtSlot()
     def start(self) -> None:
-        """Start both periodic rounds (must be called from the worker's thread)."""
+        """Start the periodic rounds (must be called from the worker's thread)."""
         self._news_timer.start()
         self._rates_timer.start()
+        self._yields_timer.start()
 
     @pyqtSlot()
     def stop(self) -> None:
-        """Stop both periodic rounds."""
+        """Stop the periodic rounds."""
         self._news_timer.stop()
         self._rates_timer.stop()
+        self._yields_timer.stop()
 
     # --- rounds (one controller call each, outcome broadcast as a signal) ---------
 
@@ -139,6 +154,19 @@ class NewsWorker(QObject):
             return
         self.state = WorkerState.FINISHED
         self.rates_succeeded.emit(result)
+
+    @pyqtSlot()
+    def run_yields_round(self) -> None:
+        """One bond-yield round; emits the typed result or the failure reason."""
+        self.state = WorkerState.RUNNING
+        try:
+            result = self._controller.refresh_bond_yields()
+        except Exception as exc:
+            self.state = WorkerState.FAILED
+            self.yields_failed.emit(str(exc))
+            return
+        self.state = WorkerState.FINISHED
+        self.yields_succeeded.emit(result)
 
 
 class NewsReadWorker(QObject):

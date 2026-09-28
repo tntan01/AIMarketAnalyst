@@ -14,8 +14,9 @@ classification (contract §11b).  Its contract, verified here:
   had one - missing producer key) - with the ``*_last_success_at`` fields
   carrying the exact last successful ingest time (``None`` only when never);
 * the producer-only signal registry of §6 is honored: ``ff_crawler`` →
-  ``events``, ``rss`` → ``items``, ``fred`` → ``rates``; any other producer
-  key (``user``, ``on_demand_lookup``) in the mapping is ignored;
+  ``events``, ``rss`` → ``items``, ``fred`` → ``rates``, ``bond_yield`` →
+  ``yields`` (đợt 5); any other producer key (``user``,
+  ``on_demand_lookup``) in the mapping is ignored;
 * return values are the existing frozen enum members / typed ``StoreState``
   of ``core/news_models.py`` - never bare strings (C3, L3);
 * the module stays pure and layer-clean (L2/L1): ``now``/``grace``/``max_age``
@@ -264,12 +265,29 @@ class TestClassifyStoreState:
         assert state.items_state is StoreStatus.UNAVAILABLE
         assert state.rates_state is StoreStatus.UNAVAILABLE
 
+    def test_bond_yield_producer_feeds_the_yields_signal(self):
+        # Đợt 5 (§5/§8): ``bond_yield`` -> ``yields`` — the new signal is
+        # classified by the same rule as the other three.
+        state = classify_store_state(
+            {
+                IngestProducer.BOND_YIELD: _utc("2026-09-21T11:00:00Z"),
+            },
+            now=_NOW,
+            max_age=_MAX_AGE,
+        )
+        assert state.yields_state is StoreStatus.FRESH
+        assert state.yields_last_success_at == _utc("2026-09-21T11:00:00Z").isoformat()
+        assert state.events_state is StoreStatus.UNAVAILABLE
+        assert state.items_state is StoreStatus.UNAVAILABLE
+        assert state.rates_state is StoreStatus.UNAVAILABLE
+
     def test_status_fields_are_store_status_members(self):
         state = classify_store_state({}, now=_NOW, max_age=_MAX_AGE)
         for field in (
             state.events_state,
             state.items_state,
             state.rates_state,
+            state.yields_state,
         ):
             assert isinstance(field, StoreStatus)
 

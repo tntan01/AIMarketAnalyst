@@ -38,6 +38,9 @@ from pathlib import Path
 from config.paths import PROJECT_ROOT, news_db_path
 from core.news_freshness import classify_event_status, classify_store_state
 from core.news_models import (
+    BondYieldMaturity,
+    BondYieldObservation,
+    BondYieldSource,
     CalendarEvent,
     EventImpact,
     EventSource,
@@ -59,10 +62,12 @@ from core.news_models import (
 )
 from core.news_policy import load_news_policy
 from core.rate_trend import RateTrend, derive_rate_trend
+from core.yield_context import YieldContext, derive_yield_context
 from services.journal_models import SQLITE_BUSY_TIMEOUT_MS, SQLITE_TIMEOUT_SECONDS
 
 __all__ = [
     "ActualConflict",
+    "BondYieldSnapshot",
     "CurrencyRateTrend",
     "NewsRepository",
     "UpsertEventsResult",
@@ -123,6 +128,23 @@ class CurrencyRateTrend:
     trend: RateTrend
 
 
+@dataclass(frozen=True, slots=True)
+class BondYieldSnapshot:
+    """One currency's bond-yield observations plus the derived context
+    (contract §4.7/§8).
+
+    ``observations`` are the raw ``bond_yields`` rows of that currency (newest
+    first, each keeping its own ``source``/``observed_at``); ``context`` is the
+    ``core/yield_context.py`` result (deltas, 2y-10y spread, real yield) - the
+    repository never derives it itself.  Typed packet - never a dict across the
+    boundary (C3).
+    """
+
+    currency: str
+    context: YieldContext
+    observations: tuple[BondYieldObservation, ...]
+
+
 class NewsRepository:
     """Single access point of the News database — WRITE covenant, plan L2.1."""
 
@@ -144,6 +166,9 @@ class NewsRepository:
         self._ingest_freshness_max_age = timedelta(
             hours=policy.ingest_freshness_hours
         )
+        # Window used by the read-time yield derivation (R4 - the value is the
+        # policy key ``ai_window_days``, never a number hard-coded here).
+        self._ai_window_days = policy.ai_window_days
 
     # --- migration runner (khuôn: JournalService.migrate, journal_service.py:44-59) --
 
@@ -486,6 +511,35 @@ class NewsRepository:
             conn.commit()
         return count
 
+    # --- WRITE: bond_yields -------------------------------------------------------
+
+    def add_bond_observations(self, observations: list[BondYieldObservation]) -> int:
+        """Upsert bond-yield observations keyed by the unique quadruplet
+        ``(currency, maturity, observed_at, source)`` (contract §4.7) — a
+        duplicate observation overwrites ``value``/``fetched_at`` instead of
+        duplicating a row.  Returns the number of observations written."""
+        count = 0
+        with self._connect() as conn:
+            for obs in observations:
+                conn.execute(
+                    "INSERT INTO bond_yields "
+                    "(currency, maturity, value, observed_at, source, fetched_at) "
+                    "VALUES (?,?,?,?,?,?) "
+                    "ON CONFLICT (currency, maturity, observed_at, source) "
+                    "DO UPDATE SET value=excluded.value, fetched_at=excluded.fetched_at",
+                    (
+                        obs.currency,
+                        obs.maturity.value,
+                        obs.value,
+                        obs.observed_at,
+                        obs.source.value,
+                        obs.fetched_at,
+                    ),
+                )
+                count += 1
+            conn.commit()
+        return count
+
     # --- WRITE: ai_trend_verdicts -------------------------------------------------
 
     def add_verdicts(self, verdicts: list[TrendVerdict]) -> int:
@@ -696,6 +750,37 @@ class NewsRepository:
             )
         return result
 
+    def latest_bond_yields(self, currencies: list[str]) -> list[BondYieldSnapshot]:
+        """Per requested currency, the bond-yield observations and the derived
+        context (contract §4.7/§8).  The context comes from
+        ``core/yield_context.derive_yield_context`` with the policy window
+        ``ai_window_days`` — this repository never computes delta/spread/real
+        yield itself (contract §11b).  A currency with no observation at all
+        produces no entry (B4 — nothing is invented); the returned list is a
+        (possibly empty) list, never ``None``."""
+        now = datetime.now(timezone.utc)
+        result: list[BondYieldSnapshot] = []
+        for currency in currencies:
+            with self._connect() as conn:
+                rows = conn.execute(
+                    "SELECT * FROM bond_yields WHERE currency = ? "
+                    "ORDER BY observed_at DESC, id DESC",
+                    (currency,),
+                ).fetchall()
+            if not rows:
+                continue
+            observations = tuple(_bond_yield_from_row(row) for row in rows)
+            result.append(
+                BondYieldSnapshot(
+                    currency=currency,
+                    context=derive_yield_context(
+                        list(observations), now, self._ai_window_days
+                    ),
+                    observations=observations,
+                )
+            )
+        return result
+
     def store_state(self) -> StoreState:
         """Freshness of the whole store (contract §8/6.5): the last successful
         ingest (``status`` ``ok`` or ``partial``) per producer by ``finished_at``
@@ -844,6 +929,18 @@ def _observation_from_row(row: sqlite3.Row) -> RateObservation:
         rate=row["rate"],
         observed_at=row["observed_at"],
         source=RateSource(row["source"]),
+        fetched_at=row["fetched_at"],
+    )
+
+
+def _bond_yield_from_row(row: sqlite3.Row) -> BondYieldObservation:
+    return BondYieldObservation(
+        id=row["id"],
+        currency=row["currency"],
+        maturity=BondYieldMaturity(row["maturity"]),
+        value=row["value"],
+        observed_at=row["observed_at"],
+        source=BondYieldSource(row["source"]),
         fetched_at=row["fetched_at"],
     )
 

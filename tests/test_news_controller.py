@@ -105,6 +105,7 @@ class FakeRepository:
             events_state=StoreStatus.FRESH,
             items_state=StoreStatus.FRESH,
             rates_state=StoreStatus.FRESH,
+            yields_state=StoreStatus.FRESH,
         )
         self.verdict_history: list[TrendVerdict] = []
 
@@ -186,6 +187,23 @@ class FakeRateProducer:
         return self.result
 
 
+class FakeBondYieldProducer:
+    """Typed fake of ``bond_yield_producer``: counts rounds, exposes the cadence."""
+
+    def __init__(self, result: object | None = None, refresh_hours: int = 6) -> None:
+        self.rounds = 0
+        self.result = result if result is not None else _bond_yields_result()
+        self._refresh_hours = refresh_hours
+
+    @property
+    def refresh_hours(self) -> int:
+        return self._refresh_hours
+
+    def fetch_round(self) -> object:
+        self.rounds += 1
+        return self.result
+
+
 class FakeStarter:
     """Typed fake of the L3.7 ``schedule_starter`` seam — counts how many times
     the producer schedule was started (one per session)."""
@@ -204,15 +222,25 @@ class FakeController:
     """Typed fake of ``NewsController`` for the worker tests (worker must only
     forward what the controller returns)."""
 
-    def __init__(self, *, rss_poll_interval_minutes: int = 15, rates_refresh_hours: int = 6):
+    def __init__(
+        self,
+        *,
+        rss_poll_interval_minutes: int = 15,
+        rates_refresh_hours: int = 6,
+        bond_yields_refresh_hours: int = 6,
+    ):
         self.rss_poll_interval_minutes = rss_poll_interval_minutes
         self.rates_refresh_hours = rates_refresh_hours
+        self.bond_yields_refresh_hours = bond_yields_refresh_hours
         self.news_result = _rss_result()
         self.rates_result = _rates_result()
+        self.yields_result = _bond_yields_result()
         self.news_error: Exception | None = None
         self.rates_error: Exception | None = None
+        self.yields_error: Exception | None = None
         self.poll_calls = 0
         self.refresh_calls = 0
+        self.yields_calls = 0
 
     def poll_news(self) -> object:
         self.poll_calls += 1
@@ -225,6 +253,12 @@ class FakeController:
         if self.rates_error is not None:
             raise self.rates_error
         return self.rates_result
+
+    def refresh_bond_yields(self) -> object:
+        self.yields_calls += 1
+        if self.yields_error is not None:
+            raise self.yields_error
+        return self.yields_result
 
 
 def _rss_result() -> object:
@@ -250,6 +284,19 @@ def _rates_result() -> object:
         currencies_covered=("AUD", "USD"),
         run_status=IngestRunStatus.OK,
         run_id=12,
+        errors=(),
+    )
+
+
+def _bond_yields_result() -> object:
+    from services.news_producers.bond_yield_producer import BondYieldFetchResult
+
+    return BondYieldFetchResult(
+        fred_observations=3,
+        yahoo_observations=0,
+        maturities_covered=("USD:10y", "USD:2y", "USD:be10y"),
+        run_status=IngestRunStatus.OK,
+        run_id=13,
         errors=(),
     )
 
@@ -289,6 +336,7 @@ def _controller(
     policy: NewsPolicy | None = None,
     rss: object | None = None,
     rates: object | None = None,
+    yields: object | None = None,
     starter: FakeStarter | None = None,
     use_real_starter: bool = False,
 ) -> NewsController:
@@ -306,6 +354,7 @@ def _controller(
         policy=policy if policy is not None else _policy(),
         rss_producer=rss if rss is not None else FakeRssProducer(),
         fred_producer=rates if rates is not None else FakeRateProducer(),
+        bond_yield_producer=yields if yields is not None else FakeBondYieldProducer(),
         schedule_starter=schedule_starter,
     )
 
@@ -392,6 +441,15 @@ class TestProducerSchedule:
         assert rates.rounds == 1
         assert result is rates.result
 
+    def test_refresh_bond_yields_runs_exactly_one_round(self):
+        yields = FakeBondYieldProducer()
+        controller = _controller(yields=yields)
+
+        result = controller.refresh_bond_yields()
+
+        assert yields.rounds == 1
+        assert result is yields.result
+
     def test_rss_cadence_comes_from_the_policy_key(self):
         controller = _controller(policy=_policy(rss_poll_interval_minutes=7))
         assert controller.rss_poll_interval_minutes == 7
@@ -400,6 +458,13 @@ class TestProducerSchedule:
         rates = FakeRateProducer(refresh_hours=3)
         controller = _controller(policy=_policy(fred_refresh_hours=6), rates=rates)
         assert controller.rates_refresh_hours == 3  # nguồn: producer (khóa policy)
+
+    def test_bond_yields_cadence_is_read_from_the_producer(self):
+        yields = FakeBondYieldProducer(refresh_hours=9)
+        controller = _controller(
+            policy=_policy(bond_yield_refresh_hours=6), yields=yields
+        )
+        assert controller.bond_yields_refresh_hours == 9  # nguồn: producer (khóa policy)
 
     def test_rates_producer_is_built_lazily_with_the_policy_cadence(self):
         # Không inject producer FRED ⇒ controller tự dựng (không gọi mạng) và
@@ -412,13 +477,24 @@ class TestProducerSchedule:
 
         assert controller.rates_refresh_hours == 4
 
+    def test_bond_yield_producer_is_built_lazily_with_the_policy_cadence(self):
+        # Không inject producer bond yield ⇒ controller tự dựng (không gọi mạng)
+        # và đọc đúng khóa ``bond_yield_refresh_hours`` của policy.
+        controller = NewsController(
+            repo=FakeRepository(),
+            policy=_policy(bond_yield_refresh_hours=8),
+            rss_producer=FakeRssProducer(),
+        )
+
+        assert controller.bond_yields_refresh_hours == 8
+
     def test_construction_starts_no_round(self):
         """Plan L2.7: lượt fetch khởi động là L3.6 — dựng controller không gọi gì."""
-        rss, rates = FakeRssProducer(), FakeRateProducer()
+        rss, rates, yields = FakeRssProducer(), FakeRateProducer(), FakeBondYieldProducer()
         repo = FakeRepository()
-        _controller(repo=repo, rss=rss, rates=rates)
+        _controller(repo=repo, rss=rss, rates=rates, yields=yields)
 
-        assert (rss.rounds, rates.rounds) == (0, 0)
+        assert (rss.rounds, rates.rounds, yields.rounds) == (0, 0, 0)
         assert repo.upsert_items_calls == []
 
 
@@ -553,12 +629,18 @@ class TestProducerScheduleWire:
         """Starter thật: QThread + NewsWorker, 2 QTimer active đúng cadence
         policy (giá trị phân biệt — R4, không con số trong logic); teardown
         gọi stop để không để QThread treo."""
-        policy = _policy(rss_poll_interval_minutes=11, fred_refresh_hours=5)
-        # rates_refresh_hours is read from the rate producer (which owns the
-        # policy key) — inject a producer that agrees with the policy value.
+        policy = _policy(
+            rss_poll_interval_minutes=11,
+            fred_refresh_hours=5,
+            bond_yield_refresh_hours=7,
+        )
+        # rates_refresh_hours / bond_yields_refresh_hours are read from their
+        # producers (which own the policy keys) — inject producers that agree
+        # with the policy values.
         controller = _controller(
             policy=policy,
             rates=FakeRateProducer(refresh_hours=5),
+            yields=FakeBondYieldProducer(refresh_hours=7),
             use_real_starter=True,
         )
 
@@ -573,6 +655,7 @@ class TestProducerScheduleWire:
             # Worker timers carry the policy intervals (not some invented number).
             assert worker.news_interval_minutes == 11
             assert worker.rates_interval_hours == 5
+            assert worker.yields_interval_hours == 7
         finally:
             controller.stop_producer_schedule()
 
@@ -979,21 +1062,34 @@ def _qt_app():
 
 class TestNewsWorker:
     def test_timer_intervals_come_from_the_controller_cadence(self):
-        controller = FakeController(rss_poll_interval_minutes=15, rates_refresh_hours=6)
+        controller = FakeController(
+            rss_poll_interval_minutes=15,
+            rates_refresh_hours=6,
+            bond_yields_refresh_hours=8,
+        )
 
         worker = NewsWorker(controller)
 
         assert worker.news_interval_minutes == 15
         assert worker.rates_interval_hours == 6
+        assert worker.yields_interval_hours == 8
 
-    def test_start_and_stop_toggle_both_timers(self):
+    def test_start_and_stop_toggle_all_timers(self):
         worker = NewsWorker(FakeController())
 
         worker.start()
-        assert worker._news_timer.isActive() and worker._rates_timer.isActive()
+        assert (
+            worker._news_timer.isActive()
+            and worker._rates_timer.isActive()
+            and worker._yields_timer.isActive()
+        )
 
         worker.stop()
-        assert not worker._news_timer.isActive() and not worker._rates_timer.isActive()
+        assert (
+            not worker._news_timer.isActive()
+            and not worker._rates_timer.isActive()
+            and not worker._yields_timer.isActive()
+        )
 
     def test_news_round_emits_the_result_returned_by_the_controller(self):
         controller = FakeController()
@@ -1020,10 +1116,23 @@ class TestNewsWorker:
         assert seen == [controller.rates_result]
         assert worker.state == WorkerState.FINISHED
 
+    def test_yields_round_emits_the_result_returned_by_the_controller(self):
+        controller = FakeController()
+        worker = NewsWorker(controller)
+        seen: list[object] = []
+        worker.yields_succeeded.connect(seen.append)
+
+        worker.run_yields_round()
+
+        assert controller.yields_calls == 1
+        assert seen == [controller.yields_result]
+        assert worker.state == WorkerState.FINISHED
+
     def test_failing_round_reports_the_reason_and_never_succeeds(self):
         controller = FakeController()
         controller.news_error = RuntimeError("RSS không phản hồi")
         controller.rates_error = RuntimeError("FRED không phản hồi")
+        controller.yields_error = RuntimeError("FRED bond không phản hồi")
         worker = NewsWorker(controller)
         succeeded: list[object] = []
         failed: list[str] = []
@@ -1031,6 +1140,8 @@ class TestNewsWorker:
         worker.news_failed.connect(failed.append)
         worker.rates_succeeded.connect(succeeded.append)
         worker.rates_failed.connect(failed.append)
+        worker.yields_succeeded.connect(succeeded.append)
+        worker.yields_failed.connect(failed.append)
 
         worker.run_news_round()
         assert succeeded == [] and failed == ["RSS không phản hồi"]
@@ -1038,6 +1149,14 @@ class TestNewsWorker:
 
         worker.run_rates_round()
         assert succeeded == [] and failed == ["RSS không phản hồi", "FRED không phản hồi"]
+        assert worker.state == WorkerState.FAILED
+
+        worker.run_yields_round()
+        assert succeeded == [] and failed == [
+            "RSS không phản hồi",
+            "FRED không phản hồi",
+            "FRED bond không phản hồi",
+        ]
         assert worker.state == WorkerState.FAILED
 
     def test_worker_carries_no_domain_logic(self):

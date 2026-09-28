@@ -96,22 +96,28 @@ def classify_store_state(
 
     One signal per producer owner of the registry (contract section 6):
     ``ff_crawler`` feeds ``events``, ``rss`` feeds ``items``, ``fred`` feeds
-    ``rates``.  Producer keys outside that mapping (``user``,
-    ``on_demand_lookup``) have no clause in section 6.5 and are ignored; a
-    missing key means that signal never had a successful ingest and is
-    reported ``unavailable`` with a ``None`` last-success time (B4).
+    ``rates`` and ``bond_yield`` feeds ``yields`` (batch B2, section 5).
+    Producer keys outside that mapping (``user``, ``on_demand_lookup``) have no clause in
+    section 6.5 and are ignored; a missing key means that signal never had a
+    successful ingest and is reported ``unavailable`` with a ``None``
+    last-success time (B4).  The classification rule itself (``_classify_signal``)
+    is shared by every signal - only the registry mapping gains a source.
     """
     events_latest = last_success_by_producer.get(IngestProducer.FF_CRAWLER)
     items_latest = last_success_by_producer.get(IngestProducer.RSS)
     rates_latest = last_success_by_producer.get(IngestProducer.FRED)
+    yields_latest = last_success_by_producer.get(IngestProducer.BOND_YIELD)
     events_status, events_success_at = _classify_signal(events_latest, now, max_age)
     items_status, items_success_at = _classify_signal(items_latest, now, max_age)
     rates_status, rates_success_at = _classify_signal(rates_latest, now, max_age)
+    yields_status, yields_success_at = _classify_signal(yields_latest, now, max_age)
     return StoreState(
         events_state=events_status,
         items_state=items_status,
         rates_state=rates_status,
+        yields_state=yields_status,
         events_last_success_at=events_success_at,
         items_last_success_at=items_success_at,
         rates_last_success_at=rates_success_at,
+        yields_last_success_at=yields_success_at,
     )

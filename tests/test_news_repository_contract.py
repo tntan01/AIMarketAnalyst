@@ -27,9 +27,14 @@ import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import pytest
+
 import services.news_repository as news_repository_module
 from config.paths import PROJECT_ROOT
 from core.news_models import (
+    BondYieldMaturity,
+    BondYieldObservation,
+    BondYieldSource,
     CalendarEvent,
     EventImpact,
     EventSource,
@@ -52,7 +57,12 @@ from core.news_models import (
 )
 from core.news_policy import load_news_policy
 from core.rate_trend import RateTrend, derive_rate_trend
-from services.news_repository import CurrencyRateTrend, NewsRepository
+from core.yield_context import derive_yield_context
+from services.news_repository import (
+    BondYieldSnapshot,
+    CurrencyRateTrend,
+    NewsRepository,
+)
 
 NEWS_MIGRATIONS_DIR = PROJECT_ROOT / "data" / "migrations" / "news"
 
@@ -140,6 +150,24 @@ def _rate(
     return RateObservation(
         currency=currency,
         rate=rate,
+        observed_at=observed_at,
+        source=source,
+        fetched_at="2026-09-21T01:00:00Z",
+    )
+
+
+def _bond(
+    currency: str,
+    maturity: BondYieldMaturity,
+    observed_at: str,
+    value: float,
+    *,
+    source: BondYieldSource = BondYieldSource.FRED,
+) -> BondYieldObservation:
+    return BondYieldObservation(
+        currency=currency,
+        maturity=maturity,
+        value=value,
         observed_at=observed_at,
         source=source,
         fetched_at="2026-09-21T01:00:00Z",
@@ -249,6 +277,14 @@ class TestContractSignatures:
     def test_latest_rates_signature(self):
         sig = inspect.signature(NewsRepository.latest_rates)
         assert list(sig.parameters) == ["self", "currencies"]
+
+    def test_latest_bond_yields_signature(self):
+        sig = inspect.signature(NewsRepository.latest_bond_yields)
+        assert list(sig.parameters) == ["self", "currencies"]
+
+    def test_add_bond_observations_signature(self):
+        sig = inspect.signature(NewsRepository.add_bond_observations)
+        assert list(sig.parameters) == ["self", "observations"]
 
     def test_store_state_signature(self):
         assert list(inspect.signature(NewsRepository.store_state).parameters) == ["self"]
@@ -494,6 +530,85 @@ class TestLatestRates:
         assert usd.previous.rate == 5.25
 
 
+# ---- 6b. latest_bond_yields -----------------------------------------------------
+
+
+class TestLatestBondYields:
+    def _seed(self, repo: NewsRepository, now: datetime) -> None:
+        day = now.date().isoformat()
+        reference = (now - timedelta(days=8)).date().isoformat()
+        repo.add_bond_observations([
+            _bond("USD", BondYieldMaturity.TWO_YEAR, day, 4.50),
+            _bond("USD", BondYieldMaturity.TWO_YEAR, reference, 4.00),
+            _bond("USD", BondYieldMaturity.TEN_YEAR, day, 4.20),
+            _bond("USD", BondYieldMaturity.TEN_YEAR, reference, 3.90),
+            _bond("USD", BondYieldMaturity.BREAKEVEN_10Y, day, 2.30),
+        ])
+
+    def test_context_matches_core_derive_for_the_same_rows(self, tmp_path):
+        repo = _repo(tmp_path)
+        now = datetime.now(timezone.utc)
+        self._seed(repo, now)
+
+        entries = repo.latest_bond_yields(["USD", "EUR"])
+
+        assert isinstance(entries, list)
+        assert all(isinstance(e, BondYieldSnapshot) for e in entries)
+        # EUR never observed -> no entry at all (B4)
+        assert [e.currency for e in entries] == ["USD"]
+        snapshot = entries[0]
+        context = snapshot.context
+        assert context.yield_2y == 4.50
+        assert context.yield_10y == 4.20
+        assert context.be10y == 2.30
+        assert context.delta_2y == pytest.approx(0.50)
+        assert context.delta_10y == pytest.approx(0.30)
+        assert context.spread_2y10y == pytest.approx(-0.30)
+        assert context.real_yield_10y == pytest.approx(1.90)
+        # The repository delegates the derivation: same rows + window -> same result.
+        expected = derive_yield_context(
+            list(snapshot.observations), now, load_news_policy().ai_window_days
+        )
+        assert context == expected
+        # raw observations keep their source + observed_at (typed packet, C3)
+        assert all(isinstance(o, BondYieldObservation) for o in snapshot.observations)
+        assert {o.observed_at for o in snapshot.observations} == {
+            now.date().isoformat(),
+            (now - timedelta(days=8)).date().isoformat(),
+        }
+
+    def test_missing_breakeven_leaves_real_yield_none(self, tmp_path):
+        repo = _repo(tmp_path)
+        now = datetime.now(timezone.utc)
+        day = now.date().isoformat()
+        repo.add_bond_observations([
+            _bond("USD", BondYieldMaturity.TWO_YEAR, day, 4.50),
+            _bond("USD", BondYieldMaturity.TEN_YEAR, day, 4.20),
+        ])
+
+        context = repo.latest_bond_yields(["USD"])[0].context
+
+        assert context.be10y is None
+        assert context.real_yield_10y is None
+        assert context.spread_2y10y == pytest.approx(-0.30)
+
+    def test_missing_one_maturity_leaves_spread_none(self, tmp_path):
+        repo = _repo(tmp_path)
+        now = datetime.now(timezone.utc)
+        repo.add_bond_observations([
+            _bond("USD", BondYieldMaturity.TEN_YEAR, now.date().isoformat(), 4.20),
+        ])
+
+        context = repo.latest_bond_yields(["USD"])[0].context
+
+        assert context.yield_2y is None
+        assert context.spread_2y10y is None
+        assert context.real_yield_10y is None
+
+    def test_no_observations_returns_empty_list(self, tmp_path):
+        assert _repo(tmp_path).latest_bond_yields(["USD", "EUR"]) == []
+
+
 # ---- 7. store_state -------------------------------------------------------------
 
 
@@ -505,9 +620,11 @@ class TestStoreState:
         assert state.events_state == StoreStatus.UNAVAILABLE
         assert state.items_state == StoreStatus.UNAVAILABLE
         assert state.rates_state == StoreStatus.UNAVAILABLE
+        assert state.yields_state == StoreStatus.UNAVAILABLE
         assert state.events_last_success_at is None
         assert state.items_last_success_at is None
         assert state.rates_last_success_at is None
+        assert state.yields_last_success_at is None
 
     def test_ok_and_partial_count_failed_does_not(self, tmp_path):
         repo = _repo(tmp_path)
@@ -518,9 +635,22 @@ class TestStoreState:
         assert state.events_state == StoreStatus.FRESH
         assert state.items_state == StoreStatus.FRESH
         assert state.rates_state == StoreStatus.UNAVAILABLE
+        assert state.yields_state == StoreStatus.UNAVAILABLE
         assert state.events_last_success_at is not None
         assert state.items_last_success_at is not None
         assert state.rates_last_success_at is None
+        assert state.yields_last_success_at is None
+
+    def test_bond_yield_run_surfaces_the_yields_signal(self, tmp_path):
+        repo = _repo(tmp_path)
+        repo.record_run(
+            _run(_utc_now(), producer=IngestProducer.BOND_YIELD, status=IngestRunStatus.OK)
+        )
+        state = repo.store_state()
+        assert state.yields_state == StoreStatus.FRESH
+        assert state.yields_last_success_at is not None
+        # an unrelated signal is untouched
+        assert state.rates_state == StoreStatus.UNAVAILABLE
 
     def test_past_freshness_window_is_degraded(self, tmp_path):
         _, max_age = _grace_and_max_age()

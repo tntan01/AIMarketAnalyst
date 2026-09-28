@@ -28,6 +28,9 @@ from pathlib import Path
 from config.paths import PROJECT_ROOT
 from core.news_freshness import classify_event_status
 from core.news_models import (
+    BondYieldMaturity,
+    BondYieldObservation,
+    BondYieldSource,
     CalendarEvent,
     EventImpact,
     EventSource,
@@ -63,6 +66,7 @@ NEWS_TABLES = {
     "news_events",
     "news_items",
     "interest_rates",
+    "bond_yields",
     "ai_trend_verdicts",
     "ingest_runs",
 }
@@ -161,6 +165,24 @@ def _rate(
     return RateObservation(
         currency=currency,
         rate=rate,
+        observed_at=observed_at,
+        source=source,
+        fetched_at="2026-09-21T01:00:00Z",
+    )
+
+
+def _bond(
+    currency: str,
+    maturity: BondYieldMaturity,
+    observed_at: str,
+    *,
+    source: BondYieldSource = BondYieldSource.FRED,
+    value: float = 4.25,
+) -> BondYieldObservation:
+    return BondYieldObservation(
+        currency=currency,
+        maturity=maturity,
+        value=value,
         observed_at=observed_at,
         source=source,
         fetched_at="2026-09-21T01:00:00Z",
@@ -578,6 +600,12 @@ class TestTypedWriteResults:
         assert isinstance(rates, int)
         assert rates == 1
 
+        bonds = repo.add_bond_observations(
+            [_bond("USD", BondYieldMaturity.TEN_YEAR, "2026-09-20")]
+        )
+        assert isinstance(bonds, int)
+        assert bonds == 1
+
         verdicts = repo.add_verdicts([_verdict()])
         assert isinstance(verdicts, int)
         assert verdicts == 1
@@ -626,6 +654,46 @@ class TestTypedWriteResults:
         finally:
             conn.close()
         assert distinct == 2
+
+    def test_bond_observations_upsert_never_duplicates_rows(self, tmp_path):
+        repo = _repo(tmp_path)
+        repo.add_bond_observations(
+            [_bond("USD", BondYieldMaturity.TEN_YEAR, "2026-09-20", value=4.10)]
+        )
+        repo.add_bond_observations(
+            [_bond("USD", BondYieldMaturity.TEN_YEAR, "2026-09-20", value=4.30)]
+        )
+
+        conn = sqlite3.connect(repo.db_path)
+        try:
+            rows = conn.execute(
+                "SELECT value FROM bond_yields WHERE currency='USD' "
+                "AND maturity='10y' AND observed_at='2026-09-20' AND source='fred'"
+            ).fetchall()
+        finally:
+            conn.close()
+        assert len(rows) == 1
+        assert rows[0][0] == 4.30  # value overwritten, key unchanged
+
+        # different source / maturity / date -> a new row (key includes all four)
+        repo.add_bond_observations(
+            [
+                _bond(
+                    "USD",
+                    BondYieldMaturity.TEN_YEAR,
+                    "2026-09-20",
+                    source=BondYieldSource.YAHOO,
+                ),
+                _bond("USD", BondYieldMaturity.TWO_YEAR, "2026-09-20"),
+                _bond("USD", BondYieldMaturity.TEN_YEAR, "2026-09-19"),
+            ]
+        )
+        conn = sqlite3.connect(repo.db_path)
+        try:
+            total = conn.execute("SELECT COUNT(*) FROM bond_yields").fetchone()[0]
+        finally:
+            conn.close()
+        assert total == 4
 
     def test_typed_values_survive_json_columns(self, tmp_path):
         repo = _repo(tmp_path)

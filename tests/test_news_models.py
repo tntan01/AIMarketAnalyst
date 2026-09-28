@@ -205,6 +205,7 @@ OPTIONAL_FIELDS: dict[type, set[str]] = {
         "events_last_success_at",
         "items_last_success_at",
         "rates_last_success_at",
+        "yields_last_success_at",
     },
 }
 
@@ -275,9 +276,11 @@ MODEL_KWARGS: dict[type, dict[str, object]] = {
         "events_state": StoreStatus.FRESH,
         "items_state": StoreStatus.DEGRADED,
         "rates_state": StoreStatus.UNAVAILABLE,
+        "yields_state": StoreStatus.UNAVAILABLE,
         "events_last_success_at": "2026-09-21T00:50:00Z",
         "items_last_success_at": "2026-09-20T12:00:00Z",
         "rates_last_success_at": None,
+        "yields_last_success_at": None,
     },
 }
 
@@ -631,24 +634,28 @@ class TestConstruction:
 class TestStoreState:
     """StoreState: typed per-signal freshness — no bare dict (C3, §8)."""
 
-    def test_constructs_with_all_three_signals_and_last_ingest_times(self):
+    def test_constructs_with_all_four_signals_and_last_ingest_times(self):
         state = StoreState(**MODEL_KWARGS[StoreState])
         assert state.events_state is StoreStatus.FRESH
         assert state.items_state is StoreStatus.DEGRADED
         assert state.rates_state is StoreStatus.UNAVAILABLE
+        assert state.yields_state is StoreStatus.UNAVAILABLE
         assert state.events_last_success_at == "2026-09-21T00:50:00Z"
         assert state.items_last_success_at == "2026-09-20T12:00:00Z"
         assert state.rates_last_success_at is None
+        assert state.yields_last_success_at is None
 
     def test_never_ingested_signal_has_none_last_success(self):
         state = StoreState(
             events_state=StoreStatus.UNAVAILABLE,
             items_state=StoreStatus.UNAVAILABLE,
             rates_state=StoreStatus.UNAVAILABLE,
+            yields_state=StoreStatus.UNAVAILABLE,
         )
         assert state.events_last_success_at is None
         assert state.items_last_success_at is None
         assert state.rates_last_success_at is None
+        assert state.yields_last_success_at is None
 
     def test_components_are_explicit_typed_fields_not_dicts(self):
         # Contract §8: store_state() returns a typed model, never a bare dict
@@ -658,11 +665,13 @@ class TestStoreState:
             "events_state",
             "items_state",
             "rates_state",
+            "yields_state",
             "events_last_success_at",
             "items_last_success_at",
             "rates_last_success_at",
+            "yields_last_success_at",
         }
-        for signal in ("events", "items", "rates"):
+        for signal in ("events", "items", "rates", "yields"):
             assert hints[f"{signal}_state"] is StoreStatus
             assert hints[f"{signal}_last_success_at"] == typing.Optional[str]
         assert all("dict" not in str(hint) for hint in hints.values())
