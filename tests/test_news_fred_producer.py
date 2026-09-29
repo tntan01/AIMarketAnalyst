@@ -126,6 +126,12 @@ def _policy(**overrides) -> NewsPolicy:
         "ingest_freshness_hours": 2,
         "ingest_runs_retention_days": 30,
         "ai_window_days": 7,
+        "ai_horizon_windows": {
+            "short": {"days": 7},
+            "mid": {"days": 42},
+            "long": {"days": 180},
+        },
+        "ai_long_window_max_rows": 50,
         "ai_min_items": 3,
         "ai_horizons": {
             "short": {"unit": "day", "min": 0, "max": 3},

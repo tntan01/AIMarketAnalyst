@@ -145,10 +145,13 @@ from core.news_models import (
 )
 from core.news_policy import NewsPolicy, load_news_policy
 from core.trend_prompt_builder import (
+    HorizonWindowSet,
     MarketContext,
     TrendPrompt,
     TrendPromptOutcome,
+    WindowRows,
     build_trend_prompt,
+    select_rows_for_windows,
 )
 from core.trend_verdict_parser import TrendParseOutcome, parse_trend_verdict
 from services.ai_service import AIProviderConfig, AIService
@@ -259,7 +262,13 @@ class AiScopePreview:
     block (§9.1 bước 3, đợt 5) has anything to render, and ``context`` carries
     the typed market context itself so the detail tab can display the values
     (the UI formats; it never derives — L1/S2).  Context never affects the
-    floor (C4)."""
+    floor (C4).
+
+    ``short_rows``/``mid_rows``/``long_rows`` are the row counts the horizon
+    selector of §9.1 bước 2 (đợt 6) picked for each ``ai_horizon_windows``
+    window (events + items); the dialog shows them so a thin horizon is visibly
+    a data gap, not an AI fault.  The floor still counts the short window only
+    (C4) — the counts never move ``insufficient``."""
 
     scope_type: str
     scope_value: str
@@ -270,6 +279,9 @@ class AiScopePreview:
     rate_available: bool
     yields_available: bool
     context: MarketContext
+    short_rows: int = 0
+    mid_rows: int = 0
+    long_rows: int = 0
 
     @property
     def insufficient(self) -> bool:
@@ -1113,8 +1125,13 @@ class NewsController:
         kiện liên quan" (d.1629) from this preview and, when ``insufficient``,
         shows "Không đủ dữ liệu nhận định" (d.1642) and never calls the AI
         (fail-closed, B4 — the same floor the builder enforces).  The typed
-        ``context`` is carried for the detail tab's context line (UI formats)."""
-        context, outcome = self._ai_context_and_outcome(scope_type, scope_value, now)
+        ``context`` is carried for the detail tab's context line (UI formats).
+        The three horizon-window counts (đợt 6) come from the shared selector of
+        §9.1 bước 2; the floor stays on the short window, so they never move
+        ``insufficient`` (C4)."""
+        moment = now if now is not None else datetime.now(UTC)
+        context, outcome = self._ai_context_and_outcome(scope_type, scope_value, moment)
+        window_rows = self._ai_window_rows(scope_type, scope_value, moment)
         return AiScopePreview(
             scope_type=scope_type,
             scope_value=scope_value,
@@ -1125,6 +1142,9 @@ class NewsController:
             rate_available=bool(context.rates),
             yields_available=context.yields is not None,
             context=context,
+            short_rows=len(window_rows.short_events) + len(window_rows.short_items),
+            mid_rows=len(window_rows.mid_events) + len(window_rows.mid_items),
+            long_rows=len(window_rows.long_events) + len(window_rows.long_items),
         )
 
     def analyze_trend(
@@ -1313,6 +1333,43 @@ class NewsController:
             from_utc, to_utc, currencies=currencies, exclude_flagged=True
         )
         return list(events), list(items)
+
+    def _ai_window_rows(
+        self, scope_type: str, scope_value: str, moment: datetime
+    ) -> WindowRows:
+        """The selected rows of the three horizon windows for one scope (§9.1
+        bước 2, đợt 6).
+
+        Reads the scope's events/items once per ``ai_horizon_windows`` interval
+        (from the repository, ``excluded=0``) and hands them to the pure
+        ``select_rows_for_windows`` selector, which owns the per-window rule
+        (S1/§11a).  This is the single read path the dialog preview counts from;
+        it never calls the AI.  ``_ai_rows`` (the analysis/short path) is
+        untouched in this batch."""
+        if scope_type == "currency":
+            currencies = [str(scope_value)]
+        else:
+            currencies = [part.strip() for part in str(scope_value).split("/") if part.strip()]
+        window_set = HorizonWindowSet.from_policy(self._policy.ai_horizon_windows)
+        events_by_window: dict[str, list[CalendarEvent]] = {}
+        items_by_window: dict[str, list[NewsItem]] = {}
+        to_utc = _normalize_published_utc(moment)
+        for key, days in window_set.windows():
+            from_utc = _normalize_published_utc(moment - timedelta(days=days))
+            events_by_window[key] = list(
+                self._repo.events_in_range(from_utc, to_utc, currencies=currencies)
+            )
+            items_by_window[key] = list(
+                self._repo.items_in_range(
+                    from_utc, to_utc, currencies=currencies, exclude_flagged=True
+                )
+            )
+        return select_rows_for_windows(
+            events_by_window,
+            items_by_window,
+            window_set,
+            self._policy.ai_long_window_max_rows,
+        )
 
     def _resolve_ai_service(self) -> tuple[AIService, str, str] | None:
         """Resolve the AI service for this turn (khuôn scanner d.720-728): the

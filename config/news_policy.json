@@ -9,6 +9,18 @@
   "ingest_freshness_hours": 2,
   "ingest_runs_retention_days": 30,
   "ai_window_days": 7,
+  "ai_horizon_windows": {
+    "short": {
+      "days": 7
+    },
+    "mid": {
+      "days": 42
+    },
+    "long": {
+      "days": 180
+    }
+  },
+  "ai_long_window_max_rows": 50,
   "ai_min_items": 3,
   "ai_horizons": {
     "short": {
@@ -31,6 +43,8 @@
     "rss_window_hours": "kế thừa runtime hiện hành (bằng chứng: đang chạy) — contract §7",
     "fred_refresh_hours": "kế thừa runtime hiện hành (bằng chứng: đang chạy) — interest_rate_service._CACHE_TTL = timedelta(hours=6) (services/interest_rate_service.py:42; xác nhận docs/macro/macro_score_architecture.md §12: TTL 6 giờ)",
     "bond_yield_refresh_hours": "= giá trị khóa fred_refresh_hours (Owner chốt đợt 5 28/09/2026 — không sinh số mới; contract §7)",
-    "ai_horizons": "nguyên văn contract §7 — ngắn: trong ngày–3 ngày (day 0–3); trung: 1–4 tuần (week 1–4); dài: 1–6 tháng (month 1–6). Giữ nguyên đơn vị gốc Owner viết, không quy đổi ra ngày."
+    "ai_horizons": "nguyên văn contract §7 — ngắn: trong ngày–3 ngày (day 0–3); trung: 1–4 tuần (week 1–4); dài: 1–6 tháng (month 1–6). Giữ nguyên đơn vị gốc Owner viết, không quy đổi ra ngày.",
+    "ai_horizon_windows": "Owner chốt đợt 6 29/09/2026 — mid 42 ngày chứa ≥1 chu kỳ CPI; long 180 ngày phủ horizon 1–6 tháng (contract §7); short = ai_window_days (floor giữ nguyên).",
+    "ai_long_window_max_rows": "Owner chốt đợt 6 29/09/2026 — số dòng dữ kiện tối đa của cửa sổ long (ưu tiên impact cao trước, rồi gần đây trước; contract §7/§9.1 bước 2)."
   }
 }

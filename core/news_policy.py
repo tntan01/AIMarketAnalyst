@@ -3,9 +3,9 @@
 This module owns loading and validating the News domain policy file
 (``config/news_policy.json``, contract §7).  Every operational number of the
 domain (poll cadence, collection window, refresh cadence, staleness grace,
-ingest freshness, retention, AI thresholds, horizon definitions) lives in that
-file and nowhere else: no magic number in logic (S4), no second copy of a value
-(D5).
+ingest freshness, retention, AI thresholds, horizon definitions, horizon data
+windows) lives in that file and nowhere else: no magic number in logic (S4), no
+second copy of a value (D5).
 
 Governance:
 
@@ -42,6 +42,10 @@ HORIZON_UNITS: Final[tuple[str, ...]] = ("day", "week", "month")
 
 HORIZON_FIELDS: Final[frozenset[str]] = frozenset({"unit", "min", "max"})
 
+# The per-horizon data window of the wave-6 layer (contract §7
+# ``ai_horizon_windows``): the three horizon keys above, each a ``days`` span.
+HORIZON_WINDOW_FIELDS: Final[frozenset[str]] = frozenset({"days"})
+
 # Contract §7 key set: the policy exists only when every one of these is supplied.
 MANDATORY_KEYS: Final[frozenset[str]] = frozenset(
     {
@@ -54,6 +58,8 @@ MANDATORY_KEYS: Final[frozenset[str]] = frozenset(
         "ingest_freshness_hours",
         "ingest_runs_retention_days",
         "ai_window_days",
+        "ai_horizon_windows",
+        "ai_long_window_max_rows",
         "ai_min_items",
         "ai_horizons",
     }
@@ -69,6 +75,7 @@ POSITIVE_INT_FIELDS: Final[tuple[str, ...]] = (
     "ingest_freshness_hours",
     "ingest_runs_retention_days",
     "ai_window_days",
+    "ai_long_window_max_rows",
     "ai_min_items",
 )
 
@@ -97,6 +104,17 @@ class HorizonDefinition:
     unit: str
     min_value: int
     max_value: int
+
+
+@dataclass(frozen=True, slots=True)
+class HorizonWindow:
+    """One horizon data window of the wave-6 layer (contract §7
+    ``ai_horizon_windows``): the calendar/news window, in days, that feeds the
+    horizon's prompt section.  The value is a positive day count as the Owner
+    wrote it - no unit is invented and no conversion happens here.
+    """
+
+    days: int
 
 
 def _require_key(data: Mapping[str, Any], key: str) -> Any:
@@ -165,6 +183,41 @@ def _horizons_from_raw(value: object) -> Mapping[str, HorizonDefinition]:
     return _freeze_horizons(spans)
 
 
+def _freeze_windows(value: object) -> Mapping[str, HorizonWindow]:
+    """Validate the three typed horizon windows and freeze them (immutable)."""
+    if not isinstance(value, Mapping) or set(value) != set(HORIZON_KEYS):
+        raise NewsPolicyError(
+            "ai_horizon_windows", f"expected exactly {list(HORIZON_KEYS)}"
+        )
+    windows: dict[str, HorizonWindow] = {}
+    for key in HORIZON_KEYS:
+        window = value[key]
+        path = f"ai_horizon_windows.{key}"
+        if not isinstance(window, HorizonWindow):
+            raise NewsPolicyError(path, "expected a HorizonWindow")
+        _require_positive_int(window.days, f"{path}.days")
+        windows[key] = window
+    return MappingProxyType(windows)
+
+
+def _windows_from_raw(value: object) -> Mapping[str, HorizonWindow]:
+    """Read the raw §7 JSON block into typed windows, then validate and freeze."""
+    if not isinstance(value, Mapping) or set(value) != set(HORIZON_KEYS):
+        raise NewsPolicyError(
+            "ai_horizon_windows", f"expected exactly {list(HORIZON_KEYS)}"
+        )
+    windows: dict[str, HorizonWindow] = {}
+    for key in HORIZON_KEYS:
+        raw = value[key]
+        path = f"ai_horizon_windows.{key}"
+        if not isinstance(raw, Mapping) or set(raw) != HORIZON_WINDOW_FIELDS:
+            raise NewsPolicyError(
+                path, f"expected exactly {sorted(HORIZON_WINDOW_FIELDS)}"
+            )
+        windows[key] = HorizonWindow(days=raw["days"])
+    return _freeze_windows(windows)
+
+
 @dataclass(frozen=True, slots=True)
 class NewsPolicy:
     """The News domain operational numbers — contract §7, key for key.
@@ -182,6 +235,8 @@ class NewsPolicy:
     ingest_freshness_hours: int
     ingest_runs_retention_days: int
     ai_window_days: int
+    ai_horizon_windows: Mapping[str, HorizonWindow]
+    ai_long_window_max_rows: int
     ai_min_items: int
     ai_horizons: Mapping[str, HorizonDefinition]
 
@@ -189,6 +244,9 @@ class NewsPolicy:
         _require_policy_version(self.policy_version)
         for name in POSITIVE_INT_FIELDS:
             _require_positive_int(getattr(self, name), name)
+        object.__setattr__(
+            self, "ai_horizon_windows", _freeze_windows(self.ai_horizon_windows)
+        )
         object.__setattr__(self, "ai_horizons", _freeze_horizons(self.ai_horizons))
 
     @classmethod
@@ -240,6 +298,13 @@ class NewsPolicy:
             ),
             ai_window_days=_require_positive_int(
                 _require_key(data, "ai_window_days"), "ai_window_days"
+            ),
+            ai_horizon_windows=_windows_from_raw(
+                _require_key(data, "ai_horizon_windows")
+            ),
+            ai_long_window_max_rows=_require_positive_int(
+                _require_key(data, "ai_long_window_max_rows"),
+                "ai_long_window_max_rows",
             ),
             ai_min_items=_require_positive_int(
                 _require_key(data, "ai_min_items"), "ai_min_items"

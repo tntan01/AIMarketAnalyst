@@ -173,6 +173,55 @@ class FakeRepository:
         return len(verdicts)
 
 
+class RangeFilteringRepository(FakeRepository):
+    """``FakeRepository`` whose read methods honour the window arguments — the
+    only way a controller test can seed several row ages and see the per-window
+    counts (§9.1 bước 2, đợt 6).  Writes stay the typed recording fake above."""
+
+    def events_in_range(
+        self,
+        from_utc: str,
+        to_utc: str,
+        currencies: list[str] | None = None,
+        include_non_impact: bool = True,
+    ) -> list[CalendarEvent]:
+        self._record(
+            "events_in_range",
+            (from_utc, to_utc),
+            {"currencies": currencies, "include_non_impact": include_non_impact},
+        )
+        return [
+            event
+            for event in self.events
+            if from_utc <= event.event_time_utc <= to_utc
+            and (not currencies or event.currency in currencies)
+        ]
+
+    def items_in_range(
+        self,
+        from_utc: str,
+        to_utc: str | None = None,
+        kinds: list[str] | None = None,
+        currencies: list[str] | None = None,
+        exclude_flagged: bool = True,
+    ) -> list[NewsItem]:
+        self._record(
+            "items_in_range",
+            (from_utc, to_utc),
+            {"kinds": kinds, "currencies": currencies},
+        )
+        result: list[NewsItem] = []
+        for item in self.items:
+            if item.published_utc < from_utc:
+                continue
+            if to_utc is not None and item.published_utc > to_utc:
+                continue
+            if currencies and not (set(item.currencies) & set(currencies)):
+                continue
+            result.append(item)
+        return result
+
+
 class FakeRssProducer:
     """Typed fake of ``rss_producer``: counts rounds, returns a typed result."""
 
@@ -332,6 +381,12 @@ def _policy(**overrides: object) -> NewsPolicy:
         "ingest_freshness_hours": 2,
         "ingest_runs_retention_days": 30,
         "ai_window_days": 7,
+        "ai_horizon_windows": {
+            "short": {"days": 7},
+            "mid": {"days": 42},
+            "long": {"days": 180},
+        },
+        "ai_long_window_max_rows": 50,
         "ai_min_items": 3,
         "ai_horizons": {
             "short": {"unit": "day", "min": 0, "max": 3},
@@ -1169,6 +1224,117 @@ class TestAiMarketContextRead:
 
         assert preview.rate_available is False
         assert preview.yields_available is False
+
+
+# ---- 4b'. đếm độ phủ theo cửa sổ chân trời (§9.1 bước 2, đợt 6) -----------------
+
+
+_HORIZON_NOW = datetime(2026, 9, 29, 0, 0, tzinfo=UTC)
+
+
+def _aged_stamp(days: int) -> str:
+    moment = _HORIZON_NOW - timedelta(days=days)
+    return moment.isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+def _aged_event(
+    row_id: int,
+    days: int,
+    *,
+    impact: EventImpact = EventImpact.HIGH,
+    actual: str | None = None,
+    currency: str = "USD",
+) -> CalendarEvent:
+    stamp = _aged_stamp(days)
+    return CalendarEvent(
+        day_key=stamp[:10],
+        event_time_utc=stamp,
+        currency=currency,
+        title=f"Event {row_id}",
+        impact=impact,
+        status=EventStatus.RELEASED if actual else EventStatus.SCHEDULED,
+        source=EventSource.FF_JSON,
+        dedupe_key=f"age-e{row_id}",
+        fetched_at=stamp,
+        actual=actual,
+        id=row_id,
+    )
+
+
+def _aged_item(
+    row_id: int,
+    days: int,
+    *,
+    kind: NewsItemKind = NewsItemKind.STATEMENT,
+    currency: str = "USD",
+) -> NewsItem:
+    stamp = _aged_stamp(days)
+    return NewsItem(
+        kind=kind,
+        source=NewsItemSource.GOOGLE_NEWS_RSS,
+        title=f"Item {row_id}",
+        published_utc=stamp,
+        currencies=[currency],
+        dedupe_key=f"age-i{row_id}",
+        fetched_at=stamp,
+        id=row_id,
+    )
+
+
+class TestAiHorizonWindowCounts:
+    """Preview carries the per-window row counts of §9.1 bước 2 without ever
+    calling the AI; the floor stays on the short window (C4)."""
+
+    def _repo(self) -> RangeFilteringRepository:
+        repo = RangeFilteringRepository()
+        repo.events = [
+            _aged_event(1, 3, impact=EventImpact.HIGH, actual="1.0%"),
+            _aged_event(2, 3, impact=EventImpact.LOW),
+            _aged_event(3, 30, impact=EventImpact.MEDIUM),
+            _aged_event(4, 120, impact=EventImpact.HIGH, actual="2.0%"),
+        ]
+        repo.items = [
+            _aged_item(11, 3, kind=NewsItemKind.STATEMENT),
+            _aged_item(12, 3, kind=NewsItemKind.HEADLINE),
+            _aged_item(13, 30, kind=NewsItemKind.STATEMENT),
+            _aged_item(14, 30, kind=NewsItemKind.HEADLINE),
+            _aged_item(15, 120, kind=NewsItemKind.STATEMENT),
+            _aged_item(16, 120, kind=NewsItemKind.HEADLINE),
+        ]
+        return repo
+
+    def test_preview_counts_each_horizon_window(self):
+        controller = _controller(repo=self._repo())
+
+        preview = controller.ai_scope_preview("currency", "USD", now=_HORIZON_NOW)
+
+        assert (preview.short_rows, preview.mid_rows, preview.long_rows) == (4, 4, 5)
+        assert preview.insufficient is False
+
+    def test_floor_still_counts_the_short_window_only(self):
+        repo = RangeFilteringRepository()
+        repo.events = [
+            _aged_event(1, 30, impact=EventImpact.HIGH, actual="1.0%"),
+            _aged_event(2, 120, impact=EventImpact.HIGH, actual="1.0%"),
+        ]
+        controller = _controller(repo=repo)
+
+        preview = controller.ai_scope_preview("currency", "USD", now=_HORIZON_NOW)
+
+        assert preview.short_rows == 0
+        assert preview.mid_rows == 1
+        assert preview.long_rows == 2
+        assert preview.insufficient is True
+
+    def test_preview_never_calls_the_ai(self):
+        repo = self._repo()
+        ai = FakeAIService(_batch_verdict_json([1]))
+        controller = _batch_controller(ai, repo)
+
+        controller.ai_scope_preview("currency", "USD", now=_HORIZON_NOW)
+
+        assert ai.calls == []
+        assert repo.add_verdict_calls == []
 
 
 # ---- 4c. batch "Nhận định tất cả" (§9.1 bước 7, D1/D2) --------------------------

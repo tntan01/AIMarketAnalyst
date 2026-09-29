@@ -43,7 +43,14 @@ from core.news_models import (
 )
 from core.news_policy import HorizonDefinition
 from core.rate_trend import RateTrend
-from core.trend_prompt_builder import MarketContext, TrendPromptOutcome, build_trend_prompt
+from core.trend_prompt_builder import (
+    HorizonWindowSet,
+    MarketContext,
+    TrendPromptOutcome,
+    WindowRows,
+    build_trend_prompt,
+    select_rows_for_windows,
+)
 from core.yield_context import YieldContext
 from services.news_repository import CurrencyRateTrend
 
@@ -613,3 +620,175 @@ def test_scope_label_is_rendered_for_both_scope_types(scope_type):
 
     assert outcome.prompt is not None
     assert f"Scope: {scope_type} {value}" in outcome.prompt.text
+
+
+# ---- 6. chọn dòng theo cửa sổ chân trời (§9.1 bước 2, đợt 6) --------------------
+
+
+def _windows(short: int = 7, mid: int = 42, long: int = 180) -> HorizonWindowSet:
+    return HorizonWindowSet(short_days=short, mid_days=mid, long_days=long)
+
+
+def _select(
+    *,
+    short_events: list[CalendarEvent] | None = None,
+    short_items: list[NewsItem] | None = None,
+    mid_events: list[CalendarEvent] | None = None,
+    mid_items: list[NewsItem] | None = None,
+    long_events: list[CalendarEvent] | None = None,
+    long_items: list[NewsItem] | None = None,
+    windows: HorizonWindowSet | None = None,
+    long_max_rows: int = 50,
+) -> WindowRows:
+    return select_rows_for_windows(
+        {
+            "short": short_events if short_events is not None else [],
+            "mid": mid_events if mid_events is not None else [],
+            "long": long_events if long_events is not None else [],
+        },
+        {
+            "short": short_items if short_items is not None else [],
+            "mid": mid_items if mid_items is not None else [],
+            "long": long_items if long_items is not None else [],
+        },
+        windows if windows is not None else _windows(),
+        long_max_rows,
+    )
+
+
+def _high_actual_event(index: int) -> CalendarEvent:
+    """A high-impact event with an actual, at a distinct, index-ordered time."""
+    moment = datetime(2026, 9, 1, tzinfo=UTC) + timedelta(minutes=index)
+    stamp = moment.isoformat(timespec="seconds").replace("+00:00", "Z")
+    return _event(
+        row_id=index,
+        event_time_utc=stamp,
+        dedupe_key=f"event-{index}",
+        impact=EventImpact.HIGH,
+        actual="1.0%",
+    )
+
+
+def _statement_item(index: int) -> NewsItem:
+    moment = datetime(2026, 9, 1, tzinfo=UTC) + timedelta(minutes=index)
+    stamp = moment.isoformat(timespec="seconds").replace("+00:00", "Z")
+    return _item(
+        row_id=1000 + index,
+        published_utc=stamp,
+        dedupe_key=f"item-{index}",
+        kind=NewsItemKind.STATEMENT,
+    )
+
+
+class TestSelectRowsForWindows:
+    """The pure row selector of §9.1 bước 2 — filtering, cap and determinism."""
+
+    def test_short_keeps_every_event_and_item(self):
+        result = _select(
+            short_events=[
+                _event(row_id=1, impact=EventImpact.HIGH),
+                _event(row_id=2, impact=EventImpact.LOW, dedupe_key="e2"),
+                _event(row_id=3, impact=EventImpact.NON, dedupe_key="e3"),
+            ],
+            short_items=[
+                _item(row_id=4, kind=NewsItemKind.HEADLINE),
+                _item(row_id=5, kind=NewsItemKind.STATEMENT, dedupe_key="i5"),
+                _item(row_id=6, kind=NewsItemKind.USER_NOTE, dedupe_key="i6"),
+            ],
+        )
+
+        assert {event.id for event in result.short_events} == {1, 2, 3}
+        assert {item.id for item in result.short_items} == {4, 5, 6}
+
+    def test_mid_drops_low_and_non_impact_events(self):
+        result = _select(
+            mid_events=[
+                _event(row_id=1, impact=EventImpact.HIGH),
+                _event(row_id=2, impact=EventImpact.MEDIUM, dedupe_key="e2"),
+                _event(row_id=3, impact=EventImpact.LOW, dedupe_key="e3"),
+                _event(row_id=4, impact=EventImpact.NON, dedupe_key="e4"),
+            ]
+        )
+
+        assert {event.id for event in result.mid_events} == {1, 2}
+
+    def test_mid_keeps_only_statement_items(self):
+        result = _select(
+            mid_items=[
+                _item(row_id=1, kind=NewsItemKind.HEADLINE),
+                _item(row_id=2, kind=NewsItemKind.STATEMENT, dedupe_key="i2"),
+                _item(row_id=3, kind=NewsItemKind.USER_NOTE, dedupe_key="i3"),
+            ]
+        )
+
+        assert [item.id for item in result.mid_items] == [2]
+
+    def test_long_drops_medium_and_high_without_actual(self):
+        result = _select(
+            long_events=[
+                _event(row_id=1, impact=EventImpact.HIGH, actual="1.0%"),
+                _event(row_id=2, impact=EventImpact.HIGH, dedupe_key="e2"),
+                _event(row_id=3, impact=EventImpact.HIGH, dedupe_key="e3", actual=""),
+                _event(row_id=4, impact=EventImpact.HIGH, dedupe_key="e4", actual="   "),
+                _event(row_id=5, impact=EventImpact.MEDIUM, dedupe_key="e5", actual="1.0%"),
+            ]
+        )
+
+        assert [event.id for event in result.long_events] == [1]
+
+    def test_long_keeps_only_statement_items(self):
+        result = _select(
+            long_items=[
+                _item(row_id=1, kind=NewsItemKind.HEADLINE),
+                _item(row_id=2, kind=NewsItemKind.STATEMENT, dedupe_key="i2"),
+            ]
+        )
+
+        assert [item.id for item in result.long_items] == [2]
+
+    def test_long_cap_keeps_the_fifty_most_recent_high_events(self):
+        events = [_high_actual_event(index) for index in range(60)]
+
+        result = _select(long_events=events)
+
+        assert len(result.long_events) == 50
+        assert [event.id for event in result.long_events] == list(range(59, 9, -1))
+
+    def test_long_cap_prefers_events_over_statements(self):
+        events = [_high_actual_event(0), _high_actual_event(1)]
+        items = [_statement_item(index) for index in range(3)]
+
+        result = _select(long_events=events, long_items=items, long_max_rows=3)
+
+        assert [event.id for event in result.long_events] == [1, 0]
+        assert [item.id for item in result.long_items] == [1002]
+
+    def test_selection_is_deterministic_under_input_shuffle(self):
+        events = [_high_actual_event(index) for index in range(60)]
+        items = [_statement_item(index) for index in range(20)]
+        canonical = _select(long_events=events, long_items=items, long_max_rows=30)
+
+        shuffled_events = list(reversed(events))
+        shuffled_items = items[7:] + items[:7]
+        again = _select(
+            long_events=shuffled_events, long_items=shuffled_items, long_max_rows=30
+        )
+
+        assert again == canonical
+
+    def test_selector_is_pure_and_returns_immutable_tuples(self):
+        events = [_high_actual_event(0), _high_actual_event(1)]
+        first = _select(long_events=events)
+        second = _select(long_events=list(events))
+
+        assert first == second
+        assert isinstance(first.long_events, tuple)
+
+    def test_missing_window_key_raises(self):
+        with pytest.raises(ValueError):
+            select_rows_for_windows(
+                {"short": [], "mid": []},
+                {"short": [], "mid": [], "long": []},
+                _windows(),
+                50,
+            )

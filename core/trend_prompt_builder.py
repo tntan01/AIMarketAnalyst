@@ -51,26 +51,31 @@ set of news rows does not.
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Protocol
+from typing import Final, Protocol
 
 from core.news_models import (
     CalendarEvent,
+    EventImpact,
     NewsItem,
+    NewsItemKind,
     VerdictConfidence,
     VerdictDirection,
 )
-from core.news_policy import HorizonDefinition
+from core.news_policy import HORIZON_KEYS, HorizonDefinition
 from core.yield_context import YieldContext
 
 __all__ = [
+    "HorizonWindowSet",
     "MarketContext",
     "RateContextLike",
     "TrendPrompt",
     "TrendPromptOutcome",
+    "WindowRows",
     "build_trend_prompt",
+    "select_rows_for_windows",
 ]
 
 
@@ -517,4 +522,189 @@ def build_trend_prompt(
         event_count=event_count,
         item_count=item_count,
         min_items=min_items,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Horizon data windows (wave 6 - contract section 7 / 9.1 step 2)
+# ---------------------------------------------------------------------------
+#
+# Sole owner of the row-selection rule of contract section 9.1 step 2 (registered
+# in section 11a/11b as the only place that decides which calendar/news rows feed
+# which horizon).  The rule is a pure function of the rows the caller already
+# read for each window: this module never reads the repository and never loads
+# the policy (R4), so the three ``ai_horizon_windows`` day spans and
+# ``ai_long_window_max_rows`` arrive as parameters.
+#
+# Windows (contract section 9.1 step 2):
+#   * short - every event and every item read for the short window;
+#   * mid   - events with ``impact`` high/medium + items with ``kind=statement``;
+#   * long  - events with ``impact=high`` and a non-empty ``actual`` + items
+#             with ``kind=statement``, capped at the policy row limit.
+# The long cap keeps the higher-impact rows first and, at equal impact, the more
+# recent rows first (stable, tie-broken by ``dedupe_key``) so the result never
+# depends on the caller's input order.
+
+_IMPACT_ORDER: Final[tuple[EventImpact, ...]] = (
+    EventImpact.HIGH,
+    EventImpact.MEDIUM,
+    EventImpact.LOW,
+    EventImpact.NON,
+)
+_IMPACT_RANK: Final[dict[EventImpact, int]] = {
+    impact: index for index, impact in enumerate(_IMPACT_ORDER)
+}
+_MID_IMPACTS: Final[frozenset[EventImpact]] = frozenset(
+    {EventImpact.HIGH, EventImpact.MEDIUM}
+)
+
+
+@dataclass(frozen=True, slots=True)
+class HorizonWindowSet:
+    """The three horizon data windows the selector works on (contract section 7
+    ``ai_horizon_windows``), passed in by the caller that already holds the
+    validated policy values - this module never loads the policy itself (R4)."""
+
+    short_days: int
+    mid_days: int
+    long_days: int
+
+    @classmethod
+    def from_policy(cls, windows: Mapping[str, object]) -> "HorizonWindowSet":
+        """Build the set from the validated ``ai_horizon_windows`` mapping.
+
+        Each value is a typed ``HorizonWindow`` (``core.news_policy``) carrying
+        ``days``; structural access keeps the import core-only (L1)."""
+        short_key, mid_key, long_key = HORIZON_KEYS
+        return cls(
+            short_days=int(getattr(windows[short_key], "days")),
+            mid_days=int(getattr(windows[mid_key], "days")),
+            long_days=int(getattr(windows[long_key], "days")),
+        )
+
+    def windows(self) -> tuple[tuple[str, int], ...]:
+        """The (horizon key, day span) pairs in contract order."""
+        short_key, mid_key, long_key = HORIZON_KEYS
+        return (
+            (short_key, self.short_days),
+            (mid_key, self.mid_days),
+            (long_key, self.long_days),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class WindowRows:
+    """The rows selected for each horizon window (contract section 9.1 step 2).
+
+    The prompt builder (batch C3) consumes this typed set directly: one events
+    tuple and one items tuple per horizon, already ordered.  ``long_events``/
+    ``long_items`` are already capped at the policy row limit."""
+
+    short_events: tuple[CalendarEvent, ...]
+    short_items: tuple[NewsItem, ...]
+    mid_events: tuple[CalendarEvent, ...]
+    mid_items: tuple[NewsItem, ...]
+    long_events: tuple[CalendarEvent, ...]
+    long_items: tuple[NewsItem, ...]
+
+
+def _has_actual(event: CalendarEvent) -> bool:
+    """True when the event carries an actual (non-``None``, non-blank)."""
+    actual = event.actual
+    return actual is not None and bool(actual.strip())
+
+
+def _sorted_events(events: Iterable[CalendarEvent]) -> list[CalendarEvent]:
+    """Canonical event order: higher impact first, then more recent first.
+
+    A stable two-pass sort (recent first, then by impact rank) plus the unique
+    ``dedupe_key`` tie-breaker makes the output independent of the input order
+    (the deterministic requirement of section 9.1 step 2)."""
+    ordered = sorted(
+        events,
+        key=lambda event: (event.event_time_utc, event.dedupe_key),
+        reverse=True,
+    )
+    return sorted(ordered, key=lambda event: _IMPACT_RANK[event.impact])
+
+
+def _sorted_items(items: Iterable[NewsItem]) -> list[NewsItem]:
+    """Canonical item order: more recent first, tie-broken by ``dedupe_key``."""
+    return sorted(
+        items,
+        key=lambda item: (item.published_utc, item.dedupe_key),
+        reverse=True,
+    )
+
+
+def _select_events(
+    events: Iterable[CalendarEvent],
+    predicate: Callable[[CalendarEvent], bool] | None,
+) -> list[CalendarEvent]:
+    """Order the events, keeping only those a window rule accepts."""
+    if predicate is None:
+        return _sorted_events(events)
+    return _sorted_events([event for event in events if predicate(event)])
+
+
+def _select_items(
+    items: Iterable[NewsItem],
+    predicate: Callable[[NewsItem], bool] | None,
+) -> list[NewsItem]:
+    """Order the items, keeping only those a window rule accepts."""
+    if predicate is None:
+        return _sorted_items(items)
+    return _sorted_items([item for item in items if predicate(item)])
+
+
+def select_rows_for_windows(
+    events: Mapping[str, Sequence[CalendarEvent]],
+    items: Mapping[str, Sequence[NewsItem]],
+    windows: HorizonWindowSet,
+    long_max_rows: int,
+) -> WindowRows:
+    """Select the prompt rows of each horizon window (contract section 9.1 step 2).
+
+    ``events``/``items`` are keyed by the horizon window keys (``short``/``mid``/
+    ``long``) and hold the rows the caller read from the repository for exactly
+    that window; this function only filters and orders them (the query is the
+    repository's job).  ``windows`` declares the expected keys, ``long_max_rows``
+    the cap of the long window (policy ``ai_long_window_max_rows``).  Pure (L2):
+    no I/O, no policy read, no clock - the same input always yields the same
+    output regardless of order (deterministic)."""
+    keys = tuple(key for key, _days in windows.windows())
+    if set(events) != set(keys) or set(items) != set(keys):
+        raise ValueError("events/items must be keyed by the horizon windows")
+    short_key, mid_key, long_key = keys
+
+    short_events = _select_events(events[short_key], None)
+    short_items = _select_items(items[short_key], None)
+
+    mid_events = _select_events(
+        events[mid_key], lambda event: event.impact in _MID_IMPACTS
+    )
+    mid_items = _select_items(
+        items[mid_key], lambda item: item.kind is NewsItemKind.STATEMENT
+    )
+
+    long_events = _select_events(
+        events[long_key],
+        lambda event: event.impact is EventImpact.HIGH and _has_actual(event),
+    )
+    long_items = _select_items(
+        items[long_key], lambda item: item.kind is NewsItemKind.STATEMENT
+    )
+
+    cap = max(long_max_rows, 0)
+    kept_events = long_events[:cap]
+    remaining = cap - len(kept_events)
+    kept_items = long_items[:remaining] if remaining > 0 else []
+
+    return WindowRows(
+        short_events=tuple(short_events),
+        short_items=tuple(short_items),
+        mid_events=tuple(mid_events),
+        mid_items=tuple(mid_items),
+        long_events=tuple(kept_events),
+        long_items=tuple(kept_items),
     )

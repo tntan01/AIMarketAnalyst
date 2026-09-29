@@ -28,6 +28,7 @@ from core.news_policy import (
     MANDATORY_KEYS,
     NEWS_POLICY_VERSION,
     HorizonDefinition,
+    HorizonWindow,
     NewsPolicy,
     NewsPolicyError,
     NewsPolicyLoadError,
@@ -50,6 +51,7 @@ OWNER_DECIDED_VALUES = {
     "ingest_freshness_hours": 2,
     "ingest_runs_retention_days": 30,
     "ai_window_days": 7,
+    "ai_long_window_max_rows": 50,
     "ai_min_items": 3,
 }
 
@@ -106,6 +108,21 @@ class TestCommittedConfigValues:
         assert horizons["long"] == HorizonDefinition(
             unit="month", min_value=1, max_value=6
         )
+
+    def test_ai_horizon_windows_pin_the_three_owner_day_spans(self):
+        # §7 (đợt 6): short 7 / mid 42 / long 180 ngày (Owner chốt 29/09/2026).
+        windows = load_news_policy().ai_horizon_windows
+        assert set(windows) == set(HORIZON_KEYS)
+        assert windows["short"] == HorizonWindow(days=7)
+        assert windows["mid"] == HorizonWindow(days=42)
+        assert windows["long"] == HorizonWindow(days=180)
+
+    def test_horizon_windows_and_max_rows_carry_their_owner_provenance(self):
+        provenance = _config_data()["_provenance"]
+        assert "Owner chốt đợt 6" in provenance["ai_horizon_windows"]
+        assert "mid 42" in provenance["ai_horizon_windows"]
+        assert "long 180" in provenance["ai_horizon_windows"]
+        assert "Owner chốt đợt 6" in provenance["ai_long_window_max_rows"]
 
     def test_mandatory_key_set_matches_the_contract_table(self):
         # Guard against a §7 key being dropped from the loader's mandatory set:
@@ -262,6 +279,57 @@ class TestHorizonFailClosed:
             load_news_policy(_probe(tmp_path, data))
 
 
+class TestHorizonWindowFailClosed:
+    """``ai_horizon_windows`` must be exactly the three positive day spans of the
+    contract, and ``ai_long_window_max_rows`` a positive int (đợt 6, fail-closed)."""
+
+    @pytest.mark.parametrize("key", sorted(HORIZON_KEYS))
+    def test_missing_window_raises_load_error(self, tmp_path, key):
+        data = _config_data()
+        del data["ai_horizon_windows"][key]
+        with pytest.raises(NewsPolicyLoadError):
+            load_news_policy(_probe(tmp_path, data))
+
+    def test_extra_window_raises_load_error(self, tmp_path):
+        data = _config_data()
+        data["ai_horizon_windows"]["extra"] = {"days": 1}
+        with pytest.raises(NewsPolicyLoadError):
+            load_news_policy(_probe(tmp_path, data))
+
+    @pytest.mark.parametrize("key", sorted(HORIZON_KEYS))
+    def test_missing_days_raises_load_error(self, tmp_path, key):
+        data = _config_data()
+        del data["ai_horizon_windows"][key]["days"]
+        with pytest.raises(NewsPolicyLoadError):
+            load_news_policy(_probe(tmp_path, data))
+
+    def test_extra_window_field_raises_load_error(self, tmp_path):
+        data = _config_data()
+        data["ai_horizon_windows"]["mid"]["note"] = "extra"
+        with pytest.raises(NewsPolicyLoadError):
+            load_news_policy(_probe(tmp_path, data))
+
+    @pytest.mark.parametrize("value", [0, -1, 1.5, True, "7", None])
+    def test_invalid_days_raise_load_error(self, tmp_path, value):
+        data = _config_data()
+        data["ai_horizon_windows"]["short"]["days"] = value
+        with pytest.raises(NewsPolicyLoadError):
+            load_news_policy(_probe(tmp_path, data))
+
+    def test_non_object_window_raises_load_error(self, tmp_path):
+        data = _config_data()
+        data["ai_horizon_windows"]["short"] = 7
+        with pytest.raises(NewsPolicyLoadError):
+            load_news_policy(_probe(tmp_path, data))
+
+    @pytest.mark.parametrize("value", [0, -1, 1.5, True, "50", None])
+    def test_non_positive_long_window_max_rows_raises_load_error(self, tmp_path, value):
+        data = _config_data()
+        data["ai_long_window_max_rows"] = value
+        with pytest.raises(NewsPolicyLoadError):
+            load_news_policy(_probe(tmp_path, data))
+
+
 class TestNoImplicitDefaults:
     """A policy cannot exist in a half-decided state (B4)."""
 
@@ -280,6 +348,11 @@ class TestNoImplicitDefaults:
         policy = load_news_policy()
         with pytest.raises(TypeError):
             policy.ai_horizons["short"] = HorizonDefinition("day", 0, 1)  # type: ignore[index]
+
+    def test_horizon_windows_mapping_is_read_only(self):
+        policy = load_news_policy()
+        with pytest.raises(TypeError):
+            policy.ai_horizon_windows["short"] = HorizonWindow(1)  # type: ignore[index]
 
     def test_direct_construction_needs_every_field(self):
         with pytest.raises(TypeError):
