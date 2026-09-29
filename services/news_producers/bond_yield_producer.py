@@ -24,11 +24,14 @@ invented (B5).
 
 Trend/delta/spread/real yield are NEVER derived here (§6.6/§11b:
 ``core/yield_context.py`` owns the derivation and the consumer calls
-``NewsRepository.latest_bond_yields``).  The producer records one observation
-per maturity per round - the newest reading - using the inherited FRED request
-(``limit=2``/``sort_order=desc`` verbatim, khuôn ``fred_rate_producer``) and the
-newest Yahoo close.  The read-time derivation then measures the window delta
-from the history accumulated across rounds, without this producer computing it.
+``NewsRepository.latest_bond_yields``).  **Wave 6 (§6.6 đợt 6):** each round
+fetches and records the **whole history** the source returns - FRED
+``limit=130`` and Yahoo ``range=1y`` - one row per observation date, not only
+the newest reading.  The read-time derivation then has the depth for the
+3-month/6-month deltas within the very first round, instead of waiting for the
+history to accumulate across rounds.  The database UNIQUE key
+``(currency, maturity, observed_at, source)`` deduplicates across rounds; this
+producer computes no delta itself.
 
 Governance:
 
@@ -92,6 +95,13 @@ FRED_BOND_SERIES: dict[tuple[str, str], str] = {
     ("USD", BondYieldMaturity.BREAKEVEN_10Y.value): "T10YIE",
 }
 
+# Source configuration fixed by the contract, NOT a section 7 policy key:
+# FRED ``limit=130`` daily observations, so one round records ~6 months of daily
+# history - the depth the 3-month/6-month yield deltas of §9.1 need from the
+# first round (contract §6.6 đợt 6).  Endpoint/params stay the inherited
+# ``fred_rate_producer`` ones; only the limit changes.
+FRED_HISTORY_LIMIT = 130
+
 # Yahoo fallback tickers per (currency, maturity) - inherited verbatim from the
 # running ``market_data_service`` (``US2Y``: "2YY=F", ``US10Y``: "^TNX",
 # services/market_data_service.py:20-21).  ``be10y`` deliberately absent: the
@@ -104,7 +114,10 @@ YAHOO_BOND_TICKERS: dict[tuple[str, str], str] = {
 # Yahoo Finance chart endpoint - the inherited transport of
 # ``market_data_service._fetch_via_requests`` (services/market_data_service.py:68).
 YAHOO_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{ticker}"
-YAHOO_RANGE = "10d"
+# Yahoo ``range=1y`` (contract §6.6 đợt 6 - the same no-policy-key source
+# configuration as ``FRED_HISTORY_LIMIT``); the endpoint/params are the
+# inherited ``market_data_service`` ones, only the range changes.
+YAHOO_RANGE = "1y"
 YAHOO_INTERVAL = "1d"
 YAHOO_HEADERS = {"User-Agent": "Mozilla/5.0"}
 
@@ -256,15 +269,15 @@ class BondYieldProducer:
     def _fetch_fred_series(
         self, currency: str, maturity: str, series_id: str, fetched_at: str
     ) -> tuple[list[BondYieldObservation], list[BondYieldChannelError]]:
-        """Fetch the newest FRED observation of one series.
+        """Fetch the history of one FRED series.
 
         Inherited transport (khuôn ``fred_rate_producer``): ``requests.get`` on
         the observations endpoint with ``series_id``/``api_key``/
-        ``file_type=json``/``sort_order=desc``/``limit=2``/``timeout=5``; a
-        non-200 response or an exception fails that maturity alone.  Sentinel
-        values (``"."``) are filtered out before anything is read from the
-        payload; the newest valid observation is recorded with its own ``date``
-        as ``observed_at`` (§4.7)."""
+        ``file_type=json``/``sort_order=desc``/``limit=FRED_HISTORY_LIMIT``/
+        ``timeout=5``; a non-200 response or an exception fails that maturity
+        alone.  Sentinel values (``"."``) are filtered out before anything is
+        read from the payload; every valid observation is recorded with its own
+        ``date`` as ``observed_at`` (§4.7/§6.6 đợt 6)."""
         if not self._api_key:
             return [], [
                 BondYieldChannelError(
@@ -283,7 +296,7 @@ class BondYieldProducer:
                     "api_key": self._api_key,
                     "file_type": "json",
                     "sort_order": "desc",
-                    "limit": 2,
+                    "limit": FRED_HISTORY_LIMIT,
                 },
                 timeout=5,
             )
@@ -323,13 +336,13 @@ class BondYieldProducer:
     def _fetch_yahoo_series(
         self, currency: str, maturity: str, ticker: str, fetched_at: str
     ) -> tuple[list[BondYieldObservation], list[BondYieldChannelError]]:
-        """Fetch the newest Yahoo Finance closes of one fallback ticker.
+        """Fetch the Yahoo Finance history of one fallback ticker.
 
         Transport copied from ``services/market_data_service._fetch_via_requests``
-        (same chart endpoint, ``interval=1d``/``range=10d``, user-agent and the
-        inherited single 429 retry) with the inherited tickers - the service is
-        never imported into the news data path (B7 §3.1).  Raw payload stays in
-        ``_yahoo_observations`` (R8)."""
+        (same chart endpoint, ``interval=1d``/``range=YAHOO_RANGE`` (1 year),
+        user-agent and the inherited single 429 retry) with the inherited
+        tickers - the service is never imported into the news data path
+        (B7 §3.1).  Raw payload stays in ``_yahoo_observations`` (R8)."""
         try:
             response = requests.get(
                 YAHOO_CHART_URL.format(ticker=ticker),
@@ -412,16 +425,17 @@ def _finite_value(raw: object) -> float | None:
 def _fred_observations(
     currency: str, maturity: str, valid: list[dict[str, object]], fetched_at: str
 ) -> tuple[list[BondYieldObservation], list[BondYieldChannelError]]:
-    """Convert the newest valid FRED observation of one series (R8 boundary).
+    """Convert every valid FRED observation of one series (R8 boundary).
 
-    The response is read in ``sort_order=desc`` order and the first record that
-    parses is the newest reading of that maturity (one row per maturity per
-    round).  A record whose ``date`` is missing/empty or whose value cannot be
-    read as a finite number is dropped with a typed ``InvalidObservation``
-    error - never dated or valued by guesswork (B4/B5).  When no record
-    survives, a ``NoObservations`` error is reported so the maturity falls to
-    the fallback (or stays uncovered) and the round cannot claim a primary
-    source it lacks."""
+    Wave 6 (§6.6 đợt 6): the whole history fetched in the round is recorded -
+    one row per observation date - not only the newest reading.  A record whose
+    ``date`` is missing/empty or whose value cannot be read as a finite number is
+    dropped with a typed ``InvalidObservation`` error; the remaining records are
+    still kept (a bad row never discards the good ones).  Only when no record
+    survives is a ``NoObservations`` error reported, so the maturity falls to the
+    fallback (or stays uncovered) and the round cannot claim a primary source it
+    lacks."""
+    observations: list[BondYieldObservation] = []
     errors: list[BondYieldChannelError] = []
     for row in valid:
         observed_at = str(row.get("date", "")).strip()
@@ -446,7 +460,7 @@ def _fred_observations(
                 )
             )
             continue
-        return [
+        observations.append(
             BondYieldObservation(
                 currency=currency,
                 maturity=BondYieldMaturity(maturity),
@@ -455,16 +469,17 @@ def _fred_observations(
                 source=BondYieldSource.FRED,
                 fetched_at=fetched_at,
             )
-        ], errors
-    errors.append(
-        BondYieldChannelError(
-            _CHANNEL_FRED,
-            maturity,
-            "NoObservations",
-            f"{currency}:{maturity}: no usable FRED observation",
         )
-    )
-    return [], errors
+    if not observations:
+        errors.append(
+            BondYieldChannelError(
+                _CHANNEL_FRED,
+                maturity,
+                "NoObservations",
+                f"{currency}:{maturity}: no usable FRED observation",
+            )
+        )
+    return observations, errors
 
 
 def _yahoo_observations(
@@ -473,11 +488,13 @@ def _yahoo_observations(
     payload: object,
     fetched_at: str,
 ) -> tuple[list[BondYieldObservation], list[BondYieldChannelError]]:
-    """Convert a Yahoo chart payload into the two newest observations (R8).
+    """Convert a Yahoo chart payload into one observation per valid day (R8).
 
     The inherited chart shape is read (``chart.result[0].timestamp`` paired
     with ``indicators.quote[0].close``); ``None``/unreadable closes are skipped
-    and a close is dated by its UTC calendar day.  A payload without any usable
+    and a close is dated by its UTC calendar day.  Wave 6 (§6.6 đợt 6): every
+    valid day is kept - not only the newest close - and when a day carries
+    several closes the last one of that day wins.  A payload without any usable
     close is a typed ``NoObservations``/``InvalidYahooStructure`` error - no
     reading is invented (B4)."""
     if not isinstance(payload, dict):
@@ -511,7 +528,7 @@ def _yahoo_observations(
             )
         ]
     closes = quotes[0].get("close", [])
-    observations: list[BondYieldObservation] = []
+    by_day: dict[str, BondYieldObservation] = {}
     errors: list[BondYieldChannelError] = []
     for index, timestamp in enumerate(timestamps):
         close = closes[index] if index < len(closes) else None
@@ -542,17 +559,16 @@ def _yahoo_observations(
                 )
             )
             continue
-        observations.append(
-            BondYieldObservation(
-                currency=currency,
-                maturity=BondYieldMaturity(maturity),
-                value=value,
-                observed_at=observed_at,
-                source=BondYieldSource.YAHOO,
-                fetched_at=fetched_at,
-            )
+        # Several bars of one day -> the last close of that day wins.
+        by_day[observed_at] = BondYieldObservation(
+            currency=currency,
+            maturity=BondYieldMaturity(maturity),
+            value=value,
+            observed_at=observed_at,
+            source=BondYieldSource.YAHOO,
+            fetched_at=fetched_at,
         )
-    if not observations:
+    if not by_day:
         errors.append(
             BondYieldChannelError(
                 _CHANNEL_YAHOO,
@@ -562,9 +578,8 @@ def _yahoo_observations(
             )
         )
         return [], errors
-    # One row per maturity per round: the newest close wins.
-    newest = max(observations, key=lambda obs: obs.observed_at)
-    return [newest], errors
+    observations = sorted(by_day.values(), key=lambda obs: obs.observed_at)
+    return observations, errors
 
 
 def _run_status(

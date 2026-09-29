@@ -56,12 +56,13 @@ from core.news_models import (
     VerdictScopeType,
 )
 from core.news_policy import load_news_policy
-from core.rate_trend import RateTrend, derive_rate_trend
+from core.rate_trend import RateTrend, derive_rate_path, derive_rate_trend
 from core.yield_context import derive_yield_context
 from services.news_repository import (
     BondYieldSnapshot,
     CurrencyRateTrend,
     NewsRepository,
+    RatePathSnapshot,
 )
 
 NEWS_MIGRATIONS_DIR = PROJECT_ROOT / "data" / "migrations" / "news"
@@ -280,6 +281,10 @@ class TestContractSignatures:
 
     def test_latest_bond_yields_signature(self):
         sig = inspect.signature(NewsRepository.latest_bond_yields)
+        assert list(sig.parameters) == ["self", "currencies"]
+
+    def test_rate_paths_signature(self):
+        sig = inspect.signature(NewsRepository.rate_paths)
         assert list(sig.parameters) == ["self", "currencies"]
 
     def test_add_bond_observations_signature(self):
@@ -607,6 +612,51 @@ class TestLatestBondYields:
 
     def test_no_observations_returns_empty_list(self, tmp_path):
         assert _repo(tmp_path).latest_bond_yields(["USD", "EUR"]) == []
+
+
+# ---- 6c. rate_paths (wave 6) ----------------------------------------------------
+
+
+class TestRatePaths:
+    def test_path_is_typed_and_delegates_to_core(self, tmp_path):
+        repo = _repo(tmp_path)
+        now = datetime.now(timezone.utc)
+        day = now.date().isoformat()
+        six_months = (now - timedelta(days=180)).date().isoformat()
+        repo.add_rate_observations([
+            _rate("USD", day, rate=5.50),
+            _rate("USD", six_months, rate=5.00),
+            _rate("JPY", day, rate=0.50),
+        ])
+
+        entries = repo.rate_paths(["USD", "JPY", "EUR"])
+
+        assert isinstance(entries, list)
+        assert all(isinstance(e, RatePathSnapshot) for e in entries)
+        # EUR never observed -> no entry (B4)
+        assert [e.currency for e in entries] == ["USD", "JPY"]
+
+        usd = next(e for e in entries if e.currency == "USD")
+        assert usd.path.rate_now == 5.50
+        assert usd.path.rate_then == 5.00
+        assert usd.path.change == pytest.approx(0.50)
+        # The repository delegates the derivation: same rows -> same path.
+        expected = derive_rate_path(
+            [
+                _rate("USD", day, rate=5.50),
+                _rate("USD", six_months, rate=5.00),
+            ],
+            datetime.now(timezone.utc),
+        )
+        assert usd.path == expected
+
+        # A currency with a single date has no path (B4).
+        jpy = next(e for e in entries if e.currency == "JPY")
+        assert jpy.path.rate_then is None
+        assert jpy.path.change is None
+
+    def test_no_observations_returns_empty_list(self, tmp_path):
+        assert _repo(tmp_path).rate_paths(["USD", "EUR"]) == []
 
 
 # ---- 7. store_state -------------------------------------------------------------

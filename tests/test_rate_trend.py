@@ -290,7 +290,8 @@ class TestCoreLayerBoundary:
     def test_imports_are_stdlib_plus_core_news_models_only(self):
         # The DoD review point: the pure module imports only the type seam;
         # no policy, no services/ui/controllers/Qt dependency (L1/L2/L3).
-        allowed = {"__future__", "enum", "core.news_models"}
+        # Wave 6 adds ``dataclasses``/``datetime`` for the ``RatePath`` result.
+        allowed = {"__future__", "enum", "dataclasses", "datetime", "core.news_models"}
         imported = self._imported_modules()
         assert imported <= allowed, f"unexpected imports: {imported - allowed}"
         assert "core.news_models" in imported

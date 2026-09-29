@@ -11,6 +11,10 @@ real-yield derivation (§11b).  Its contract, verified here:
 * ``spread_2y10y = 10y - 2y`` and ``real_yield_10y = 10y - be10y``; either is
   ``None`` when an input is missing (a missing ``be10y`` never fabricates a
   real yield);
+* wave 6: the 3-month/6-month delta sets (marks 90/180 days) of 2y/10y/spread/
+  real yield are derived from the reference pair nearest each mark (never a
+  difference of deltas taken at different marks), ``None`` when a reference leg
+  is missing;
 * the function is deterministic and pure: two calls with the same input return
   equal results, and the module imports no I/O / policy / (L1/L2) upstream.
 """
@@ -183,6 +187,93 @@ class TestDeriveYieldContext:
         assert derive_yield_context(
             observations, now=_NOW, window_days=_WINDOW
         ) == derive_yield_context(observations, now=_NOW, window_days=_WINDOW)
+
+
+class TestThreeAndSixMonthDeltas:
+    """Wave 6 (contract §4.7): the 3-month/6-month delta sets.
+
+    Fixed marks: ``_NOW`` 2026-09-21 -> 3-month mark 2026-06-23,
+    6-month mark 2026-03-25 (90/180 days)."""
+
+    def _context(self, observations):
+        return derive_yield_context(observations, now=_NOW, window_days=_WINDOW)
+
+    def test_three_and_six_month_deltas_of_all_four_quantities(self):
+        observations = [
+            _obs(_TWO_YEAR, "2026-09-21", 4.50),
+            _obs(_TWO_YEAR, "2026-06-23", 4.00),
+            _obs(_TWO_YEAR, "2026-03-25", 3.50),
+            _obs(_TEN_YEAR, "2026-09-21", 4.20),
+            _obs(_TEN_YEAR, "2026-06-23", 4.10),
+            _obs(_TEN_YEAR, "2026-03-25", 4.00),
+            _obs(_BE10Y, "2026-09-21", 2.30),
+            _obs(_BE10Y, "2026-06-23", 2.10),
+            _obs(_BE10Y, "2026-03-25", 2.00),
+        ]
+        context = self._context(observations)
+
+        assert context.delta_3m.delta_2y == pytest.approx(0.50)
+        assert context.delta_3m.delta_10y == pytest.approx(0.10)
+        # spread_then = 10y_then - 2y_then = 4.10 - 4.00, so delta = -0.30 - 0.10
+        assert context.delta_3m.delta_spread == pytest.approx(-0.40)
+        # real_then = 10y_then - be10y_then = 4.10 - 2.10 -> delta = 1.90 - 2.00
+        assert context.delta_3m.delta_real == pytest.approx(-0.10)
+
+        assert context.delta_6m.delta_2y == pytest.approx(1.00)
+        assert context.delta_6m.delta_10y == pytest.approx(0.20)
+        assert context.delta_6m.delta_spread == pytest.approx(-0.80)
+        assert context.delta_6m.delta_real == pytest.approx(-0.10)
+
+    def test_reference_is_the_observation_nearest_the_mark(self):
+        observations = [
+            _obs(_TWO_YEAR, "2026-09-21", 4.50),
+            _obs(_TWO_YEAR, "2026-06-20", 4.00),  # 3 days before the 3m mark
+            _obs(_TWO_YEAR, "2026-07-01", 3.00),  # 8 days after -> not chosen
+        ]
+        context = self._context(observations)
+
+        assert context.delta_3m.delta_2y == pytest.approx(0.50)
+
+    def test_reference_after_the_mark_is_used_when_nearest(self):
+        observations = [
+            _obs(_TWO_YEAR, "2026-09-21", 4.50),
+            _obs(_TWO_YEAR, "2026-05-01", 3.00),  # far before
+            _obs(_TWO_YEAR, "2026-07-01", 4.00),  # 8 days after -> nearest
+        ]
+        context = self._context(observations)
+
+        assert context.delta_3m.delta_2y == pytest.approx(0.50)
+
+    def test_missing_reference_leaves_the_mark_delta_none(self):
+        context = self._context([_obs(_TWO_YEAR, "2026-09-21", 4.50)])
+
+        assert context.delta_3m.delta_2y is None
+        assert context.delta_6m.delta_2y is None
+
+    def test_spread_delta_uses_the_reference_pair_and_real_needs_both_legs(self):
+        observations = [
+            _obs(_TWO_YEAR, "2026-09-21", 4.50),
+            _obs(_TWO_YEAR, "2026-06-23", 4.00),
+            _obs(_TEN_YEAR, "2026-09-21", 4.20),
+            _obs(_TEN_YEAR, "2026-06-23", 4.10),
+            _obs(_BE10Y, "2026-09-21", 2.30),  # no breakeven reference at the mark
+        ]
+        context = self._context(observations)
+
+        # spread delta from the pair at the same mark: (4.20-4.50)-(4.10-4.00)
+        assert context.delta_3m.delta_spread == pytest.approx(-0.40)
+        # real yield lacks a mark reference -> None (never a one-sided guess)
+        assert context.delta_3m.delta_real is None
+
+    def test_window_deltas_are_unchanged_by_the_mark_extension(self):
+        observations = [
+            _obs(_TWO_YEAR, "2026-09-21", 4.50),
+            _obs(_TWO_YEAR, "2026-09-14", 4.00),
+        ]
+        context = self._context(observations)
+
+        assert context.delta_2y == pytest.approx(0.50)
+        assert context.delta_10y is None
 
 
 class TestCoreLayerBoundary:

@@ -4,17 +4,22 @@ The FRED and Yahoo transports are mocked — ``requests.get`` in the producer
 namespace.  No real HTTP, no waiting and ``%APPDATA%`` is never touched: every
 round runs against a throwaway temp DB and the real news migration folder.
 
-Checklist covered here (plan B2):
+Checklist covered here (plan B2; wave 6 §6.6):
 
-* FRED ok -> one row per maturity (``2y``/``10y``/``be10y``) with
-  ``source='fred'``, run ``ok`` and one ``ingest_runs`` row
-  ``producer='bond_yield'``;
-* FRED dead -> ``2y``/``10y`` come from Yahoo (``source='yahoo'``), ``be10y``
-  stays missing, run ``partial``;
+* FRED ok -> **every** observation of the three series (``2y``/``10y``/
+  ``be10y``) is written with ``source='fred'``, run ``ok`` and one
+  ``ingest_runs`` row ``producer='bond_yield'`` - the wave-6 change from the
+  "one row per maturity per round" rule (deliberate, §6.6 đợt 6);
+* ``limit=130`` is the FRED request and a full daily history (~390 rows) is
+  recorded in one round;
+* FRED dead -> ``2y``/``10y`` come from Yahoo (``source='yahoo'``), every valid
+  day kept (last close of a repeated day wins), ``be10y`` stays missing, run
+  ``partial``;
 * both channels dead -> run ``failed`` and nothing written (B4);
 * a malformed FRED record is dropped (never dated/valued by guesswork) and the
   round is ``partial``;
-* two rounds on the same day do not duplicate rows (UNIQUE §4.7);
+* two rounds on the same day do not add new rows (UNIQUE §4.7; the repeat
+  upserts the same keys);
 * ``be10y`` never carries a Yahoo source (no fallback channel);
 * the producer touches only ``bond_yields`` (never the other news tables).
 """
@@ -22,7 +27,7 @@ Checklist covered here (plan B2):
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from unittest import mock
 
@@ -39,6 +44,7 @@ from core.news_policy import NewsPolicy
 from services.news_producers import bond_yield_producer as bondmod
 from services.news_producers.bond_yield_producer import (
     FRED_BOND_SERIES,
+    FRED_HISTORY_LIMIT,
     YAHOO_BOND_TICKERS,
     BondYieldProducer,
 )
@@ -79,6 +85,15 @@ class _Response:
 
 def _fred_payload(rows: list[tuple[str, object]]) -> dict[str, object]:
     return {"observations": [{"date": date, "value": value} for date, value in rows]}
+
+
+def _fred_history(base: float, count: int) -> dict[str, object]:
+    """A FRED payload of ``count`` consecutive daily observations (newest first)."""
+    rows = [
+        ((date(2026, 9, 20) - timedelta(days=offset)).isoformat(), f"{base + offset:.2f}")
+        for offset in range(count)
+    ]
+    return _fred_payload(rows)
 
 
 def _yahoo_payload(points: list[tuple[str, float]]) -> dict[str, object]:
@@ -200,7 +215,9 @@ def _rows(db_path: Path, sql: str, params: tuple = ()) -> list[sqlite3.Row]:
 
 
 class TestFredPrimary:
-    def test_fred_ok_writes_one_row_per_maturity(self, tmp_path):
+    def test_fred_ok_writes_every_observation_of_each_series(self, tmp_path):
+        # Wave 6 (§6.6 đợt 6) deliberate change: the whole history of each
+        # series is recorded, not only its newest reading.
         producer = _producer(tmp_path)
         fake, calls = _mock(fred=_FRED_OK, yahoo=_YAHOO_OK)
 
@@ -208,26 +225,56 @@ class TestFredPrimary:
             result = producer.fetch_round()
 
         assert result.run_status is IngestRunStatus.OK
-        assert result.fred_observations == 3
+        assert result.fred_observations == 6
         assert result.yahoo_observations == 0
-        assert result.written == 3
+        assert result.written == 6
         assert result.maturities_covered == ("USD:10y", "USD:2y", "USD:be10y")
         assert result.errors == ()
 
         rows = _rows(
             producer._repo.db_path,
             "SELECT maturity, source, value, observed_at FROM bond_yields "
-            "ORDER BY maturity",
+            "ORDER BY maturity, observed_at",
         )
-        assert [(r["maturity"], r["source"], r["value"]) for r in rows] == [
-            ("10y", "fred", 4.20),
-            ("2y", "fred", 4.50),
-            ("be10y", "fred", 2.30),
+        assert [
+            (r["maturity"], r["source"], r["value"], r["observed_at"]) for r in rows
+        ] == [
+            ("10y", "fred", 4.10, "2026-09-19"),
+            ("10y", "fred", 4.20, "2026-09-20"),
+            ("2y", "fred", 4.40, "2026-09-19"),
+            ("2y", "fred", 4.50, "2026-09-20"),
+            ("be10y", "fred", 2.20, "2026-09-19"),
+            ("be10y", "fred", 2.30, "2026-09-20"),
         ]
-        # newest reading of each series wins (limit=2 fetched, newest stored)
-        assert {r["observed_at"] for r in rows} == {"2026-09-20"}
         # no Yahoo request was made: FRED covered the whole scope
         assert all(c["url"] == bondmod.FRED_OBSERVATIONS_URL for c in calls)
+        # the FRED request carries the wave-6 history limit (source config, §6.6)
+        assert all(c["params"].get("limit") == FRED_HISTORY_LIMIT for c in calls)
+
+    def test_fred_limit_130_records_the_whole_daily_history(self, tmp_path):
+        producer = _producer(tmp_path)
+        fred = {
+            _DGS2: _fred_history(4.00, 130),
+            _DGS10: _fred_history(4.20, 130),
+            _T10YIE: _fred_history(2.30, 130),
+        }
+        fake, _ = _mock(fred=fred, yahoo=_YAHOO_OK)
+
+        with mock.patch.object(bondmod.requests, "get", fake):
+            result = producer.fetch_round()
+
+        assert result.run_status is IngestRunStatus.OK
+        assert result.fred_observations == 390
+        assert result.written == 390
+        per_maturity = _rows(
+            producer._repo.db_path,
+            "SELECT maturity, COUNT(*) AS n FROM bond_yields GROUP BY maturity",
+        )
+        assert {r["maturity"]: r["n"] for r in per_maturity} == {
+            "2y": 130,
+            "10y": 130,
+            "be10y": 130,
+        }
 
     def test_run_row_is_logged_with_the_bond_yield_producer(self, tmp_path):
         producer = _producer(tmp_path)
@@ -240,10 +287,10 @@ class TestFredPrimary:
         assert len(runs) == 1
         assert runs[0]["producer"] == IngestProducer.BOND_YIELD.value
         assert runs[0]["status"] == "ok"
-        assert runs[0]["items_written"] == 3
+        assert runs[0]["items_written"] == 6
         assert result.run_id == runs[0]["id"]
 
-    def test_two_rounds_same_day_do_not_duplicate_rows(self, tmp_path):
+    def test_two_rounds_same_day_do_not_add_new_rows(self, tmp_path):
         producer = _producer(tmp_path)
         fake, _ = _mock(fred=_FRED_OK, yahoo=_YAHOO_OK)
 
@@ -251,10 +298,12 @@ class TestFredPrimary:
             first = producer.fetch_round()
             second = producer.fetch_round()
 
-        assert first.written == 3
-        assert second.written == 3
+        # items_written counts the upserted rows; the UNIQUE key means the
+        # repeat round adds no NEW row (DB count unchanged).
+        assert first.written == 6
+        assert second.written == 6
         rows = _rows(producer._repo.db_path, "SELECT COUNT(*) AS n FROM bond_yields")
-        assert rows[0]["n"] == 3  # UNIQUE key -> upsert, not duplicate
+        assert rows[0]["n"] == 6
 
     def test_producer_touches_only_bond_yields(self, tmp_path):
         producer = _producer(tmp_path)
@@ -303,6 +352,58 @@ class TestYahooFallback:
         ]
         # be10y has no fallback channel -> absent
         assert all(r["maturity"] != "be10y" for r in rows)
+
+    def test_yahoo_records_every_valid_day_of_the_range(self, tmp_path):
+        # Wave 6 (§6.6 đợt 6): range=1y, every valid close kept per day.
+        producer = _producer(tmp_path)
+        fred_down = {series: RuntimeError("FRED down") for series in FRED_BOND_SERIES.values()}
+        yahoo = {
+            _YAHOO_2Y: _yahoo_payload(
+                [("2026-09-18", 4.40), ("2026-09-19", 4.42), ("2026-09-20", 4.45)]
+            ),
+            _YAHOO_10Y: _yahoo_payload([("2026-09-20", 4.15)]),
+        }
+        fake, calls = _mock(fred=fred_down, yahoo=yahoo)
+
+        with mock.patch.object(bondmod.requests, "get", fake):
+            result = producer.fetch_round()
+
+        assert result.yahoo_observations == 4
+        rows = _rows(
+            producer._repo.db_path,
+            "SELECT observed_at FROM bond_yields WHERE maturity='2y' "
+            "ORDER BY observed_at",
+        )
+        assert [r["observed_at"] for r in rows] == [
+            "2026-09-18",
+            "2026-09-19",
+            "2026-09-20",
+        ]
+        # the Yahoo request carries the wave-6 range (source config, §6.6)
+        assert all(
+            c["params"].get("range") == "1y"
+            for c in calls
+            if c["url"] != bondmod.FRED_OBSERVATIONS_URL
+        )
+
+    def test_yahoo_same_day_multiple_closes_keeps_the_last(self, tmp_path):
+        producer = _producer(tmp_path)
+        fred_down = {series: RuntimeError("FRED down") for series in FRED_BOND_SERIES.values()}
+        yahoo = {
+            _YAHOO_2Y: _yahoo_payload([("2026-09-20", 4.40), ("2026-09-20", 4.99)]),
+            _YAHOO_10Y: _yahoo_payload([("2026-09-20", 4.15)]),
+        }
+        fake, _ = _mock(fred=fred_down, yahoo=yahoo)
+
+        with mock.patch.object(bondmod.requests, "get", fake):
+            producer.fetch_round()
+
+        rows = _rows(
+            producer._repo.db_path,
+            "SELECT value, observed_at FROM bond_yields WHERE maturity='2y'",
+        )
+        assert len(rows) == 1
+        assert rows[0]["value"] == 4.99  # last close of the repeated day wins
 
     def test_be10y_is_never_sourced_from_yahoo(self, tmp_path):
         # Structural guarantee: the ticker map has no be10y entry.

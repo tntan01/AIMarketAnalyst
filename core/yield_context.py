@@ -16,6 +16,15 @@ currency to a ``YieldContext``:
   ``None`` when one of its two inputs is missing (section 4.7: a missing
   ``be10y`` gives no real yield, never a guess).
 
+Wave 6 (contract section 4.7 / section 9.1): ``YieldContext`` also carries the
+**3-month and 6-month deltas** of 2y/10y/spread/real yield, read at the fixed
+contract marks ``90`` and ``180`` days.  The reference of a mark is the
+observation nearest that mark whose date differs from the latest one; without
+such an observation (or with a missing leg) the delta is ``None`` - nothing is
+invented (B4).  The spread/real delta is computed from the reference pair at the
+same mark (``10y_then - 2y_then``), never as a difference of two deltas taken at
+different marks.
+
 Governance:
 
 * **Pure (L2).** No I/O, no Qt, no policy read, no network, no filesystem and
@@ -32,10 +41,30 @@ Governance:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import datetime, timedelta
+from dataclasses import dataclass, field
+from datetime import date, datetime, timedelta
 
 from core.news_models import BondYieldMaturity, BondYieldObservation, BondYieldSource
+
+# Fixed contract marks of the 3-month / 6-month deltas (contract section 4.7,
+# wave 6): the Owner fixed them as 90 and 180 days - not section 7 policy keys,
+# so they stay module constants here (no policy read in a core module).
+_THREE_MONTHS_DAYS = 90
+_SIX_MONTHS_DAYS = 180
+
+
+@dataclass(frozen=True, slots=True)
+class YieldDeltaSet:
+    """Deltas of one horizon mark (3-month or 6-month) for one currency.
+
+    Each field is ``current - reference`` at the mark, or ``None`` when no
+    reference observation exists (or a leg is missing) - always B4, never a
+    guessed zero.  A typed packet consumed by the prompt builder (wave C3)."""
+
+    delta_2y: float | None = None
+    delta_10y: float | None = None
+    delta_spread: float | None = None
+    delta_real: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,6 +75,7 @@ class YieldContext:
     maturity (``None`` when that maturity was never observed) with its
     ``observed_at``; ``delta_2y``/``delta_10y`` the change over the caller's
     window; ``spread_2y10y`` and ``real_yield_10y`` the two derived spreads.
+    ``delta_3m``/``delta_6m`` carry the 3-month/6-month delta sets of wave 6.
     Typed fields only - never a bare dict across the boundary (C3).
     """
 
@@ -59,6 +89,8 @@ class YieldContext:
     delta_10y: float | None
     spread_2y10y: float | None
     real_yield_10y: float | None
+    delta_3m: YieldDeltaSet = field(default_factory=YieldDeltaSet)
+    delta_6m: YieldDeltaSet = field(default_factory=YieldDeltaSet)
 
 
 def _by_recency(
@@ -109,6 +141,102 @@ def _delta(
     return None
 
 
+def _reference_near(
+    observations: list[BondYieldObservation],
+    cutoff: str,
+) -> BondYieldObservation | None:
+    """The observation nearest the mark ``cutoff``, or ``None`` (B4).
+
+    The mark is the fixed contract edge (90/180 days back); the reference is the
+    observation whose date is closest to it on either side, excluding any
+    observation sharing the latest date (which would measure no depth).
+    Deterministic: ties break on the older ``observed_at`` (section 4.7)."""
+    ordered = _by_recency(observations)
+    if not ordered:
+        return None
+    latest = ordered[0]
+    candidates = [
+        observation
+        for observation in ordered
+        if observation.observed_at != latest.observed_at
+    ]
+    if not candidates:
+        return None
+    mark = date.fromisoformat(cutoff)
+    return min(
+        candidates,
+        key=lambda observation: (
+            abs((date.fromisoformat(observation.observed_at) - mark).days),
+            observation.observed_at,
+        ),
+    )
+
+
+def _delta_set(
+    by_maturity: dict[BondYieldMaturity, list[BondYieldObservation]],
+    latest_2y: BondYieldObservation | None,
+    latest_10y: BondYieldObservation | None,
+    latest_be10y: BondYieldObservation | None,
+    cutoff: str,
+) -> YieldDeltaSet:
+    """The 3-month/6-month delta set of one currency at ``cutoff`` (section 4.7).
+
+    ``delta_2y``/``delta_10y`` are ``latest - reference`` for each maturity.  The
+    spread/real delta is ``(10y - leg)_now - (10y - leg)_then`` from the
+    reference pair at the same mark (``10y_then - 2y_then`` / ``10y_then -
+    be10y_then``) - never a difference of two deltas taken at different marks.
+    Any missing reference value leaves its delta ``None`` (B4)."""
+    reference_2y = _reference_near(by_maturity[BondYieldMaturity.TWO_YEAR], cutoff)
+    reference_10y = _reference_near(by_maturity[BondYieldMaturity.TEN_YEAR], cutoff)
+    reference_be10y = _reference_near(
+        by_maturity[BondYieldMaturity.BREAKEVEN_10Y], cutoff
+    )
+
+    def _difference(
+        latest: BondYieldObservation | None,
+        reference: BondYieldObservation | None,
+    ) -> float | None:
+        if latest is None or reference is None:
+            return None
+        return latest.value - reference.value
+
+    spread_now = (
+        latest_10y.value - latest_2y.value
+        if latest_10y is not None and latest_2y is not None
+        else None
+    )
+    spread_then = (
+        reference_10y.value - reference_2y.value
+        if reference_10y is not None and reference_2y is not None
+        else None
+    )
+    real_now = (
+        latest_10y.value - latest_be10y.value
+        if latest_10y is not None and latest_be10y is not None
+        else None
+    )
+    real_then = (
+        reference_10y.value - reference_be10y.value
+        if reference_10y is not None and reference_be10y is not None
+        else None
+    )
+
+    return YieldDeltaSet(
+        delta_2y=_difference(latest_2y, reference_2y),
+        delta_10y=_difference(latest_10y, reference_10y),
+        delta_spread=(
+            spread_now - spread_then
+            if spread_now is not None and spread_then is not None
+            else None
+        ),
+        delta_real=(
+            real_now - real_then
+            if real_now is not None and real_then is not None
+            else None
+        ),
+    )
+
+
 def derive_yield_context(
     observations: list[BondYieldObservation],
     now: datetime,
@@ -129,6 +257,8 @@ def derive_yield_context(
         by_maturity.setdefault(observation.maturity, []).append(observation)
 
     cutoff = (now - timedelta(days=window_days)).date().isoformat()
+    cutoff_3m = (now - timedelta(days=_THREE_MONTHS_DAYS)).date().isoformat()
+    cutoff_6m = (now - timedelta(days=_SIX_MONTHS_DAYS)).date().isoformat()
 
     latest_2y = _latest(by_maturity[BondYieldMaturity.TWO_YEAR])
     latest_10y = _latest(by_maturity[BondYieldMaturity.TEN_YEAR])
@@ -160,4 +290,10 @@ def derive_yield_context(
         delta_10y=_delta(by_maturity[BondYieldMaturity.TEN_YEAR], cutoff),
         spread_2y10y=spread_2y10y,
         real_yield_10y=real_yield_10y,
+        delta_3m=_delta_set(
+            by_maturity, latest_2y, latest_10y, latest_be10y, cutoff_3m
+        ),
+        delta_6m=_delta_set(
+            by_maturity, latest_2y, latest_10y, latest_be10y, cutoff_6m
+        ),
     )

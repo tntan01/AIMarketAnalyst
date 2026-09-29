@@ -61,7 +61,7 @@ from core.news_models import (
     VerdictScopeType,
 )
 from core.news_policy import load_news_policy
-from core.rate_trend import RateTrend, derive_rate_trend
+from core.rate_trend import RatePath, RateTrend, derive_rate_path, derive_rate_trend
 from core.yield_context import YieldContext, derive_yield_context
 from services.journal_models import SQLITE_BUSY_TIMEOUT_MS, SQLITE_TIMEOUT_SECONDS
 
@@ -70,6 +70,7 @@ __all__ = [
     "BondYieldSnapshot",
     "CurrencyRateTrend",
     "NewsRepository",
+    "RatePathSnapshot",
     "UpsertEventsResult",
     "UpsertItemsResult",
 ]
@@ -143,6 +144,19 @@ class BondYieldSnapshot:
     currency: str
     context: YieldContext
     observations: tuple[BondYieldObservation, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class RatePathSnapshot:
+    """One currency's policy-rate path (contract §8, wave 6).
+
+    ``path`` is the ``core/rate_trend.derive_rate_path`` result (rate now, rate
+    ~6 months ago and their change) - the repository never derives it itself.
+    Typed packet - never a dict across the boundary (C3).
+    """
+
+    currency: str
+    path: RatePath
 
 
 class NewsRepository:
@@ -746,6 +760,33 @@ class NewsRepository:
                     latest=latest,
                     previous=previous,
                     trend=derive_rate_trend(latest, previous),
+                )
+            )
+        return result
+
+    def rate_paths(self, currencies: list[str]) -> list[RatePathSnapshot]:
+        """Per requested currency, the 6-month policy-rate path derived from its
+        whole ``interest_rates`` history (contract §8, wave 6).  The derivation
+        comes from ``core/rate_trend.derive_rate_path`` — this repository never
+        computes it (§11b).  A currency with no observation at all produces no
+        entry (B4 — nothing is invented); the returned list is a (possibly
+        empty) list, never ``None``."""
+        now = datetime.now(timezone.utc)
+        result: list[RatePathSnapshot] = []
+        for currency in currencies:
+            with self._connect() as conn:
+                rows = conn.execute(
+                    "SELECT * FROM interest_rates WHERE currency = ? "
+                    "ORDER BY observed_at DESC, id DESC",
+                    (currency,),
+                ).fetchall()
+            if not rows:
+                continue
+            observations = [_observation_from_row(row) for row in rows]
+            result.append(
+                RatePathSnapshot(
+                    currency=currency,
+                    path=derive_rate_path(observations, now),
                 )
             )
         return result
