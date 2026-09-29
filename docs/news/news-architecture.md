@@ -7,7 +7,13 @@
 > §13 đợt 3). **Sửa đổi đợt 5 — Owner duyệt 28/09/2026:** thêm tín hiệu lợi
 > suất trái phiếu `bond_yields` (§4.7, §6.6); khối "Market context" trong
 > prompt AI (§9.1, §9.3); mô hình phạm vi nhận định **11 tài sản** + chế độ
-> batch "Nhận định tất cả" + bias cặp forex suy ra (§9.3, §13 đợt 5). Tài liệu này
+> batch "Nhận định tất cả" + bias cặp forex suy ra (§9.3, §13 đợt 5).
+> **Sửa đổi đợt 6 — Owner duyệt 29/09/2026 (ca "Độ sâu dữ liệu theo chân
+> trời"):** cửa sổ dữ kiện **phân tầng theo chân trời** (policy
+> `ai_horizon_windows` — §7, §9.1); context mở rộng **rate path 6 tháng +
+> yield delta 3m/6m** (§6.6, §9.1); khung prompt v2 — render `status` sự kiện
+> + chỉ dẫn đối chiếu độ phủ bằng chứng với chân trời (§9.1, `prompt_hash` đổi
+> lần 2); panel "độ phủ theo chân trời" trong dialog (§9.3, `screen_design.md`). Tài liệu này
 > là đặc tả thẩm quyền **duy nhất** của miền Tin tức (V2): code phải đúng từng
 > hành vi mô tả ở đây; lệch tài liệu ↔ code = defect phải đóng. Toàn bộ giá
 > trị chính sách đã được Owner chốt (mục 7, 13) — không còn điểm `OPEN`.
@@ -265,7 +271,10 @@ Delta trong cửa sổ, spread 2y–10y và **real yield 10y (= `10y` − `be10y
 tính M5: "Sở hữu tri thức dẫn xuất delta/spread/real yield từ các quan sát lợi
 suất gần nhất"); `bond_yield_producer` và `NewsRepository` chỉ gọi hàm này,
 không tự tính (L1 — tính toán thuộc `core/`, `services/` cấm chứa công thức).
-Thiếu `be10y` → real yield `None`, không suy đoán (B4).
+Thiếu `be10y` → real yield `None`, không suy đoán (B4). **Đợt 6:** `YieldContext`
+mở rộng thêm delta **3 tháng + 6 tháng** của 2y/10y/spread/real yield — cùng
+chủ sở hữu, cùng quy tắc thiếu dữ kiện → `None` (độ sâu dữ liệu theo chân
+trời — §9.1, §13 đợt 6).
 
 ## 5. Mô hình miền có kiểu (C2, C3)
 
@@ -484,6 +493,15 @@ Yahoo cho kỳ hạn tương ứng; cả hai kênh chết → run `failed` (B4 �
 lặng lạc quan). Producer không ghi đè bản ghi `(currency, maturity,
 observed_at, source)` đã có — chống trùng bằng UNIQUE §4.7.
 
+**Độ sâu lịch sử (đợt 6 — Owner duyệt 29/09/2026):** mỗi round thu và ghi
+**toàn bộ** quan sát lấy được của chuỗi — FRED `limit=130` (~6 tháng quan sát
+ngày cho delta 6 tháng, kế thừa endpoint/params khuôn `fred_rate_producer`);
+Yahoo `range=1y` (kế thừa endpoint, chỉ đổi tham số range). Converter ghi mọi
+bản ghi hợp lệ theo ngày (`observed_at`), **không chỉ dòng mới nhất** — thay
+quy tắc "1 dòng/kỳ hạn/round" của đợt 5 (UNIQUE §4.7 tự khử trùng giữa các
+round; `items_written` = số dòng thực ghi). Lý do: delta 3m/6m của §9.1 cần
+lịch sử tích lũy trong chính round đầu tiên, không đợi nhiều ngày chạy app.
+
 ## 7. Chính sách có phiên bản (S4, B5, D5)
 
 Mọi con số vận hành của miền nằm trong **một** tệp chính sách
@@ -500,6 +518,8 @@ máy đọc, V3(a)). Tài liệu này trỏ về khóa, **không chép giá tr�
 | `ingest_freshness_hours` | tuổi tối đa lượt ingest thành công trước khi `degraded` | **2** |
 | `ingest_runs_retention_days` | retention log vận hành | **30** |
 | `ai_window_days` | cửa sổ tin đưa vào prompt AI | **7** |
+| `ai_horizon_windows` (đợt 6) | cửa sổ dữ kiện **phân tầng theo chân trời** — floor `ai_min_items` vẫn tính trên cửa sổ short (đúng `ai_window_days`) | **short 7 / mid 42 / long 180 ngày** (Owner chốt 29/09/2026) |
+| `ai_long_window_max_rows` (đợt 6) | số dòng dữ kiện tối đa của cửa sổ long đưa vào prompt (ưu tiên impact cao, rồi gần đây) | **50** |
 | `ai_min_items` | số tin tối thiểu để được gọi AI | **3** |
 | `ai_horizons` | định nghĩa 3 chân trời (short/mid/long) | **ngắn: trong ngày–3 ngày; trung: 1–4 tuần; dài: 1–6 tháng** |
 
@@ -534,7 +554,8 @@ ra ổn định; đổi cách lưu trữ bên trong không buộc bên tiêu th�
 | `events_in_range(from_utc, to_utc, currencies=None, include_non_impact=True)` | sự kiện theo cửa sổ, đã phân loại `status` |
 | `items_in_range(from_utc, to_utc=None, kinds=None, currencies=None, exclude_flagged=True)` | tin văn bản; mặc định bỏ tin `excluded=1` |
 | `latest_rates(currencies)` | quan sát gần nhất mỗi đồng tiền + trend dẫn xuất |
-| `latest_bond_yields(currencies)` (đợt 5) | quan sát gần nhất mỗi `(currency, maturity)` + dẫn xuất qua `core/yield_context.py`: delta trong cửa sổ, spread 2y–10y, real yield 10y |
+| `rate_paths(currencies)` (đợt 6) | rate hiện tại − rate ~6 tháng trước mỗi đồng tiền (dẫn xuất qua `core/rate_trend.derive_rate_path` — lịch sử `interest_rates` đã lưu vĩnh viễn); thiếu quan sát cũ → `None` (B4) |
+| `latest_bond_yields(currencies)` (đợt 5) | quan sát gần nhất mỗi `(currency, maturity)` + dẫn xuất qua `core/yield_context.py`: delta trong cửa sổ (đợt 6: + delta 3 tháng/6 tháng), spread 2y–10y, real yield 10y |
 | `store_state()` | trả `StoreState` — mô hình có kiểu (C3, cấm dict trần qua ranh giới): trạng thái `fresh`/`degraded`/`unavailable` cho từng tín hiệu (`events`, `items`, `rates`, `yields` — đợt 5) + giờ ingest thành công cuối mỗi tín hiệu (từ `ingest_runs`) |
 | `verdicts_for(scope_type, scope_value, limit)` | lịch sử nhận định AI, mới nhất trước |
 
@@ -551,20 +572,39 @@ chuỗi hiển thị — vi phạm lớp `services/` (mục 3).
    XAU, XAG, BTC — §9.3); **cặp tiền** (`pair`) chỉ qua nút "Nhận định chuyên
    sâu cặp" (A3 — §13 đợt 5).
 2. `NewsController` đọc qua repository: sự kiện + tin văn bản (`excluded=0`)
-   liên quan đồng tiền của phạm vi trong cửa sổ `ai_window_days`; nếu tổng <
-   `ai_min_items` → trả trạng thái `insufficient_data`, **không gọi AI**
-   (B4). **Floor vẫn chỉ đếm sự kiện + tin văn bản** — khối Market context
-   (bước 3) không tính vào (C4/§13 đợt 5).
+   liên quan đồng tiền của phạm vi trong **các cửa sổ phân tầng theo chân
+   trời** `ai_horizon_windows` (đợt 6 — short 7 / mid 42 / long 180 ngày):
+   - **short:** nguyên trạng đợt 5 (mọi events + items trong 7 ngày);
+   - **mid:** events `impact` high/medium + items `kind=statement` trong
+     42 ngày;
+   - **long:** events `impact=high` **có actual** + items `kind=statement`
+     trong 180 ngày, **giới hạn `ai_long_window_max_rows` dòng** (quy tắc
+     chọn: impact cao trước, rồi gần đây trước — hàm thuần, không phụ thuộc
+     ngẫu nhiên).
+   Floor `ai_min_items` **vẫn chỉ tính trên cửa sổ short** (giữ nguyên hành
+   vi đợt 5 — đủ tin 7 ngày mới gọi AI); tổng short < `ai_min_items` → trả
+   trạng thái `insufficient_data`, **không gọi AI** (B4). **Floor vẫn chỉ đếm
+   sự kiện + tin văn bản** — khối Market context (bước 3) không tính vào
+   (C4/§13 đợt 5).
 3. `core/trend_prompt_builder.py` (thuần) dựng prompt từ tập dữ liệu đã chuẩn
    hóa: AI **chỉ nhận định trên dữ liệu được đưa vào prompt**, cấm bịa sự
    kiện/số liệu (kế thừa doctrine tin tức hiện hành). Khuôn prompt thay đổi →
-   `prompt_hash` thay đổi (provenance). **Khối "Market context" (đợt 5 —
-   C1-C3/§13 đợt 5):** (a) lãi suất điều hành + trend hike/cut/hold của đồng
-   của phạm vi (qua `latest_rates` + `derive_rate_trend`); (b) lợi suất 2y/10y
-   + biến động trong cửa sổ + spread 2y–10y (qua `latest_bond_yields`); (c)
-   real yield 10y; (d) phạm vi XAU/XAG/BTC kèm ngữ cảnh USD (định giá bằng
-   USD). Context là **ngữ cảnh lập luận, không được dẫn chứng vào
-   `evidence_item_ids`** — hợp đồng parser giữ nguyên trạng (chỉ id sự
+   `prompt_hash` thay đổi (provenance; đợt 6 đổi **lần 2** — C3/§13 đợt 6).
+   **Khối "Market context" (đợt 5 — C1-C3/§13 đợt 5):** (a) lãi suất điều
+   hành + trend hike/cut/hold của đồng của phạm vi (qua `latest_rates` +
+   `derive_rate_trend`); (b) lợi suất 2y/10y + biến động trong cửa sổ + spread
+   2y–10y (qua `latest_bond_yields`); (c) real yield 10y; (d) phạm vi
+   XAU/XAG/BTC kèm ngữ cảnh USD (định giá bằng USD). **Mở rộng đợt 6:** (e)
+   **rate path 6 tháng** (rate hiện tại − rate ~6 tháng trước, qua
+   `rate_paths` + `derive_rate_path`); (f) **delta 3 tháng + 6 tháng** của
+   2y/10y/spread/real yield (2Y là proxy lộ trình lãi suất *kỳ vọng* — dữ kiện
+   chính cho horizon dài); (g) mọi dòng dữ kiện kèm mốc thời gian để AI biết
+   độ sâu thật của bằng chứng. **Khung v2:** dòng sự kiện render thêm
+   `status` (released/stale — AI biết sự kiện nào thiếu actual, không suy
+   diễn); chỉ dẫn AI **tự đối chiếu độ phủ bằng chứng với chân trời** — dữ kiện
+   chỉ phủ N ngày thì horizon dài hơn phải hạ confidence hoặc trả
+   `insufficient_data`. Context là **ngữ cảnh lập luận, không được dẫn chứng
+   vào `evidence_item_ids`** — hợp đồng parser giữ nguyên trạng (chỉ id sự
    kiện/tin được dẫn chứng).
 4. Gọi `AIService.analyze()` trong worker nền (không block GUI).
 5. `core/trend_verdict_parser.py` (thuần) parse JSON 3 horizon
@@ -617,6 +657,11 @@ hiệu khác (S1/S6); ranh giới §9.2 chỉ áp cho `ai_trend_verdicts`.
    suất, real yield) vì định giá bằng USD (C3/§13 đợt 5).
 5. **Chi phí batch:** "Nhận định tất cả" = 11 lời gọi AI mỗi lượt bấm (D1),
    chạy tuần tự — một phạm vi lỗi không dừng lô (D2).
+6. **Độ phủ theo chân trời (đợt 6 — D1/§13 đợt 6):** dialog hiển thị số
+   events/items nằm trong **từng cửa sổ chân trời** (short/mid/long — đọc qua
+   repository/preview, **không gọi AI**) để người dùng nhìn thấy ngay vì sao
+   một chân trời thiếu dữ kiện thay vì tưởng AI kém; đặc tả hiển thị tại
+   `screen_design.md` mục News Screen.
 
 ## 10. Provenance và nhập mã nguồn trang FF
 
@@ -645,6 +690,7 @@ hiệu khác (S1/S6); ranh giới §9.2 chỉ áp cho `ai_trend_verdicts`.
 | Đổi khuôn prompt AI | `core/trend_prompt_builder.py` | `prompt_hash` provenance + kiểm thử parser không đổi (C4) |
 | Thêm/đổi series lợi suất trái phiếu (mở rộng đồng mới — đợt 5) | bộ chuyển đổi trong `services/news_producers/bond_yield_producer.py` | mô hình `BondYieldObservation` bất biến (C2) + danh mục series cần Owner duyệt (B2/§13 đợt 5) |
 | Đổi khối Market context trong prompt (đợt 5) | `core/trend_prompt_builder.py` | `prompt_hash` provenance + kiểm thử parser không đổi (C4) |
+| Đổi quy tắc chọn dòng dữ kiện theo chân trời / số dòng cửa sổ long (đợt 6) | `config/news_policy.json` (giới hạn dòng) + hàm chọn trong `core/trend_prompt_builder.py` (quy tắc ưu tiên) | chính sách có phiên bản (S4) + `prompt_hash` provenance |
 | Đổi trường nhập tay | `NewsController` + form (tài liệu UI) | repository là điểm ghi duy nhất |
 | Đổi cách Dashboard hiển thị sự kiện | tài liệu UI + mô-đun trình bày | hợp đồng `events_in_range` bất biến (ngoài phạm vi tài liệu này) |
 | Đổi cách vĩ mô đọc tin | tài liệu vĩ mô + `macro_context_builder` (miền vĩ mô) | hợp đồng repository bất biến (ngoài phạm vi tài liệu này) |
@@ -659,7 +705,8 @@ hiệu khác (S1/S6); ranh giới §9.2 chỉ áp cho `ai_trend_verdicts`.
 | Sản xuất tín hiệu tin văn bản tự động | `rss_producer` |
 | Sản xuất quan sát lãi suất (FRED API + config fallback) | `fred_rate_producer` |
 | Sản xuất quan sát lợi suất trái phiếu (FRED → Yahoo fallback — đợt 5) | `bond_yield_producer` |
-| Dẫn xuất delta/spread 2y–10y/real yield từ các quan sát lợi suất (đợt 5) | `core/yield_context.py` |
+| Dẫn xuất delta/spread 2y–10y/real yield từ các quan sát lợi suất (đợt 5; đợt 6: + delta 3 tháng/6 tháng) | `core/yield_context.py` |
+| Dẫn xuất rate path 6 tháng (rate hiện tại − rate ~6 tháng trước) từ lịch sử lãi suất (đợt 6) | `core/rate_trend.py` (`derive_rate_path`) |
 | Dẫn xuất bias cặp từ hai verdict tài sản đơn (đợt 5) | `core/pair_bias.py` |
 | Khai báo mô hình miền tin tức (`CalendarEvent`, `NewsItem`, `RateObservation`, `BondYieldObservation` — đợt 5, `TrendVerdict`, `IngestRun`, `StoreState`) | `core/news_models.py` |
 | Công thức `dedupe_key` của `news_events` (§4.2) | `core/news_models.py` |
@@ -773,6 +820,29 @@ trái phiếu — đặc tả hành vi: §4.7, §6.6, §9.1, §9.3):
 | Lộ trình lô (E1) | B1 (migration + models + policy) → B2 (producer + repository) → B3 (khối Market context prompt) → B4 (dialog 3 tab + batch + `pair_bias`) → B5 (nghiệm thu + cổng E2) — mỗi lô plan riêng theo vòng đời D3 |
 | Lộ trình tài liệu (E2) | `news-architecture.md` + `screen_design.md` cập nhật trước khi code; `architecture.md` / `product_spec.md` / `USER_GUIDE.md` theo từng lô; `runtime-status.md` khi nghiệm thu |
 
+Chốt ngày 29/09/2026, đợt 6 (độ sâu dữ liệu theo chân trời — đặc tả hành vi:
+§6.6, §7, §8, §9.1, §9.3):
+
+| Hạng mục | Quyết định |
+|---|---|
+| Cửa sổ dữ kiện theo chân trời (A1) | **3 cửa sổ phân tầng** qua policy `ai_horizon_windows`: **short 7 / mid 42 / long 180 ngày** — mid: events high/medium + statements; long: events high **có actual** + statements |
+| Giới hạn dòng cửa sổ long (A2) | Policy `ai_long_window_max_rows` = **50** — quy tắc chọn: impact cao trước, rồi gần đây trước |
+| Trung hạn (A3) | Events `high`/`medium` + statements (không lấy tất cả) |
+| Rate path (B1) | **CÓ** — rate hiện tại − rate ~6 tháng trước, từ lịch sử `interest_rates` (đọc qua `rate_paths` + `derive_rate_path`) |
+| Yield delta 3m/6m (B2) | **CÓ** — 2y/10y/spread/real yield; 2Y là proxy lộ trình lãi suất kỳ vọng |
+| Độ sâu nguồn (B3) | **FRED `limit=130`; Yahoo `range=1y`** — converter ghi **toàn bộ** quan sát lấy được theo ngày (bãi quy tắc "1 dòng/kỳ hạn/round" đợt 5; UNIQUE tự khử trùng) |
+| Series CPI riêng (B4) | **KHÔNG** — CPI đã có qua FF events (kênh dán); làm riêng = trùng nguồn (S6) |
+| Dòng vốn (B5) | **KHÔNG** — không có nguồn thu thập hợp lệ; ghi nhận ngoài phạm vi |
+| Chỉ dẫn đối chiếu độ phủ (C1) | **CÓ** — AI phải hạ confidence / trả `insufficient_data` khi độ phủ bằng chứng không tương xứng chân trời |
+| Render `status` sự kiện (C2) | **CÓ** — dòng data mang `released`/`stale`; AI không suy diễn trên sự kiện thiếu actual |
+| `prompt_hash` (C3) | Ghi nhận đổi **lần 2** (khung v2 — provenance §11a) |
+| 2 bất biến giữ nguyên (C4) | Context **không tính floor** (floor vẫn trên cửa sổ short, chỉ đếm events+items); context **không được dẫn chứng** vào `evidence_item_ids` — parser nguyên trạng |
+| Panel độ phủ dialog (D1) | **CÓ** — số events/items theo từng cửa sổ chân trời, chỉ đọc, không gọi AI (§9.3 khoản 6) |
+| Batch (D2) | GIỮ 11 lời gọi — context dài hạn chỉ làm prompt mỗi lời dài hơn |
+| Kỷ luật dữ liệu (D3) | Ghi vào `USER_GUIDE.md`: khuyến nghị dán trang lịch FF tuần trước định kỳ (bù actual CPI/GDP + sự kiện stale) |
+| Lộ trình lô (E1) | **C1** (policy + reader nhiều cửa sổ) → **C2** (producer độ sâu + `yield_context` 3m/6m + `derive_rate_path`) → **C3** (khung prompt v2 + status + độ phủ) → **C4** (panel độ phủ dialog + USER_GUIDE) → **C5** (nghiệm thu + E2 + đồng bộ tài liệu + đóng ca) — plan riêng theo vòng đời D3; **commit plan ngay khi mở ca** (bài học đợt 5) |
+| Lộ trình tài liệu (E2) | `news-architecture.md` + `screen_design.md` + `USER_GUIDE.md` cập nhật trước/khi code; `architecture.md` / `product_spec.md` / `runtime-status.md` khi nghiệm thu |
+
 ## 14. Kiểm thử (C4, B3, E2)
 
 - **Hàm thuần (`core/`):** `news_freshness` (bảng trạng thái theo biên thời
@@ -811,6 +881,14 @@ trái phiếu — đặc tả hành vi: §4.7, §6.6, §9.1, §9.3):
 - **Batch (đợt 5, §9.1 bước 7):** 11 phạm vi tuần tự; một phạm vi lỗi không
   dừng lô; insufficient từng phạm vi đúng B4 (không gọi AI phạm vi đó); tab
   cặp forex chỉ đọc — không lời gọi AI, không ghi DB (§9.3 khoản 2).
+- **Độ sâu theo chân trời (đợt 6):** `yield_context` — delta 3m/6m đúng biên
+  (thiếu quan sát cũ → `None`); `rate_trend.derive_rate_path` — đủ/thiếu
+  quan sát 6 tháng trước; producer lợi suất — FRED `limit=130`/Yahoo
+  `range=1y` ghi **nhiều dòng** theo ngày, round lặp không nhân bản (UNIQUE);
+  builder — 3 cửa sổ render đúng phân tầng, quy tắc chọn dòng long (impact
+  trước, gần đây trước, đúng `ai_long_window_max_rows`), dòng sự kiện có
+  `status`, **floor vẫn trên cửa sổ short**, hash v2 ổn định + độc lập dữ
+  liệu; dialog — panel độ phủ hiển thị đúng số dòng từng cửa sổ, không gọi AI.
 - **Kiểm thử hợp đồng (C4):** ghim chữ ký + ngữ nghĩa phương thức đọc mục 8 —
   bên tiêu thụ (Dashboard, vĩ mô) viết kiểm thử theo hợp đồng này, xanh nguyên
   trạng khi nội bộ repository thay đổi.
@@ -891,3 +969,30 @@ Tuyên bố: ca đợt 5 **HOÀN TẤT**; miền Tin tức giữ READY-FOR-CONNE
 nối (a) Dashboard / (b) vĩ mô không đổi lộ trình (§3.1 khoản 3-4); sổ nợ #1
 **chưa đóng** — chỉ đóng tại đấu nối (b) khi xóa `news_service.py` +
 `forex_factory_client.py`.
+
+**Sửa đổi đợt 6 (29/09/2026):** ca "Độ sâu dữ liệu theo chân trời" — cửa sổ
+dữ kiện phân tầng theo chân trời (§7 `ai_horizon_windows`, §9.1 bước 2),
+context mở rộng rate path 6 tháng + yield delta 3m/6m (§6.6, §8, §9.1 bước 3),
+khung prompt v2 (render `status` + chỉ dẫn đối chiếu độ phủ — `prompt_hash` đổi
+lần 2), panel độ phủ theo chân trời trong dialog (§9.3 khoản 6); triển khai
+theo plan riêng (vòng đời D3), các lô C1–C5 theo quyết định E1/§13 đợt 6 —
+**plan được commit ngay khi mở ca** (bài học D3 từ đợt 5).
+
+**Ghi chú hoàn tất ca "Độ sâu dữ liệu theo chân trời" (29/09/2026):** 5 lô
+C1–C5 đều **IMPLEMENTED**, nghiệm thu tổng trên **cây commit thuần** (worktree):
+battery họ tin tức **951 passed** (gồm cổng E2 **20 passed** — cách ly tín hiệu
+`bond_yields` + import-linter 8 mô-đun `core/`); 3 smoke **EXIT=0**
+(`scanner_smoke.py`, `smc_ui_smoke.py` offscreen + windows); build `.exe`
+PyInstaller **exit 0** — bundle đủ khóa policy `ai_horizon_windows` /
+`ai_long_window_max_rows` + `data/migrations/news/001`+`002`; boot bản đóng gói
+**ALIVE sau 20s**, **không sinh lượt `ff_crawler`** (ingest_runs giữ nguyên).
+Kiểm thử thật (máy có key FRED + AI provider cấu hình; **DB tạm**, không chạm
+`%APPDATA%`): `refresh_bond_yields()` ghi **378 quan sát** (126/kỳ hạn USD
+`2y`/`10y`/`be10y`, `source=fred`; round lặp **0 dòng mới** — UNIQUE khử trùng);
+"Nhận định tất cả" 11 phạm vi → **10 ok + 1 timeout provider** (D2 — một phạm vi
+lỗi không dừng lô), chạy lại phạm vi lỗi → **ok**, tổng **33 verdict / 11 phạm
+vi**; prompt v2 thật dài **4.843 ký tự** có **3 section theo cửa sổ** (short 7 /
+mid 42 / long 180 top 50), `status=released/stale`, **rate path 6 tháng** +
+**delta 3m/6m**. Tuyên bố: ca đợt 6 **HOÀN TẤT**; khung v2 `prompt_hash` ghim
+`9f39d7ee…`; miền Tin tức giữ READY-FOR-CONNECT — sổ nợ #1 **chưa đóng** (chỉ
+đóng tại đấu nối (b) khi xóa `news_service.py` + `forex_factory_client.py`).

@@ -219,6 +219,22 @@ Miền Tin tức (tầng dữ liệu) đã mở rộng theo **đợt 5** (contra
   thành phần + bias suy ra — không persist). Verdict vẫn **advisory-only** — không
   tham gia scoring/gate/alert (contract §9.2; cổng E2 cưỡng chế).
 
+**Mở rộng đợt 6 — "Độ sâu dữ liệu theo chân trời" (29/09/2026, IMPLEMENTED):**
+
+- **Lợi suất trái phiếu ghi lịch sử:** mỗi round `bond_yield_producer` ghi **toàn
+  bộ** quan sát lấy được (FRED `limit=130` ~6 tháng / Yahoo `range=1y`) thay vì 1
+  dòng/kỳ hạn/round — delta 3 tháng/6 tháng (2Y/10Y/spread/real) có ngay sau round
+  đầu; cadence vẫn là khóa `bond_yield_refresh_hours` (không đổi).
+- **Rate path 6 tháng:** `NewsRepository.rate_paths` + `core/rate_trend.derive_rate_path`
+  (rate hiện tại − rate ~6 tháng trước; thiếu quan sát cũ → `None`).
+- **Cửa sổ dữ kiện phân tầng theo chân trời:** prompt gửi AI đọc 3 cửa sổ
+  `ai_horizon_windows` (short 7 / mid 42 / long 180 ngày, long cap
+  `ai_long_window_max_rows`); floor `ai_min_items` vẫn chỉ tính cửa sổ short.
+  Khung prompt v2 (`prompt_hash` đổi lần 2) render `status` sự kiện +
+  chỉ dẫn AI tự đối chiếu độ phủ bằng chứng với chân trời.
+- **Dialog có panel "độ phủ theo chân trời":** tab Chi tiết hiển thị số dòng
+  từng cửa sổ (chỉ đọc, không gọi AI) + rate path/delta 3m/6m ở dòng ngữ cảnh.
+
 ## Khôi phục cấu hình
 
 Bản sao cấu hình trước thay đổi (thời điểm 24/07/2026) được lưu tại:

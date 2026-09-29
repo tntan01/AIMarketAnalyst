@@ -82,7 +82,7 @@ seed/stale/schema cũ/thiếu bằng chứng bị bỏ qua; loader có thể dù
 fallback hợp lệ và chỉ flat khi không còn candidate eligible. Runner calibration
 không được tự bật flag.
 
-### 3.5 Tin tức & Quản lý tin — IMPLEMENTED (tầng dữ liệu nghiệm thu 23/09/2026; sửa đổi ca "Nguồn dán FF" IMPLEMENTED — nghiệm thu 25/09/2026; đợt 5 IMPLEMENTED — nghiệm thu 29/09/2026)
+### 3.5 Tin tức & Quản lý tin — IMPLEMENTED (tầng dữ liệu nghiệm thu 23/09/2026; sửa đổi ca "Nguồn dán FF" IMPLEMENTED — nghiệm thu 25/09/2026; đợt 5 IMPLEMENTED — nghiệm thu 29/09/2026; đợt 6 IMPLEMENTED — nghiệm thu 29/09/2026)
 
 Tính năng tầng dữ liệu tin tức theo contract duy nhất
 [`news/news-architecture.md`](../news/news-architecture.md):
@@ -123,6 +123,14 @@ Tính năng tầng dữ liệu tin tức theo contract duy nhất
   không tham gia bất cứ quy trình nào** (không chấm điểm, không gate, không thực
   thi lệnh, không alert). Quyết định Owner 20/09/2026 + 28/09/2026 (mô hình
   theo tài sản + batch + bias cặp), thay đổi cần quyết định mới tường minh.
+- **Độ sâu dữ liệu theo chân trời (đợt 6):** nhận định trung/dài hạn dựa trên dữ
+  kiện sâu hơn — prompt AI đọc **3 cửa sổ** (7 / 42 / 180 ngày, giới hạn dòng
+  cửa sổ dài), mỗi dòng sự kiện kèm **trạng thái** (`released`/`stale`), và
+  **rate path 6 tháng + delta lãi suất/lợi suất 3–6 tháng** làm ngữ cảnh; dialog
+  hiển thị **độ phủ theo chân trời** (số sự kiện/tin mỗi cửa sổ) để người dùng
+  thấy vì sao một chân trời thiếu dữ kiện. Bộ sản xuất lợi suất ghi **lịch sử
+  ~6 tháng/round**; khuyến nghị **dán trang lịch FF tuần trước định kỳ** để bù
+  actual + sự kiện thiếu số liệu (USER_GUIDE mục 7.1).
 - Mọi con số vận hành (chu kỳ thu tin, ân hạn, cửa sổ AI...) nằm trong một
   tệp chính sách duy nhất `config/news_policy.json`; giá trị đã được Owner
   chốt trong contract.

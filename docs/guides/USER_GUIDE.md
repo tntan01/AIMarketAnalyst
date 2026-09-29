@@ -303,6 +303,23 @@ một dòng cảnh báo cố định: *nhận định của AI chỉ để tham 
 > Lưu ý: nhận định AI **không** tham gia chấm điểm, cổng chặn hay tự động vào
 > lệnh — chỉ để bạn tham khảo.
 
+### Giữ dữ liệu "chín" cho trung/dài hạn (đợt 6)
+
+Chất lượng nhận định trung/dài hạn phụ thuộc **độ sâu lịch sử dữ kiện** trong
+database — dữ liệu tích lũy theo thời gian chứ không tự có:
+
+- **Dán trang lịch ForexFactory của tuần trước định kỳ** (mỗi cuối tuần 1 lần):
+  mỗi lần dán bù actual CPI/GDP/lao động + sự kiện còn thiếu số liệu của tuần
+  cũ; dữ liệu lưu **vĩnh viễn** trong database — càng dán đều, nhận định dài
+  hạn (1–6 tháng) càng có bằng chứng.
+- Dialog hiển thị **độ phủ theo chân trời** (số sự kiện/tin trong từng cửa sổ
+  7 ngày / 42 ngày / 180 ngày): nếu dài hạn hiện 0 dòng, verdict "Không đủ dữ
+  liệu" là do **thiếu dữ liệu lịch sử**, không phải AI kém — hãy dán bù tuần
+  cũ rồi nhận định lại.
+- Lợi suất/2Y/10Y/lãi suất tự thu định kỳ (FRED/Yahoo) — không cần thao tác
+  gì; các delta 3/6 tháng tự có sau khi app chạy đủ lâu hoặc qua 1 lượt refresh
+  mới.
+
 ## 8. Troubleshooting (Khắc phục sự cố)
 
 | Hiện tượng | Nguyên nhân thường gặp | Cách xử lý |
