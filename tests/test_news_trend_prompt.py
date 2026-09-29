@@ -42,7 +42,7 @@ from core.news_models import (
     RateSource,
 )
 from core.news_policy import HorizonDefinition
-from core.rate_trend import RateTrend
+from core.rate_trend import RatePath, RateTrend
 from core.trend_prompt_builder import (
     HorizonWindowSet,
     MarketContext,
@@ -51,11 +51,25 @@ from core.trend_prompt_builder import (
     build_trend_prompt,
     select_rows_for_windows,
 )
-from core.yield_context import YieldContext
+from core.yield_context import YieldContext, YieldDeltaSet
 from services.news_repository import CurrencyRateTrend
 
 BUILDER_PY = Path(builder.__file__)
 NOW = datetime(2026, 9, 22, 10, 0, tzinfo=UTC)
+
+
+def _rows_from(
+    events: list[CalendarEvent], items: list[NewsItem]
+) -> WindowRows:
+    """A WindowRows with the same rows in every window (test convenience)."""
+    return WindowRows(
+        short_events=tuple(events),
+        short_items=tuple(items),
+        mid_events=tuple(events),
+        mid_items=tuple(items),
+        long_events=tuple(events),
+        long_items=tuple(items),
+    )
 
 
 def _horizons(
@@ -140,26 +154,45 @@ def _yield_context(**overrides: object) -> YieldContext:
     return YieldContext(**data)  # type: ignore[arg-type]
 
 
+def _rate_path(
+    rate_now: float | None = 5.50,
+    rate_then: float | None = 5.00,
+    change: float | None = 0.50,
+) -> RatePath:
+    return RatePath(rate_now=rate_now, rate_then=rate_then, change=change)
+
+
 def _build(
     events: list[CalendarEvent] | None = None,
     items: list[NewsItem] | None = None,
     *,
+    rows: WindowRows | None = None,
     scope_type: str = "pair",
     scope_value: str = "EUR/USD",
     context: MarketContext | None = None,
     now: datetime = NOW,
     window_days: int = 7,
+    horizon_windows: HorizonWindowSet | None = None,
+    long_max_rows: int = 50,
     horizons: dict[str, HorizonDefinition] | None = None,
     min_items: int = 2,
 ) -> TrendPromptOutcome:
+    if rows is None:
+        rows = _rows_from(
+            events if events is not None else [_event()],
+            items if items is not None else [_item()],
+        )
     return build_trend_prompt(
         scope_type=scope_type,
         scope_value=scope_value,
-        events=events if events is not None else [_event()],
-        items=items if items is not None else [_item()],
+        rows=rows,
         context=context if context is not None else MarketContext(),
         now=now,
         window_days=window_days,
+        horizon_windows=(
+            horizon_windows if horizon_windows is not None else _windows()
+        ),
+        long_max_rows=long_max_rows,
         horizons=horizons if horizons is not None else _horizons(),
         min_items=min_items,
     )
@@ -231,15 +264,17 @@ class TestPromptStabilityAndHash:
         assert set(prompt.prompt_hash) <= set("0123456789abcdef")
 
     def test_market_context_block_changed_the_frame_hash_exactly_once(self):
-        # C5 (đợt 5): adding the market-context block re-hashed the frame ONCE;
-        # this pins the new value so a later accidental frame edit is red
-        # (B4 must not change the frame again).
+        # C5 (đợt 5): adding the market-context block re-hashed the frame ONCE.
+        # C3 (đợt 6): the wave-6 frame (3 window sections + status + coverage
+        # rule + rate path/deltas) re-hashed it a SECOND and final time; this
+        # pins the value so a later accidental frame edit is red (C4/C5 must not
+        # touch the frame again).
         prompt = _build().prompt
 
         assert prompt is not None
         assert (
             prompt.prompt_hash
-            == "d261c7cc5ef9949c78347a6d3cca2c9e70486091425f689e7b39fb9cb45fe46f"
+            == "9f39d7eefe6a6793bf6c41cf519477dce7ec8128ddf9976096b16b0f1503d72f"
         )
 
     def test_hash_is_independent_of_the_market_context(self):
@@ -248,7 +283,9 @@ class TestPromptStabilityAndHash:
         empty = _build(context=MarketContext()).prompt
         full = _build(
             context=MarketContext(
-                rates=(_rate_context(),), yields=_yield_context()
+                rates=(_rate_context(),),
+                yields=_yield_context(),
+                rate_path=_rate_path(),
             )
         ).prompt
 
@@ -313,9 +350,73 @@ class TestPromptContent:
         text = self._text()
 
         assert "[event #11] 2026-09-20T14:30:00Z | USD | FOMC Meeting | impact=high" in text
+        assert "| status=scheduled |" in text
         assert "actual=5.50% | forecast=5.50% | previous=5.25%" in text
         assert "[news #22] 2026-09-21T08:00:00Z | USD | headline | Fed signals patience" in text
         assert "content=Powell: patience | source=google_news_rss" in text
+
+    def test_prompt_carries_the_three_window_sections(self):
+        text = self._text()
+
+        assert "Data - short window, 7 days (1 event(s), 1 news item(s)):" in text
+        assert "Data - mid window, 42 days (1 event(s), 1 news item(s)):" in text
+        assert (
+            "Data - long window, 180 days, top 50 rows (1 event(s), 1 news item(s)):"
+            in text
+        )
+
+    def test_empty_window_keeps_its_header_with_zero_count(self):
+        rows = WindowRows(
+            short_events=(_event(row_id=11),),
+            short_items=(),
+            mid_events=(),
+            mid_items=(),
+            long_events=(),
+            long_items=(),
+        )
+        prompt = _build(rows=rows, min_items=1).prompt
+
+        assert prompt is not None
+        assert "Data - short window, 7 days (1 event(s), 0 news item(s)):" in prompt.text
+        assert "Data - mid window, 42 days (0 event(s), 0 news item(s)):" in prompt.text
+        assert (
+            "Data - long window, 180 days, top 50 rows (0 event(s), 0 news item(s)):"
+            in prompt.text
+        )
+
+    def test_event_status_comes_from_the_domain_row(self):
+        rows = WindowRows(
+            short_events=(
+                _event(row_id=11, status=EventStatus.RELEASED, actual="5.50%"),
+                _event(row_id=12, dedupe_key="e12", status=EventStatus.STALE),
+            ),
+            short_items=(),
+            mid_events=(),
+            mid_items=(),
+            long_events=(),
+            long_items=(),
+        )
+        prompt = _build(rows=rows, min_items=1).prompt
+
+        assert prompt is not None
+        assert "| status=released |" in prompt.text
+        assert "| status=stale |" in prompt.text
+
+    def test_news_lines_carry_no_status(self):
+        prompt = _build(items=[_item(row_id=22)], events=[], min_items=1).prompt
+
+        assert prompt is not None
+        news_line = next(
+            line for line in prompt.text.splitlines() if line.startswith("- [news #22]")
+        )
+        assert "status=" not in news_line
+
+    def test_prompt_carries_the_coverage_and_stale_rules(self):
+        text = self._text()
+
+        assert "Judge each horizon against the coverage of its data window" in text
+        assert 'lower the confidence or answer' in text
+        assert 'An event with status "stale" has no released actual' in text
 
     def test_prompt_forbids_inventing_data_and_citation_ids(self):
         text = self._text()
@@ -354,14 +455,18 @@ class TestPromptContent:
 
 class TestEvidenceAndSnapshot:
     def test_evidence_ids_are_the_printed_rows_in_order(self):
-        prompt = _build(
-            events=[_event(row_id=11), _event(row_id=12, dedupe_key="e12")],
-            items=[_item(row_id=22)],
-            min_items=3,
-        ).prompt
+        rows = WindowRows(
+            short_events=(_event(row_id=11),),
+            short_items=(_item(row_id=12, kind=NewsItemKind.STATEMENT),),
+            mid_events=(_event(row_id=21, dedupe_key="e21"),),
+            mid_items=(_item(row_id=22, dedupe_key="i22", kind=NewsItemKind.STATEMENT),),
+            long_events=(_event(row_id=31, dedupe_key="e31"),),
+            long_items=(_item(row_id=32, dedupe_key="i32", kind=NewsItemKind.STATEMENT),),
+        )
+        prompt = _build(rows=rows, min_items=1).prompt
 
         assert prompt is not None
-        assert prompt.evidence_item_ids == (11, 12, 22)
+        assert prompt.evidence_item_ids == (11, 12, 21, 22, 31, 32)
 
     def test_row_without_an_id_is_shown_but_not_citable(self):
         prompt = _build(
@@ -371,7 +476,8 @@ class TestEvidenceAndSnapshot:
         ).prompt
 
         assert prompt is not None
-        assert prompt.evidence_item_ids == (22,)
+        # the same row prints in all three windows; only ids are citable
+        assert prompt.evidence_item_ids == (22, 22, 22)
         assert "[event #no-id]" in prompt.text
 
     def test_snapshot_holds_the_window_and_the_counts_only(self):
@@ -388,7 +494,85 @@ class TestEvidenceAndSnapshot:
             "to_utc": "2026-09-22T10:00:00Z",
             "event_count": 2,
             "item_count": 1,
+            "windows": {
+                "short": {"days": 7, "event_count": 2, "item_count": 1},
+                "mid": {"days": 42, "event_count": 2, "item_count": 1},
+                "long": {"days": 180, "event_count": 2, "item_count": 1},
+            },
         }
+
+    def test_snapshot_holds_no_key_besides_window_and_counts(self):
+        # Invariant §4.5: no market-context value ever enters the snapshot.
+        rows = WindowRows(
+            short_events=(_event(row_id=11),),
+            short_items=(),
+            mid_events=(_event(row_id=21, dedupe_key="e21"),),
+            mid_items=(),
+            long_events=(),
+            long_items=(),
+        )
+        prompt = _build(rows=rows, min_items=1).prompt
+
+        assert prompt is not None
+        assert set(prompt.snapshot) == {
+            "window_days",
+            "from_utc",
+            "to_utc",
+            "event_count",
+            "item_count",
+            "windows",
+        }
+        assert set(prompt.snapshot["windows"]) == {"short", "mid", "long"}
+        for window in prompt.snapshot["windows"].values():
+            assert set(window) == {"days", "event_count", "item_count"}
+
+    def test_snapshot_windows_counts_track_each_window(self):
+        rows = WindowRows(
+            short_events=(_event(row_id=11),),
+            short_items=(),
+            mid_events=(_event(row_id=21, dedupe_key="e21"),) * 3,
+            mid_items=(),
+            long_events=(_event(row_id=31, dedupe_key="e31"),) * 5,
+            long_items=(_item(row_id=32, kind=NewsItemKind.STATEMENT),),
+        )
+        prompt = _build(rows=rows, min_items=1).prompt
+
+        assert prompt is not None
+        windows = prompt.snapshot["windows"]
+        assert windows["short"] == {"days": 7, "event_count": 1, "item_count": 0}
+        assert windows["mid"] == {"days": 42, "event_count": 3, "item_count": 0}
+        assert windows["long"] == {"days": 180, "event_count": 5, "item_count": 1}
+        # top-level counts are the short window (§4.5)
+        assert prompt.snapshot["event_count"] == 1
+        assert prompt.snapshot["item_count"] == 0
+
+    def test_floor_counts_the_short_window_only(self):
+        # Invariant C4: a full mid/long window never lifts the short-window floor.
+        rows = WindowRows(
+            short_events=(),
+            short_items=(_item(row_id=12),),  # 1 short row < min_items
+            mid_events=tuple(
+                _event(row_id=100 + index, dedupe_key=f"m{index}")
+                for index in range(10)
+            ),
+            mid_items=tuple(
+                _item(row_id=200 + index, dedupe_key=f"mi{index}")
+                for index in range(10)
+            ),
+            long_events=tuple(
+                _event(row_id=300 + index, dedupe_key=f"l{index}")
+                for index in range(10)
+            ),
+            long_items=tuple(
+                _item(row_id=400 + index, dedupe_key=f"li{index}")
+                for index in range(10)
+            ),
+        )
+        outcome = _build(rows=rows, min_items=2)
+
+        assert outcome.insufficient_data is True
+        assert outcome.prompt is None
+        assert (outcome.event_count, outcome.item_count) == (0, 1)
 
     def test_outcome_reports_counts_even_when_a_prompt_was_built(self):
         outcome = _build(min_items=1)
@@ -504,21 +688,69 @@ class TestMarketContextBlock:
                     _rate_context("EUR", rate=2.0),
                 ),
                 yields=_yield_context(),
+                rate_path=_rate_path(),
             )
         ).prompt
 
         assert prompt is not None
-        # evidence ids are only the printed rows (11 and 22), never context data
-        assert prompt.evidence_item_ids == (11, 22)
-        # §4.5 snapshot unchanged - no context field
+        # evidence ids are the printed rows (the default single row, in all three
+        # windows), never context data
+        assert prompt.evidence_item_ids == (11, 22, 11, 22, 11, 22)
+        # §4.5 snapshot = window + counts only - no context field
         assert prompt.snapshot == {
             "window_days": 7,
             "from_utc": "2026-09-15T10:00:00Z",
             "to_utc": "2026-09-22T10:00:00Z",
             "event_count": 1,
             "item_count": 1,
+            "windows": {
+                "short": {"days": 7, "event_count": 1, "item_count": 1},
+                "mid": {"days": 42, "event_count": 1, "item_count": 1},
+                "long": {"days": 180, "event_count": 1, "item_count": 1},
+            },
         }
         assert "5.50" not in str(prompt.snapshot)
+
+    def test_rate_path_line_is_rendered(self):
+        outcome = _build(
+            context=MarketContext(rate_path=_rate_path(5.50, 5.00, 0.50))
+        )
+
+        assert outcome.prompt is not None
+        assert "- policy rate path: now 5.50, 6m ago 5.00, change 0.50" in outcome.prompt.text
+
+    def test_rate_path_missing_subfields_render_as_dash(self):
+        outcome = _build(
+            context=MarketContext(rate_path=_rate_path(None, None, None))
+        )
+
+        assert outcome.prompt is not None
+        assert "- policy rate path: now -, 6m ago -, change -" in outcome.prompt.text
+
+    def test_missing_rate_path_omits_the_line(self):
+        outcome = _build(context=MarketContext(rates=(_rate_context(),)))
+
+        assert outcome.prompt is not None
+        assert "policy rate path:" not in outcome.prompt.text
+
+    def test_yield_delta_lines_render_the_three_and_six_month_sets(self):
+        yields = _yield_context(
+            delta_3m=YieldDeltaSet(0.10, 0.20, -0.10, 0.05),
+            delta_6m=YieldDeltaSet(0.30, 0.40, -0.20, 0.15),
+        )
+        outcome = _build(context=MarketContext(yields=yields))
+
+        assert outcome.prompt is not None
+        text = outcome.prompt.text
+        assert "- yield delta 3m: 2y 0.10, 10y 0.20, spread -0.10, real 0.05" in text
+        assert "- yield delta 6m: 2y 0.30, 10y 0.40, spread -0.20, real 0.15" in text
+
+    def test_yield_delta_missing_values_render_as_dash(self):
+        outcome = _build(context=MarketContext(yields=_yield_context()))
+
+        assert outcome.prompt is not None
+        assert "- yield delta 3m: 2y -, 10y -, spread -, real -" in outcome.prompt.text
+        assert "- yield delta 6m: 2y -, 10y -, spread -, real -" in outcome.prompt.text
 
 
 # ---- 5. ranh giới lớp + hàm thuần (L1/L2/L3) -----------------------------------
@@ -564,6 +796,7 @@ class TestPurityAndLayerBoundary:
             "typing",
             "core.news_models",
             "core.news_policy",
+            "core.rate_trend",
             "core.yield_context",
         }
 
@@ -594,11 +827,12 @@ class TestPurityAndLayerBoundary:
         assert list(inspect.signature(build_trend_prompt).parameters) == [
             "scope_type",
             "scope_value",
-            "events",
-            "items",
+            "rows",
             "context",
             "now",
             "window_days",
+            "horizon_windows",
+            "long_max_rows",
             "horizons",
             "min_items",
         ]
@@ -620,6 +854,103 @@ def test_scope_label_is_rendered_for_both_scope_types(scope_type):
 
     assert outcome.prompt is not None
     assert f"Scope: {scope_type} {value}" in outcome.prompt.text
+
+
+# ---- 5b. độ dài prompt (rủi ro #4 — chỉ báo, không tự cắt) -----------------------
+
+
+def _full_context() -> MarketContext:
+    return MarketContext(
+        rates=(_rate_context("USD"), _rate_context("EUR", 2.0, trend=RateTrend.CUT)),
+        yields=_yield_context(
+            delta_3m=YieldDeltaSet(0.10, 0.20, -0.10, 0.05),
+            delta_6m=YieldDeltaSet(0.30, 0.40, -0.20, 0.15),
+        ),
+        rate_path=_rate_path(),
+    )
+
+
+class TestPromptLength:
+    def test_realistic_prompt_stays_below_the_upper_bound(self):
+        # A realistic worst case: short 10 rows, mid 30, long the full cap 50,
+        # plus the full market context.  The bound is a guard, not a cut: if the
+        # wave-6 prompt ever exceeds it the techlead decides how to trim.
+        short_events = [
+            _event(
+                row_id=100 + index,
+                dedupe_key=f"se{index}",
+                title=f"Short event {index}",
+                status=EventStatus.RELEASED,
+                actual="1.00%",
+            )
+            for index in range(6)
+        ]
+        short_items = [
+            _item(
+                row_id=200 + index,
+                dedupe_key=f"si{index}",
+                kind=NewsItemKind.STATEMENT,
+                content="x" * 200,
+            )
+            for index in range(4)
+        ]
+        mid_events = [
+            _event(
+                row_id=300 + index,
+                dedupe_key=f"me{index}",
+                title=f"Mid event {index}",
+                impact=EventImpact.MEDIUM,
+            )
+            for index in range(20)
+        ]
+        mid_items = [
+            _item(
+                row_id=400 + index,
+                dedupe_key=f"mi{index}",
+                kind=NewsItemKind.STATEMENT,
+                content="y" * 200,
+            )
+            for index in range(10)
+        ]
+        long_events = [
+            _event(
+                row_id=500 + index,
+                dedupe_key=f"le{index}",
+                title=f"Long event {index}",
+                status=EventStatus.RELEASED,
+                actual="2.00%",
+            )
+            for index in range(30)
+        ]
+        long_items = [
+            _item(
+                row_id=600 + index,
+                dedupe_key=f"li{index}",
+                kind=NewsItemKind.STATEMENT,
+                content="z" * 200,
+            )
+            for index in range(20)
+        ]
+        rows = WindowRows(
+            short_events=tuple(short_events),
+            short_items=tuple(short_items),
+            mid_events=tuple(mid_events),
+            mid_items=tuple(mid_items),
+            long_events=tuple(long_events),
+            long_items=tuple(long_items),
+        )
+
+        prompt = _build(rows=rows, context=_full_context(), min_items=1).prompt
+
+        assert prompt is not None
+        assert len(prompt.text) < 30_000
+        # the three sections are all present in the realistic prompt
+        assert "Data - short window, 7 days (6 event(s), 4 news item(s)):" in prompt.text
+        assert "Data - mid window, 42 days (20 event(s), 10 news item(s)):" in prompt.text
+        assert (
+            "Data - long window, 180 days, top 50 rows (30 event(s), 20 news item(s)):"
+            in prompt.text
+        )
 
 
 # ---- 6. chọn dòng theo cửa sổ chân trời (§9.1 bước 2, đợt 6) --------------------

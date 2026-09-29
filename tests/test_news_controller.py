@@ -70,7 +70,7 @@ from core.news_models import (
     VerdictScopeType,
 )
 from core.news_policy import NewsPolicy
-from core.rate_trend import RateTrend
+from core.rate_trend import RatePath, RateTrend
 from core.yield_context import YieldContext
 from services.ff_source_parser import ParseErrorKind, RowDisposition
 from services.news_repository import (
@@ -78,6 +78,7 @@ from services.news_repository import (
     BondYieldSnapshot,
     CurrencyRateTrend,
     NewsRepository,
+    RatePathSnapshot,
     UpsertItemsResult,
 )
 from workers.news_worker import NewsWorker
@@ -109,6 +110,7 @@ class FakeRepository:
         self.items: list[NewsItem] = []
         self.rates: list[CurrencyRateTrend] = []
         self.yields_snapshots: list[BondYieldSnapshot] = []
+        self.rate_path_snapshots: list[RatePathSnapshot] = []
         self.state = StoreState(
             events_state=StoreStatus.FRESH,
             items_state=StoreStatus.FRESH,
@@ -158,6 +160,10 @@ class FakeRepository:
     def latest_bond_yields(self, currencies: list[str]) -> list[BondYieldSnapshot]:
         self._record("latest_bond_yields", (currencies,), {})
         return self.yields_snapshots
+
+    def rate_paths(self, currencies: list[str]) -> list[RatePathSnapshot]:
+        self._record("rate_paths", (currencies,), {})
+        return self.rate_path_snapshots
 
     def store_state(self) -> StoreState:
         self._record("store_state", (), {})
@@ -1162,6 +1168,13 @@ def _yield_snapshot() -> BondYieldSnapshot:
     )
 
 
+def _rate_path_snapshot(currency: str, change: float = 0.50) -> RatePathSnapshot:
+    return RatePathSnapshot(
+        currency=currency,
+        path=RatePath(rate_now=5.50, rate_then=5.50 - change, change=change),
+    )
+
+
 class TestAiMarketContextRead:
     def test_currency_scope_reads_that_currency_and_usd_yields(self):
         repo = FakeRepository()
@@ -1224,6 +1237,92 @@ class TestAiMarketContextRead:
 
         assert preview.rate_available is False
         assert preview.yields_available is False
+
+    def test_currency_scope_reads_that_currency_rate_path(self):
+        repo = FakeRepository()
+        repo.rate_path_snapshots = [_rate_path_snapshot("USD")]
+        controller = _controller(repo=repo)
+
+        context = controller._ai_market_context("currency", "USD")
+
+        assert ("rate_paths", (["USD"],), {}) in repo.calls
+        assert context.rate_path is not None
+        assert context.rate_path.change == 0.50
+
+    def test_usd_priced_assets_use_the_usd_rate_path(self):
+        repo = FakeRepository()
+        repo.rate_path_snapshots = [_rate_path_snapshot("USD")]
+        controller = _controller(repo=repo)
+
+        context = controller._ai_market_context("currency", "XAU")
+
+        assert ("rate_paths", (["USD"],), {}) in repo.calls
+        assert context.rate_path is not None
+
+    def test_pair_rate_path_uses_the_base_currency(self):
+        repo = FakeRepository()
+        repo.rate_path_snapshots = [
+            _rate_path_snapshot("EUR", change=0.25),
+            _rate_path_snapshot("USD", change=0.75),
+        ]
+        controller = _controller(repo=repo)
+
+        context = controller._ai_market_context("pair", "EUR/USD")
+
+        assert ("rate_paths", (["EUR", "USD"],), {}) in repo.calls
+        assert context.rate_path is not None
+        assert context.rate_path.change == 0.25
+
+    def test_pair_rate_path_is_none_when_the_base_is_missing(self):
+        repo = FakeRepository()
+        repo.rate_path_snapshots = [_rate_path_snapshot("USD")]
+        controller = _controller(repo=repo)
+
+        context = controller._ai_market_context("pair", "EUR/USD")
+
+        assert context.rate_path is None
+
+    def test_rate_path_is_none_when_the_repository_is_empty(self):
+        controller = _controller(repo=FakeRepository())
+
+        context = controller._ai_market_context("currency", "USD")
+
+        assert context.rate_path is None
+
+
+class TestAiRowsThreeWindows:
+    """``_ai_rows`` is the single 3-window read path (§9.1 bước 2, đợt 6)."""
+
+    def test_reads_every_window_interval_for_events_and_items(self):
+        repo = FakeRepository()
+        controller = _controller(repo=repo)
+
+        controller._ai_rows("currency", "USD", _HORIZON_NOW)
+
+        event_calls = [c for c in repo.calls if c[0] == "events_in_range"]
+        item_calls = [c for c in repo.calls if c[0] == "items_in_range"]
+        assert len(event_calls) == 3
+        assert len(item_calls) == 3
+        # one call per horizon window, the short one the most recent edge
+        froms = sorted(call[1][0] for call in event_calls)
+        assert froms[0] < froms[1] < froms[2]
+
+    def test_selected_rows_match_the_shared_window_rows(self):
+        repo = RangeFilteringRepository()
+        repo.events = [
+            _aged_event(1, 3, impact=EventImpact.HIGH, actual="1.0%"),
+            _aged_event(2, 30, impact=EventImpact.MEDIUM),
+            _aged_event(3, 120, impact=EventImpact.HIGH, actual="2.0%"),
+        ]
+        repo.items = [_aged_item(11, 3, kind=NewsItemKind.STATEMENT)]
+        controller = _controller(repo=repo)
+
+        rows = controller._ai_rows("currency", "USD", _HORIZON_NOW)
+
+        assert [event.id for event in rows.short_events] == [1]
+        assert [event.id for event in rows.mid_events] == [1, 2]
+        assert [event.id for event in rows.long_events] == [1, 3]
+        assert [item.id for item in rows.short_items] == [11]
 
 
 # ---- 4b'. đếm độ phủ theo cửa sổ chân trời (§9.1 bước 2, đợt 6) -----------------

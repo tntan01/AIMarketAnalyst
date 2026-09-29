@@ -220,15 +220,18 @@ class TestHappyPath:
             VerdictHorizon.SHORT,
         ]
         # Đối chiếu provenance với hàm thuần — snapshot + prompt_hash khớp chính xác.
+        from core.trend_prompt_builder import HorizonWindowSet
+
         policy = load_news_policy()
         outcome = build_trend_prompt(
             scope_type="pair",
             scope_value="EUR/USD",
-            events=controller.events_in_range(WIDE_FROM, NOW_ISO),
-            items=controller.items_in_range(WIDE_FROM, NOW_ISO),
+            rows=controller._ai_rows("pair", "EUR/USD", NOW),
             context=MarketContext(),
             now=NOW,
             window_days=policy.ai_window_days,
+            horizon_windows=HorizonWindowSet.from_policy(policy.ai_horizon_windows),
+            long_max_rows=policy.ai_long_window_max_rows,
             horizons=policy.ai_horizons,
             min_items=policy.ai_min_items,
         )

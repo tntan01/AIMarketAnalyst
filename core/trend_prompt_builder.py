@@ -19,6 +19,18 @@ be cited as evidence (C4); it is not written to ``input_snapshot`` (section 4.5
 unchanged).  Its rating types arrive through ``Protocol``s declared here, so
 ``core/`` still never imports ``services/`` (L1).
 
+**Wave 6 (section 9.1 step 3 v2):** the data is rendered as **three sections**
+- one per horizon window of ``ai_horizon_windows`` (``rows`` of
+``WindowRows``, selected by ``select_rows_for_windows``) - each with its day
+span, and for ``long`` the row cap.  Every event line carries its ``status``
+(``released``/``stale``/``scheduled``) so the model never treats a stale event
+as a published figure, and the rules ask the model to match each horizon
+against the day coverage of its section.  The market context additionally
+renders the policy **rate path** (``RatePath`` of ``core/rate_trend``) and the
+**3-month/6-month** yield deltas (``YieldContext`` extended by batch C2).  The
+frame changes once more, so ``prompt_hash`` takes its second value (provenance,
+section 11a); C4/C5 must not touch the frame again.
+
 Purity and layering (the review point of this batch):
 
 * **Pure (L2).**  No I/O, no network, no clock beyond the ``now`` parameter, no
@@ -65,6 +77,7 @@ from core.news_models import (
     VerdictDirection,
 )
 from core.news_policy import HORIZON_KEYS, HorizonDefinition
+from core.rate_trend import RatePath
 from core.yield_context import YieldContext
 
 __all__ = [
@@ -123,13 +136,15 @@ class MarketContext:
 
     ``rates`` holds 0..2 policy-rate contexts (one for a currency scope, both
     sides for a pair); ``yields`` holds the USD bond-yield context, or ``None``
-    when none is available (B4).  Context is **reasoning aid only**: it is not
+    when none is available (B4); ``rate_path`` holds the 6-month policy-rate
+    path, or ``None`` (B4).  Context is **reasoning aid only**: it is not
     counted toward the ``ai_min_items`` floor (C4) and its values are never
     citable as evidence (they carry no row id here).  An empty instance is
     ``MarketContext()`` - the prompt then renders ``market context: none``."""
 
     rates: tuple[RateContextLike, ...] = ()
     yields: YieldContext | None = None
+    rate_path: RatePath | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -154,6 +169,11 @@ Rules:
   codes or row ids.
 - Every id in "evidence_item_ids" must be a row id printed in this prompt;
   citing any other id makes the whole answer invalid.
+- Judge each horizon against the coverage of its data window: when the rows of
+  a horizon cover fewer days than that horizon, lower the confidence or answer
+  "{insufficient}" for it.
+- An event with status "stale" has no released actual: never treat it as a
+  published figure and never infer its value.
 - If the data is not enough to judge a horizon, answer that horizon with
   direction "{insufficient}" and confidence "{no_confidence}", and say why in
   the rationale.
@@ -166,8 +186,11 @@ Data window: the last {window_days} day(s), {from_utc} to {to_utc} (UTC).
 Horizons - judge each one and use these exact keys:
 {horizon_frame}
 
-Data ({event_count} calendar event(s), {item_count} news item(s)):
-{data}
+{short_section}
+
+{mid_section}
+
+{long_section}
 
 Answer with ONE JSON object and nothing else - no prose, no markdown fence -
 holding exactly the horizon keys above, each with "direction", "confidence",
@@ -185,19 +208,28 @@ JSON:"""
 _HORIZON_LINE_TEMPLATE = "- {horizon}: {unit} {min_value}-{max_value}"
 _EVENT_LINE_TEMPLATE = (
     "- [event #{row_id}] {event_time_utc} | {currency} | {title} | impact={impact}"
-    " | actual={actual} | forecast={forecast} | previous={previous}"
+    " | status={status} | actual={actual} | forecast={forecast} | previous={previous}"
 )
 _NEWS_LINE_TEMPLATE = (
     "- [news #{row_id}] {published_utc} | {currency} | {kind} | {title}"
     " | content={content} | source={source}"
+)
+_SECTION_LINE_TEMPLATE = (
+    "Data - {label} window, {days} days ({event_count} event(s), "
+    "{item_count} news item(s)):"
+)
+_LONG_SECTION_LINE_TEMPLATE = (
+    "Data - {label} window, {days} days, top {max_rows} rows "
+    "({event_count} event(s), {item_count} news item(s)):"
 )
 _SCHEMA_LINE_TEMPLATE = (
     '  "{horizon}": {{"direction": "{directions}", "confidence": "{confidences}", '
     '"rationale": "{rationale}", "evidence_item_ids": [{evidence}]}}{comma}'
 )
 
-# Market-context fragments (section 9.1 step 3, batch B3).  The block is a
-# reasoning aid; it carries no row id, so it can never be cited as evidence.
+# Market-context fragments (section 9.1 step 3, batch B3; wave 6 adds the rate
+# path and the 3-month/6-month yield deltas).  The block is a reasoning aid; it
+# carries no row id, so it can never be cited as evidence.
 _MARKET_CONTEXT_HEADER = (
     "Market context (for reasoning only - do NOT cite as evidence):"
 )
@@ -205,11 +237,17 @@ _MARKET_CONTEXT_NONE = "market context: none"
 _RATE_CONTEXT_LINE_TEMPLATE = (
     "- policy rate {currency}: {rate} ({trend}), observed {observed_at}"
 )
+_RATE_PATH_LINE_TEMPLATE = (
+    "- policy rate path: now {now}, 6m ago {then}, change {change}"
+)
 _YIELD_TREASURY_LINE_TEMPLATE = (
     "- treasury 2y: {y2} (delta {d2} in window), 10y: {y10} (delta {d10})"
 )
 _YIELD_SPREAD_LINE_TEMPLATE = (
     "- spread 2y10y: {spread}; real yield 10y: {real}"
+)
+_YIELD_DELTA_LINE_TEMPLATE = (
+    "- yield delta {span}: 2y {d2}, 10y {d10}, spread {spread}, real {real}"
 )
 
 _ABSENT = "-"
@@ -319,13 +357,17 @@ def _schema_block(horizons: Mapping[str, HorizonDefinition]) -> str:
 
 
 def _event_line(event: CalendarEvent) -> str:
-    """One calendar-event row, prefixed with its domain id (if it has one)."""
+    """One calendar-event row, prefixed with its domain id (if it has one).
+
+    Wave 6: the row carries the event ``status`` (released/stale/scheduled) so
+    the model never treats a stale event as a published figure."""
     return _EVENT_LINE_TEMPLATE.format(
         row_id=event.id if event.id is not None else _NO_ROW_ID,
         event_time_utc=_text(event.event_time_utc),
         currency=_text(event.currency),
         title=_text(event.title),
         impact=event.impact.value,
+        status=event.status.value,
         actual=_text(event.actual),
         forecast=_text(event.forecast),
         previous=_text(event.previous),
@@ -345,11 +387,46 @@ def _news_line(item: NewsItem) -> str:
     )
 
 
-def _data_block(events: Sequence[CalendarEvent], items: Sequence[NewsItem]) -> str:
-    """The data section, in the order the caller supplied (events, then items)."""
-    lines = [_event_line(event) for event in events]
+def _data_section(
+    header: str, events: Sequence[CalendarEvent], items: Sequence[NewsItem]
+) -> str:
+    """One horizon data section (wave 6): its header line always, then the rows.
+
+    A window with no row keeps its header (count 0) and prints no data line -
+    the model still sees which horizons were considered."""
+    lines = [header]
+    lines.extend(_event_line(event) for event in events)
     lines.extend(_news_line(item) for item in items)
-    return "\n".join(lines) if lines else _ABSENT
+    return "\n".join(lines)
+
+
+def _section_header(
+    label: str,
+    days: int,
+    event_count: int,
+    item_count: int,
+) -> str:
+    """The section header of a short/mid window (no row cap)."""
+    return _SECTION_LINE_TEMPLATE.format(
+        label=label, days=days, event_count=event_count, item_count=item_count
+    )
+
+
+def _long_section_header(
+    label: str,
+    days: int,
+    max_rows: int,
+    event_count: int,
+    item_count: int,
+) -> str:
+    """The section header of the long window (states the row cap)."""
+    return _LONG_SECTION_LINE_TEMPLATE.format(
+        label=label,
+        days=days,
+        max_rows=max_rows,
+        event_count=event_count,
+        item_count=item_count,
+    )
 
 
 def _number(value: float | None) -> str:
@@ -359,13 +436,15 @@ def _number(value: float | None) -> str:
 
 
 def _market_context_block(context: MarketContext) -> str:
-    """The market-context section (section 9.1 step 3, batch B3).
+    """The market-context section (section 9.1 step 3, batch B3; wave 6 adds the
+    rate path and the 3-month/6-month yield deltas).
 
-    One policy-rate line per item in ``context.rates``; the treasury/spread
-    lines only when ``context.yields is not None`` (missing sub-fields print
-    ``-``).  With neither rate nor yields the whole block is the single line
-    ``market context: none``.  The block carries no row id, so nothing in it is
-    citable as evidence (C4)."""
+    One policy-rate line per item in ``context.rates``; the rate-path line only
+    when ``context.rate_path is not None``; the treasury/spread/delta lines only
+    when ``context.yields is not None`` (missing sub-fields print ``-``).  With
+    nothing to render the whole block is the single line ``market context:
+    none``.  The block carries no row id, so nothing in it is citable as
+    evidence (C4)."""
     lines = [
         _RATE_CONTEXT_LINE_TEMPLATE.format(
             currency=_text(rate.currency),
@@ -375,6 +454,15 @@ def _market_context_block(context: MarketContext) -> str:
         )
         for rate in context.rates
     ]
+    rate_path = context.rate_path
+    if rate_path is not None:
+        lines.append(
+            _RATE_PATH_LINE_TEMPLATE.format(
+                now=_number(rate_path.rate_now),
+                then=_number(rate_path.rate_then),
+                change=_number(rate_path.change),
+            )
+        )
     yields = context.yields
     if yields is not None:
         lines.append(
@@ -389,6 +477,24 @@ def _market_context_block(context: MarketContext) -> str:
             _YIELD_SPREAD_LINE_TEMPLATE.format(
                 spread=_number(yields.spread_2y10y),
                 real=_number(yields.real_yield_10y),
+            )
+        )
+        lines.append(
+            _YIELD_DELTA_LINE_TEMPLATE.format(
+                span="3m",
+                d2=_number(yields.delta_3m.delta_2y),
+                d10=_number(yields.delta_3m.delta_10y),
+                spread=_number(yields.delta_3m.delta_spread),
+                real=_number(yields.delta_3m.delta_real),
+            )
+        )
+        lines.append(
+            _YIELD_DELTA_LINE_TEMPLATE.format(
+                span="6m",
+                d2=_number(yields.delta_6m.delta_2y),
+                d10=_number(yields.delta_6m.delta_10y),
+                spread=_number(yields.delta_6m.delta_spread),
+                real=_number(yields.delta_6m.delta_real),
             )
         )
     if not lines:
@@ -408,12 +514,16 @@ def _skeleton(horizons: Mapping[str, HorizonDefinition]) -> str:
         _HORIZON_LINE_TEMPLATE,
         _EVENT_LINE_TEMPLATE,
         _NEWS_LINE_TEMPLATE,
+        _SECTION_LINE_TEMPLATE,
+        _LONG_SECTION_LINE_TEMPLATE,
         _SCHEMA_LINE_TEMPLATE,
         _MARKET_CONTEXT_HEADER,
         _MARKET_CONTEXT_NONE,
         _RATE_CONTEXT_LINE_TEMPLATE,
+        _RATE_PATH_LINE_TEMPLATE,
         _YIELD_TREASURY_LINE_TEMPLATE,
         _YIELD_SPREAD_LINE_TEMPLATE,
+        _YIELD_DELTA_LINE_TEMPLATE,
     ]
     parts.extend(
         f"{key}|{span.unit}|{span.min_value}|{span.max_value}"
@@ -427,16 +537,47 @@ def _prompt_hash(horizons: Mapping[str, HorizonDefinition]) -> str:
     return hashlib.sha256(_skeleton(horizons).encode("utf-8")).hexdigest()
 
 
-def _evidence_ids(
-    events: Sequence[CalendarEvent], items: Sequence[NewsItem]
-) -> tuple[int, ...]:
-    """The row ids printed in the prompt, in print order (only rows that carry
-    an id can be cited - a citation must name a row the model was shown)."""
-    return tuple(
-        int(row.id)
-        for row in (*events, *items)
-        if row.id is not None
+def _evidence_ids(rows: WindowRows) -> tuple[int, ...]:
+    """The row ids printed in the prompt, in print order across all sections.
+
+    Every section (short/mid/long) is citable, so the ids are the short, mid
+    then long rows, events before items; only rows that carry an id can be cited
+    - a citation must name a row the model was shown (wave 6)."""
+    ordered = (
+        *rows.short_events,
+        *rows.short_items,
+        *rows.mid_events,
+        *rows.mid_items,
+        *rows.long_events,
+        *rows.long_items,
     )
+    return tuple(int(row.id) for row in ordered if row.id is not None)
+
+
+def _windows_snapshot(
+    rows: WindowRows, horizon_windows: HorizonWindowSet
+) -> dict[str, object]:
+    """The per-window block of ``input_snapshot`` (section 4.5, wave 6): the day
+    span and the selected counts of each horizon - window + counts only, never
+    any market-context value."""
+    short_key, mid_key, long_key = HORIZON_KEYS
+    return {
+        short_key: {
+            "days": horizon_windows.short_days,
+            "event_count": len(rows.short_events),
+            "item_count": len(rows.short_items),
+        },
+        mid_key: {
+            "days": horizon_windows.mid_days,
+            "event_count": len(rows.mid_events),
+            "item_count": len(rows.mid_items),
+        },
+        long_key: {
+            "days": horizon_windows.long_days,
+            "event_count": len(rows.long_events),
+            "item_count": len(rows.long_items),
+        },
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -448,39 +589,44 @@ def build_trend_prompt(
     *,
     scope_type: str,
     scope_value: str,
-    events: Sequence[CalendarEvent],
-    items: Sequence[NewsItem],
+    rows: WindowRows,
     context: MarketContext,
     now: datetime,
     window_days: int,
+    horizon_windows: HorizonWindowSet,
+    long_max_rows: int,
     horizons: Mapping[str, HorizonDefinition],
     min_items: int,
 ) -> TrendPromptOutcome:
     """Build the AI prompt for one scope from the calibrated rows (section 9.1
-    step 3), or report insufficient data (step 2).
+    step 3, wave 6), or report insufficient data (step 2).
 
-    ``window_days``/``min_items``/``horizons`` are the ``ai_window_days`` /
-    ``ai_min_items`` / ``ai_horizons`` keys of contract section 7, passed in by
-    the caller (R4).  ``events``/``items`` are the rows the caller already read
-    for the scope inside the window - this function filters nothing (the query
-    is the repository's job) and only renders what it is given, so the AI is
-    shown exactly the data the caller decided on.
+    ``rows`` is the ``WindowRows`` of ``select_rows_for_windows`` - the rows the
+    caller already selected for each horizon window (this function filters
+    nothing, the selection belongs to the C1 owner).  ``window_days`` /
+    ``horizon_windows`` / ``long_max_rows`` / ``min_items`` / ``horizons`` are
+    the ``ai_window_days`` / ``ai_horizon_windows`` /
+    ``ai_long_window_max_rows`` / ``ai_min_items`` / ``ai_horizons`` keys of
+    contract section 7, passed in by the caller (R4).
 
-    The floor is checked first: fewer than ``min_items`` rows in total yields no
-    prompt at all (fail-closed, B4) and the AI is never called.  ``context`` is
-    rendered as the reasoning-aid block of section 9.1 step 3 (batch B3): it is
-    **never** counted toward the floor (C4), its values carry no row id and so
-    cannot be cited, and it is not part of ``snapshot``.
+    The floor is checked first and **only on the short window**: fewer than
+    ``min_items`` short rows in total yields no prompt at all (fail-closed, B4)
+    and the AI is never called - a full mid/long window never lowers the floor.
+    Each window renders as its own data section (header always, rows when any),
+    every event line carrying its ``status``.  ``context`` is rendered as the
+    reasoning-aid block of section 9.1 step 3: it is **never** counted toward
+    the floor (C4), its values carry no row id and so cannot be cited, and it is
+    not part of ``snapshot``.
 
     ``prompt_hash`` covers the frame only; the returned ``snapshot`` carries the
-    window and the counts for the verdict rows."""
-    event_count = len(events)
-    item_count = len(items)
-    if event_count + item_count < min_items:
+    short window and the per-window counts for the verdict rows (section 4.5)."""
+    short_event_count = len(rows.short_events)
+    short_item_count = len(rows.short_items)
+    if short_event_count + short_item_count < min_items:
         return TrendPromptOutcome(
             prompt=None,
-            event_count=event_count,
-            item_count=item_count,
+            event_count=short_event_count,
+            item_count=short_item_count,
             min_items=min_items,
         )
 
@@ -488,6 +634,7 @@ def build_trend_prompt(
     from_utc = _iso(moment - timedelta(days=window_days))
     to_utc = _iso(moment)
     label = _scope_label(scope_type, scope_value)
+    short_key, mid_key, long_key = HORIZON_KEYS
     text = _PROMPT_TEMPLATE.format(
         scope_label=label,
         insufficient=_INSUFFICIENT,
@@ -497,9 +644,37 @@ def build_trend_prompt(
         to_utc=to_utc,
         market_context=_market_context_block(context),
         horizon_frame=_horizon_frame(horizons),
-        event_count=event_count,
-        item_count=item_count,
-        data=_data_block(events, items),
+        short_section=_data_section(
+            _section_header(
+                short_key,
+                horizon_windows.short_days,
+                short_event_count,
+                short_item_count,
+            ),
+            rows.short_events,
+            rows.short_items,
+        ),
+        mid_section=_data_section(
+            _section_header(
+                mid_key,
+                horizon_windows.mid_days,
+                len(rows.mid_events),
+                len(rows.mid_items),
+            ),
+            rows.mid_events,
+            rows.mid_items,
+        ),
+        long_section=_data_section(
+            _long_section_header(
+                long_key,
+                horizon_windows.long_days,
+                long_max_rows,
+                len(rows.long_events),
+                len(rows.long_items),
+            ),
+            rows.long_events,
+            rows.long_items,
+        ),
         schema=_schema_block(horizons),
         directions=_DIRECTION_VALUES,
         confidences=_CONFIDENCE_VALUES,
@@ -512,15 +687,16 @@ def build_trend_prompt(
                 "window_days": window_days,
                 "from_utc": from_utc,
                 "to_utc": to_utc,
-                "event_count": event_count,
-                "item_count": item_count,
+                "event_count": short_event_count,
+                "item_count": short_item_count,
+                "windows": _windows_snapshot(rows, horizon_windows),
             },
-            evidence_item_ids=_evidence_ids(events, items),
-            event_count=event_count,
-            item_count=item_count,
+            evidence_item_ids=_evidence_ids(rows),
+            event_count=short_event_count,
+            item_count=short_item_count,
         ),
-        event_count=event_count,
-        item_count=item_count,
+        event_count=short_event_count,
+        item_count=short_item_count,
         min_items=min_items,
     )
 

@@ -144,6 +144,7 @@ from core.news_models import (
     news_item_dedupe_key,
 )
 from core.news_policy import NewsPolicy, load_news_policy
+from core.rate_trend import RatePath
 from core.trend_prompt_builder import (
     HorizonWindowSet,
     MarketContext,
@@ -1130,8 +1131,9 @@ class NewsController:
         §9.1 bước 2; the floor stays on the short window, so they never move
         ``insufficient`` (C4)."""
         moment = now if now is not None else datetime.now(UTC)
-        context, outcome = self._ai_context_and_outcome(scope_type, scope_value, moment)
-        window_rows = self._ai_window_rows(scope_type, scope_value, moment)
+        context, outcome, rows = self._ai_context_and_outcome(
+            scope_type, scope_value, moment
+        )
         return AiScopePreview(
             scope_type=scope_type,
             scope_value=scope_value,
@@ -1142,9 +1144,9 @@ class NewsController:
             rate_available=bool(context.rates),
             yields_available=context.yields is not None,
             context=context,
-            short_rows=len(window_rows.short_events) + len(window_rows.short_items),
-            mid_rows=len(window_rows.mid_events) + len(window_rows.mid_items),
-            long_rows=len(window_rows.long_events) + len(window_rows.long_items),
+            short_rows=len(rows.short_events) + len(rows.short_items),
+            mid_rows=len(rows.mid_events) + len(rows.mid_items),
+            long_rows=len(rows.long_events) + len(rows.long_items),
         )
 
     def analyze_trend(
@@ -1268,27 +1270,32 @@ class NewsController:
 
     def _ai_context_and_outcome(
         self, scope_type: str, scope_value: str, now: datetime | None
-    ) -> tuple[MarketContext, TrendPromptOutcome]:
-        """The market context + prompt outcome of one scope (§9.1 bước 2-3).
+    ) -> tuple[MarketContext, TrendPromptOutcome, WindowRows]:
+        """The market context, prompt outcome and selected rows of one scope
+        (§9.1 bước 2-3, đợt 6).
 
-        Reads the scope's rows once and builds both together, so the preview and
-        the analysis see the same counts, floor and context.  The context is a
+        Reads the scope's rows once across the three horizon windows and builds
+        all three together, so the preview and the analysis see the same counts,
+        floor, window coverage and context (one read path).  The context is a
         reasoning aid only — it is never part of the floor check (C4)."""
         moment = now if now is not None else datetime.now(UTC)
-        events, items = self._ai_rows(scope_type, scope_value, moment)
+        rows = self._ai_rows(scope_type, scope_value, moment)
         context = self._ai_market_context(scope_type, scope_value)
         outcome = build_trend_prompt(
             scope_type=scope_type,
             scope_value=scope_value,
-            events=events,
-            items=items,
+            rows=rows,
             context=context,
             now=moment,
             window_days=self._policy.ai_window_days,
+            horizon_windows=HorizonWindowSet.from_policy(
+                self._policy.ai_horizon_windows
+            ),
+            long_max_rows=self._policy.ai_long_window_max_rows,
             horizons=self._policy.ai_horizons,
             min_items=self._policy.ai_min_items,
         )
-        return context, outcome
+        return context, outcome, rows
 
     def _ai_market_context(self, scope_type: str, scope_value: str) -> MarketContext:
         """Build the market context of one scope (§9.1 bước 3 - C1-C3).
@@ -1304,7 +1311,22 @@ class NewsController:
         )
         snapshots: list[BondYieldSnapshot] = self._repo.latest_bond_yields(["USD"])
         yields = snapshots[0].context if snapshots else None
-        return MarketContext(rates=rates, yields=yields)
+        return MarketContext(
+            rates=rates, yields=yields, rate_path=self._ai_rate_path(scope_type, scope_value)
+        )
+
+    def _ai_rate_path(self, scope_type: str, scope_value: str) -> RatePath | None:
+        """The 6-month policy-rate path of one scope's base currency (§9.1 bước 3,
+        đợt 6): the scope currency; USD for XAU/XAG/BTC; the base (first) side of
+        a pair.  ``NewsRepository.rate_paths`` derives it (this layer computes
+        nothing, §11b); no observation for that currency yields ``None`` (B4)."""
+        currencies = self._ai_rate_currencies(scope_type, scope_value)
+        snapshots = self._repo.rate_paths(currencies)
+        base = currencies[0]
+        for snapshot in snapshots:
+            if snapshot.currency == base:
+                return snapshot.path
+        return None
 
     @staticmethod
     def _ai_rate_currencies(scope_type: str, scope_value: str) -> list[str]:
@@ -1317,25 +1339,6 @@ class NewsController:
 
     def _ai_rows(
         self, scope_type: str, scope_value: str, moment: datetime
-    ) -> tuple[list[CalendarEvent], list[NewsItem]]:
-        """Rows relevant to one scope inside ``ai_window_days``: events and text
-        items touching the scope's currencies, ``excluded=0`` (§9.1 bước 2).
-        The scope value is the dialog's contract (pairs come from the
-        SUPPORTED_SYMBOLS combo — no invented list)."""
-        if scope_type == "currency":
-            currencies = [str(scope_value)]
-        else:
-            currencies = [part.strip() for part in str(scope_value).split("/") if part.strip()]
-        from_utc = _normalize_published_utc(moment - timedelta(days=self._policy.ai_window_days))
-        to_utc = _normalize_published_utc(moment)
-        events = self._repo.events_in_range(from_utc, to_utc, currencies=currencies)
-        items = self._repo.items_in_range(
-            from_utc, to_utc, currencies=currencies, exclude_flagged=True
-        )
-        return list(events), list(items)
-
-    def _ai_window_rows(
-        self, scope_type: str, scope_value: str, moment: datetime
     ) -> WindowRows:
         """The selected rows of the three horizon windows for one scope (§9.1
         bước 2, đợt 6).
@@ -1343,9 +1346,10 @@ class NewsController:
         Reads the scope's events/items once per ``ai_horizon_windows`` interval
         (from the repository, ``excluded=0``) and hands them to the pure
         ``select_rows_for_windows`` selector, which owns the per-window rule
-        (S1/§11a).  This is the single read path the dialog preview counts from;
-        it never calls the AI.  ``_ai_rows`` (the analysis/short path) is
-        untouched in this batch."""
+        (S1/§11a).  This is the single read path shared by the preview and the
+        analysis, so their counts, floor and coverage agree; it never calls the
+        AI.  The scope value is the dialog's contract (pairs come from the
+        SUPPORTED_SYMBOLS combo — no invented list)."""
         if scope_type == "currency":
             currencies = [str(scope_value)]
         else:
