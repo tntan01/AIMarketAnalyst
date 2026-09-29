@@ -391,6 +391,31 @@ AI_PAIR_NOTE_TEXT = (
 AI_PAIR_DEEP_TEXT = "Nhận định chuyên sâu cặp này"  # mockup d.1741
 AI_NO_VERDICT_TEXT = "Chưa có"  # mockup d.1723/1748
 AI_CONTEXT_PREFIX = "Ngữ cảnh:"  # mockup d.1730
+# --- đợt 6 (C4): panel độ phủ theo chân trời + dòng ngữ cảnh mở rộng
+# (screen_design "bổ sung đợt 6" — sketch d.1708-1712; thẩm quyền hiển thị).
+# Mọi số đến từ ``ai_scope_preview`` (passthrough policy) — UI không tự tính,
+# không hard-code 7/42/180/50 (L1/S2).
+AI_COVERAGE_LABEL = "Độ phủ theo chân trời"  # d.1708 (nhãn đăng ký)
+AI_COVERAGE_MAX_LABEL = "tối đa"  # d.1709 (nhãn đăng ký)
+AI_COVERAGE_HORIZON_TEXT: dict[str, str] = {  # d.1708 — Ngắn/Trung/Dài
+    "short": "Ngắn",
+    "mid": "Trung",
+    "long": "Dài",
+}
+AI_COVERAGE_TEXT = (
+    "{label}: {short} {short_days} ngày: {short_rows} dòng"
+    " · {mid} {mid_days} ngày: {mid_rows} dòng"
+    " · {long} {long_days} ngày: {long_rows} dòng"
+    " ({max_label} {long_max_rows})"
+)  # d.1708-1709 (nguyên khuôn wrap của sketch)
+AI_YIELD_MARK_3M = "3m"  # d.1711 (mốc delta)
+AI_YIELD_MARK_6M = "6m"  # d.1711
+AI_RATE_PATH_LABEL = "Rate path 6 tháng"  # d.1712 (nhãn đăng ký)
+AI_RATE_PATH_TEXT = "{label}: {change} (từ {then} → {now})"  # d.1712
+AI_YIELD_2Y_TEXT = "US 2Y {value}% ({delta}; {mark3} {d3}; {mark6} {d6})"  # d.1710
+AI_YIELD_10Y_TEXT = "US 10Y {value}% ({delta}; {mark3} {d3}; {mark6} {d6})"  # d.1710
+AI_YIELD_SPREAD_TEXT = "Spread 2Y10Y {spread}"  # d.1710 (giữ đợt 5)
+AI_YIELD_REAL_TEXT = "Real yield {real}%"  # d.1710 (giữ đợt 5)
 AI_OVERVIEW_COLUMNS: tuple[str, ...] = (
     "Tài sản",
     "Ngắn hạn",
@@ -1392,6 +1417,10 @@ class AiTrendDialog(QDialog):
         self._count_label.setObjectName("NewsAiCount")
         self._count_label.setWordWrap(True)
         layout.addWidget(self._count_label)
+        self._coverage_label = QLabel("")
+        self._coverage_label.setObjectName("NewsAiCoverage")
+        self._coverage_label.setWordWrap(True)
+        layout.addWidget(self._coverage_label)
         self._context_label = QLabel("")
         self._context_label.setObjectName("NewsAiContext")
         self._context_label.setWordWrap(True)
@@ -1580,10 +1609,12 @@ class AiTrendDialog(QDialog):
         except Exception:
             self._preview = None
             self._count_label.clear()
+            self._coverage_label.clear()
             self._context_label.clear()
             self._status_label.setText(AI_INSUFFICIENT_TEXT)
             return
         self._update_count_line()
+        self._update_coverage_line()
         self._update_context_line()
         self._load_history()
 
@@ -1603,9 +1634,38 @@ class AiTrendDialog(QDialog):
             # quả vừa hiện không bị dòng đếm làm mất (V2).
             self._status_label.clear()
 
+    def _update_coverage_line(self) -> None:
+        """Panel "độ phủ theo chân trời" (đợt 6) — số dòng mỗi cửa sổ đọc từ
+        ``ai_scope_preview`` (passthrough policy): UI không tự tính, không gọi AI
+        (L1/S2, D1)."""
+        preview = self._preview
+        if preview is None:
+            self._coverage_label.clear()
+            return
+        self._coverage_label.setText(self._coverage_text(preview))
+
+    @staticmethod
+    def _coverage_text(preview) -> str:
+        """Chuỗi panel độ phủ — ngày/tối đa lấy NGUYÊN VĂN từ preview (không
+        hard-code 7/42/180/50; cột nào thiếu thì mặc định 0, không bịa)."""
+        return AI_COVERAGE_TEXT.format(
+            label=AI_COVERAGE_LABEL,
+            short=AI_COVERAGE_HORIZON_TEXT["short"],
+            mid=AI_COVERAGE_HORIZON_TEXT["mid"],
+            long=AI_COVERAGE_HORIZON_TEXT["long"],
+            short_days=getattr(preview, "short_days", 0),
+            mid_days=getattr(preview, "mid_days", 0),
+            long_days=getattr(preview, "long_days", 0),
+            short_rows=getattr(preview, "short_rows", 0),
+            mid_rows=getattr(preview, "mid_rows", 0),
+            long_rows=getattr(preview, "long_rows", 0),
+            max_label=AI_COVERAGE_MAX_LABEL,
+            long_max_rows=getattr(preview, "long_max_rows", 0),
+        )
+
     def _update_context_line(self) -> None:
-        """Dòng ngữ cảnh dữ kiện (đợt 5) — UI chỉ ĐỊNH DẠNG giá trị typed từ
-        ``ai_scope_preview.context`` (không tự tính, L1/S2); thiếu → "—"."""
+        """Dòng ngữ cảnh dữ kiện (đợt 5 + mở rộng đợt 6) — UI chỉ ĐỊNH DẠNG giá
+        trị typed từ ``ai_scope_preview.context`` (không tự tính, L1/S2); thiếu → "—"."""
         preview = self._preview
         if preview is None:
             self._context_label.clear()
@@ -1614,6 +1674,8 @@ class AiTrendDialog(QDialog):
 
     @staticmethod
     def _context_text(preview) -> str:
+        """Dòng ngữ cảnh: giữ khuôn đợt 5, thêm delta 3m/6m cho US 2Y/US 10Y và
+        rate path 6 tháng (đợt 6 — sketch d.1710-1712); thiếu thành phần → "—"."""
         context = getattr(preview, "context", None)
         parts: list[str] = []
         rates = getattr(context, "rates", ()) if context is not None else ()
@@ -1623,14 +1685,44 @@ class AiTrendDialog(QDialog):
             )
         yields = getattr(context, "yields", None) if context is not None else None
         if yields is not None:
+            delta_3m = getattr(yields, "delta_3m", None)
+            delta_6m = getattr(yields, "delta_6m", None)
             parts.append(
-                f"US 2Y {_ai_number(yields.yield_2y)}% ({_ai_signed(yields.delta_2y)})"
+                AI_YIELD_2Y_TEXT.format(
+                    value=_ai_number(yields.yield_2y),
+                    delta=_ai_signed(yields.delta_2y),
+                    mark3=AI_YIELD_MARK_3M,
+                    d3=_ai_signed(getattr(delta_3m, "delta_2y", None)),
+                    mark6=AI_YIELD_MARK_6M,
+                    d6=_ai_signed(getattr(delta_6m, "delta_2y", None)),
+                )
             )
             parts.append(
-                f"US 10Y {_ai_number(yields.yield_10y)}% ({_ai_signed(yields.delta_10y)})"
+                AI_YIELD_10Y_TEXT.format(
+                    value=_ai_number(yields.yield_10y),
+                    delta=_ai_signed(yields.delta_10y),
+                    mark3=AI_YIELD_MARK_3M,
+                    d3=_ai_signed(getattr(delta_3m, "delta_10y", None)),
+                    mark6=AI_YIELD_MARK_6M,
+                    d6=_ai_signed(getattr(delta_6m, "delta_10y", None)),
+                )
             )
-            parts.append(f"Spread 2Y10Y {_ai_signed(yields.spread_2y10y)}")
-            parts.append(f"Real yield {_ai_number(yields.real_yield_10y)}%")
+            parts.append(
+                AI_YIELD_SPREAD_TEXT.format(spread=_ai_signed(yields.spread_2y10y))
+            )
+            parts.append(
+                AI_YIELD_REAL_TEXT.format(real=_ai_number(yields.real_yield_10y))
+            )
+        rate_path = getattr(context, "rate_path", None) if context is not None else None
+        if rate_path is not None:
+            parts.append(
+                AI_RATE_PATH_TEXT.format(
+                    label=AI_RATE_PATH_LABEL,
+                    change=_ai_signed(rate_path.change),
+                    then=_ai_number(rate_path.rate_then),
+                    now=_ai_number(rate_path.rate_now),
+                )
+            )
         if not parts:
             return f"{AI_CONTEXT_PREFIX} {NO_VALUE}"
         return f"{AI_CONTEXT_PREFIX} " + " · ".join(parts)

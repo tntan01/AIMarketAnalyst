@@ -52,9 +52,9 @@ from core.news_models import (
     VerdictScopeType,
 )
 from core.news_policy import load_news_policy
-from core.rate_trend import RateTrend
+from core.rate_trend import RatePath, RateTrend
 from core.trend_prompt_builder import MarketContext, build_trend_prompt
-from core.yield_context import YieldContext
+from core.yield_context import YieldContext, YieldDeltaSet
 from services.news_repository import CurrencyRateTrend
 from ui.screens import news_screen as news
 from ui.screens.news_screen import NewsScreen
@@ -534,6 +534,13 @@ def _preview(
     items: int = 3,
     min_items: int = 3,
     context: MarketContext | None = None,
+    short_days: int = 7,
+    mid_days: int = 42,
+    long_days: int = 180,
+    long_max_rows: int = 50,
+    short_rows: int = 0,
+    mid_rows: int = 0,
+    long_rows: int = 0,
 ) -> AiScopePreview:
     context = context if context is not None else MarketContext()
     return AiScopePreview(
@@ -546,6 +553,13 @@ def _preview(
         rate_available=bool(context.rates),
         yields_available=context.yields is not None,
         context=context,
+        short_days=short_days,
+        mid_days=mid_days,
+        long_days=long_days,
+        long_max_rows=long_max_rows,
+        short_rows=short_rows,
+        mid_rows=mid_rows,
+        long_rows=long_rows,
     )
 
 
@@ -658,8 +672,8 @@ class TestAiDialogSmoke:
 
         text = dialog._context_label.text()
         assert "Lãi suất 5.50% (hold)" in text
-        assert "US 2Y 3.72% (-0.08)" in text
-        assert "US 10Y 3.91% (+0.02)" in text
+        assert "US 2Y 3.72% (-0.08; 3m —; 6m —)" in text
+        assert "US 10Y 3.91% (+0.02; 3m —; 6m —)" in text
         assert "Spread 2Y10Y +0.19" in text
         assert "Real yield 1.55%" in text
 
@@ -950,3 +964,112 @@ def test_ai_dialog_issue_no_direct_services_import_in_screen_source():
     source = Path(news.__file__).read_text(encoding="utf-8")
     for forbidden in ("import requests", "import urllib", "import socket", "from services."):
         assert forbidden not in source, forbidden
+
+
+# ---------------------------------------------------------------------------
+# 4. Panel độ phủ theo chân trời + dòng ngữ cảnh mở rộng (đợt 6 — C4)
+# ---------------------------------------------------------------------------
+
+
+def _yield_context_with_deltas() -> YieldContext:
+    """YieldContext đủ delta 3m/6m (đợt 6) cho dòng ngữ cảnh mở rộng."""
+    return YieldContext(
+        yield_2y=3.72,
+        observed_at_2y="2026-09-18",
+        yield_10y=3.91,
+        observed_at_10y="2026-09-18",
+        be10y=2.36,
+        observed_at_be10y="2026-09-18",
+        delta_2y=-0.08,
+        delta_10y=0.02,
+        spread_2y10y=0.19,
+        real_yield_10y=1.55,
+        delta_3m=YieldDeltaSet(delta_2y=-0.15, delta_10y=0.10),
+        delta_6m=YieldDeltaSet(delta_2y=-0.30),  # 10Y 6m thiếu → "—"
+    )
+
+
+class TestAiDialogHorizonCoverage:
+    """Panel độ phủ + dòng ngữ cảnh mở rộng (đợt 6) — UI chỉ định dạng dữ liệu
+    preview (không gọi AI, không hard-code ngày/tối đa)."""
+
+    def test_coverage_panel_renders_preview_counts_days_and_cap(self):
+        controller = FakeAiController(_preview(short_rows=4, mid_rows=4, long_rows=5))
+        dialog = _dialog(controller)
+
+        assert dialog._coverage_label.text() == (
+            "Độ phủ theo chân trời: Ngắn 7 ngày: 4 dòng · Trung 42 ngày: 4 dòng"
+            " · Dài 180 ngày: 5 dòng (tối đa 50)"
+        )
+
+    def test_coverage_panel_follows_the_preview_counts(self):
+        controller = FakeAiController(_preview(short_rows=1, mid_rows=2, long_rows=3))
+        dialog = _dialog(controller)
+        first = dialog._coverage_label.text()
+        assert "Ngắn 7 ngày: 1 dòng" in first
+        assert "Trung 42 ngày: 2 dòng" in first
+        assert "Dài 180 ngày: 3 dòng" in first
+
+        controller.preview = _preview(short_rows=9, mid_rows=8, long_rows=7)
+        dialog._on_detail_scope_changed()
+
+        changed = dialog._coverage_label.text()
+        assert changed != first
+        assert "Ngắn 7 ngày: 9 dòng" in changed
+        assert "Trung 42 ngày: 8 dòng" in changed
+        assert "Dài 180 ngày: 7 dòng" in changed
+
+    def test_opening_the_detail_tab_never_calls_the_ai(self):
+        controller = FakeAiController(_preview(short_rows=1, mid_rows=1, long_rows=1))
+        dialog = _dialog(controller)
+
+        assert controller.preview_calls  # preview đã đọc (chỉ đọc)
+        assert controller.analyze_calls == []
+        assert controller.batch_calls == []
+
+    def test_context_line_renders_rate_path_and_3m_6m_deltas(self):
+        context = MarketContext(
+            rates=(_rate_context("USD", 5.5),),
+            yields=_yield_context_with_deltas(),
+            rate_path=RatePath(rate_now=4.35, rate_then=4.10, change=0.25),
+        )
+        controller = FakeAiController(_preview(context=context))
+        dialog = _dialog(controller)
+
+        text = dialog._context_label.text()
+        assert "US 2Y 3.72% (-0.08; 3m -0.15; 6m -0.30)" in text
+        assert "US 10Y 3.91% (+0.02; 3m +0.10; 6m —)" in text
+        assert "Rate path 6 tháng: +0.25 (từ 4.10 → 4.35)" in text
+
+    def test_context_line_dash_when_rate_path_components_missing(self):
+        context = MarketContext(
+            rate_path=RatePath(rate_now=None, rate_then=None, change=None)
+        )
+        controller = FakeAiController(_preview(context=context))
+        dialog = _dialog(controller)
+
+        assert "Rate path 6 tháng: — (từ — → —)" in dialog._context_label.text()
+
+    def test_context_line_dash_when_delta_6m_missing(self):
+        context = MarketContext(
+            yields=YieldContext(
+                yield_2y=3.72,
+                observed_at_2y="2026-09-18",
+                yield_10y=3.91,
+                observed_at_10y="2026-09-18",
+                be10y=None,
+                observed_at_be10y=None,
+                delta_2y=-0.08,
+                delta_10y=0.02,
+                spread_2y10y=0.19,
+                real_yield_10y=None,
+                delta_3m=YieldDeltaSet(delta_2y=-0.15),
+                delta_6m=YieldDeltaSet(),  # mọi mốc 6m thiếu
+            )
+        )
+        controller = FakeAiController(_preview(context=context))
+        dialog = _dialog(controller)
+
+        text = dialog._context_label.text()
+        assert "US 2Y 3.72% (-0.08; 3m -0.15; 6m —)" in text
+        assert "Spread 2Y10Y +0.19" in text  # giữ khuôn đợt 5 (không gắn delta)

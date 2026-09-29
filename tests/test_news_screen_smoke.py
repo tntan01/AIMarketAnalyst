@@ -560,6 +560,13 @@ class _FakeAiController:
             item_count=0,
             insufficient=True,
             context=None,
+            short_days=7,
+            mid_days=42,
+            long_days=180,
+            long_max_rows=50,
+            short_rows=0,
+            mid_rows=0,
+            long_rows=0,
         )
 
     def verdicts_for(self, scope_type, scope_value, limit):

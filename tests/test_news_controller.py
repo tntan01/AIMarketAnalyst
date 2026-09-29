@@ -1436,6 +1436,61 @@ class TestAiHorizonWindowCounts:
         assert repo.add_verdict_calls == []
 
 
+class TestAiScopePreviewDisplayPassthrough:
+    """The dialog's display labels — window day spans and the long-window cap —
+    are passed through verbatim from the policy (đợt 6, C4); the UI never
+    hard-codes 7/42/180/50 and the counts/floor semantics do not move."""
+
+    def _repo(self) -> RangeFilteringRepository:
+        repo = RangeFilteringRepository()
+        repo.events = [
+            _aged_event(1, 3, impact=EventImpact.HIGH, actual="1.0%"),
+            _aged_event(2, 3, impact=EventImpact.LOW),
+            _aged_event(3, 30, impact=EventImpact.MEDIUM),
+            _aged_event(4, 120, impact=EventImpact.HIGH, actual="2.0%"),
+        ]
+        repo.items = [
+            _aged_item(11, 3, kind=NewsItemKind.STATEMENT),
+            _aged_item(12, 3, kind=NewsItemKind.HEADLINE),
+            _aged_item(13, 30, kind=NewsItemKind.STATEMENT),
+            _aged_item(14, 30, kind=NewsItemKind.HEADLINE),
+            _aged_item(15, 120, kind=NewsItemKind.STATEMENT),
+            _aged_item(16, 120, kind=NewsItemKind.HEADLINE),
+        ]
+        return repo
+
+    def test_preview_carries_policy_window_days_and_long_cap(self):
+        controller = _controller(repo=self._repo(), policy=_policy())
+
+        preview = controller.ai_scope_preview("currency", "USD", now=_HORIZON_NOW)
+
+        assert (preview.short_days, preview.mid_days, preview.long_days) == (7, 42, 180)
+        assert preview.long_max_rows == 50
+        # counts are unchanged derived values (passthrough adds labels only).
+        assert (preview.short_rows, preview.mid_rows, preview.long_rows) == (4, 4, 5)
+        assert preview.insufficient is False
+
+    def test_display_fields_follow_a_changed_policy(self):
+        policy = _policy(
+            ai_horizon_windows={
+                "short": {"days": 5},
+                "mid": {"days": 30},
+                "long": {"days": 90},
+            },
+            ai_long_window_max_rows=25,
+        )
+        controller = _controller(repo=self._repo(), policy=policy)
+
+        preview = controller.ai_scope_preview("currency", "USD", now=_HORIZON_NOW)
+
+        # fake policy changes the labels verbatim — the passthrough is live.
+        assert (preview.short_days, preview.mid_days, preview.long_days) == (5, 30, 90)
+        assert preview.long_max_rows == 25
+        # floor stays on the short window (C4 invariant) and is not moved by the
+        # display labels.
+        assert preview.insufficient is False
+
+
 # ---- 4c. batch "Nhận định tất cả" (§9.1 bước 7, D1/D2) --------------------------
 
 

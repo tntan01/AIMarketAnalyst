@@ -1680,12 +1680,15 @@ người dùng xác nhận trước khi ghi):
   progress trong lúc parse; pha ghi (sau bấm "Cập nhật") hiện progress và kết
   thúc bằng tóm tắt mới/cập nhật/xung đột (mục trên).
 
-### Cửa sổ AI nhận định xu hướng (dialog nhỏ) — thiết kế lại 3 tab (đợt 5 — Owner duyệt 28/09/2026, IMPLEMENTED — nghiệm thu 29/09/2026; contract §9.1/§9.3 đợt 5)
+### Cửa sổ AI nhận định xu hướng (dialog nhỏ) — thiết kế lại 3 tab (đợt 5 — Owner duyệt 28/09/2026, IMPLEMENTED — nghiệm thu 29/09/2026; contract §9.1/§9.3 đợt 5) — bổ sung đợt 6 (Owner duyệt 29/09/2026 — IMPLEMENTED — nghiệm thu 29/09/2026)
 
 > Trạng thái: **IMPLEMENTED** (ca đợt 5, lô B4) — layout 1 combo cũ đã bị thay
-> thế hoàn toàn. Mọi dữ liệu đọc qua `NewsController` → `NewsRepository` theo
-> contract mục 8/§9 — UI không tự tính bias, không gọi AI ngoài nút nhận định
-> (L1, S2).
+> thế hoàn toàn. **Đợt 6 (29/09/2026) — IMPLEMENTED — nghiệm thu 29/09/2026:**
+> bổ sung panel "độ phủ theo
+> chân trời" + mở rộng dòng ngữ cảnh (rate path 6 tháng, yield delta 3m/6m —
+> contract §9.3 khoản 6, §13 đợt 6). Mọi dữ liệu đọc qua
+> `NewsController` → `NewsRepository` theo contract mục 8/§9 — UI không tự
+> tính bias/độ phủ, không gọi AI ngoài nút nhận định (L1, S2).
 
 Mở từ nút **AI nhận định xu hướng**; kích thước tham khảo 560×640, không
 modal toàn app; chuyển từ 1 combo đơn sang **3 tab**:
@@ -1705,9 +1708,12 @@ modal toàn app; chuyển từ 1 combo đơn sang **3 tab**:
 
 ─ Tab "Chi tiết" ─────────────────────────────────────────────
 Tài sản: [ AUD ▼ ]
-Cửa sổ tin: <ai_window_days> ngày gần nhất — <N> tin/sự kiện liên quan
-Ngữ cảnh: Lãi suất 4.35% (hold) · US 2Y 3.72% (−0.08) · US 10Y 3.91% (+0.02)
-          · Spread 2Y10Y +0.19 · Real yield 1.55%
+Cửa sổ tin: 7 ngày gần nhất — <N> tin/sự kiện liên quan
+Độ phủ theo chân trời (đợt 6): Ngắn 7 ngày: <N₁> dòng · Trung 42 ngày: <N₂> dòng
+                            · Dài 180 ngày: <N₃> dòng (tối đa 50)
+Ngữ cảnh: Lãi suất 4.35% (hold) · US 2Y 3.72% (−0.08; 3m −0.15; 6m −0.30)
+          · US 10Y 3.91% (+0.02; 3m +0.10) · Spread 2Y10Y +0.19 · Real yield 1.55
+          · Rate path 6 tháng: +0.25 (từ 4.10 → 4.35)
 [ Nhận định ]
 ─ Kết quả: 3 thẻ chân trời (theo ai_horizons) + lập luận + dẫn chứng ─
 Lịch sử nhận định của phạm vi này (mới nhất trước)
@@ -1743,7 +1749,17 @@ Cặp: [ EUR/USD ▼ ]
   hiển thị để người dùng biết AI đã "nhìn" dữ kiện nào (nguồn:
   `latest_rates` + `latest_bond_yields`); thiếu dữ kiện nào → "—" phần đó,
   không bịa. Scope XAU/XAG/BTC hiển thị thêm ngữ cảnh USD (định giá bằng
-  USD — contract §9.3 khoản 4).
+  USD — contract §9.3 khoản 4). **Mở rộng đợt 6 (IMPLEMENTED):** thêm **rate
+  path 6 tháng** (nguồn `rate_paths`) + **yield delta 3 tháng/6 tháng**
+  (2Y/10Y/spread/real yield) — mỗi giá trị kèm mốc để người dùng thấy độ sâu
+  bằng chứng theo thời gian.
+- **Panel "độ phủ theo chân trời" (đợt 6 — D1/§13 đợt 6, IMPLEMENTED):** 1 dòng
+  (hoặc nhóm dòng) ngay dưới dòng đếm cửa sổ tin: số events/items nằm trong
+  **từng** cửa sổ `ai_horizon_windows` (short/mid/long, kèm ghi chú tối đa
+  `ai_long_window_max_rows` dòng của long) — đọc qua preview/repository,
+  **không gọi AI**; người dùng nhìn thấy ngay vì sao một chân trời thiếu dữ
+  kiện (vd dài hạn 0 dòng → verdict "Không đủ dữ liệu" là do dữ liệu, không
+  phải AI kém).
 
 **Tab "Cặp forex"** (chỉ đọc — không gọi AI trừ nút chuyên sâu):
 
@@ -1789,4 +1805,7 @@ Quy tắc chung (giữ nguyên từ thiết kế cũ):
   tính năng khỏi hệ thống, theo contract §13). **Đợt 5 (28/09/2026):** cửa sổ
   AI nhận định thiết kế lại **3 tab** (Tổng quan 11 tài sản + batch, Chi tiết,
   Cặp forex) — **IMPLEMENTED** (nghiệm thu 29/09/2026), thay thế hoàn toàn thiết
-  kế 1 combo cũ (contract §9.3, §13 đợt 5).
+  kế 1 combo cũ (contract §9.3, §13 đợt 5). **Đợt 6 (29/09/2026):** panel "độ
+  phủ theo chân trời" + mở rộng dòng ngữ cảnh (rate path 6 tháng, yield delta
+  3m/6m) — **IMPLEMENTED** (nghiệm thu 29/09/2026; contract §9.3 khoản 6,
+  §13 đợt 6).

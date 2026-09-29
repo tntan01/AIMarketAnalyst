@@ -269,7 +269,13 @@ class AiScopePreview:
     selector of §9.1 bước 2 (đợt 6) picked for each ``ai_horizon_windows``
     window (events + items); the dialog shows them so a thin horizon is visibly
     a data gap, not an AI fault.  The floor still counts the short window only
-    (C4) — the counts never move ``insufficient``."""
+    (C4) — the counts never move ``insufficient``.
+
+    ``short_days``/``mid_days``/``long_days`` and ``long_max_rows`` are the
+    display labels of that panel (đợt 6): the day span of each window and the
+    cap of the long window, filled verbatim from the policy (``ai_horizon_windows``
+    / ``ai_long_window_max_rows``) so the screen never hard-codes 7/42/180/50
+    (passthrough only — no semantic change, floors/counts untouched)."""
 
     scope_type: str
     scope_value: str
@@ -280,6 +286,10 @@ class AiScopePreview:
     rate_available: bool
     yields_available: bool
     context: MarketContext
+    short_days: int = 0
+    mid_days: int = 0
+    long_days: int = 0
+    long_max_rows: int = 0
     short_rows: int = 0
     mid_rows: int = 0
     long_rows: int = 0
@@ -1129,11 +1139,14 @@ class NewsController:
         ``context`` is carried for the detail tab's context line (UI formats).
         The three horizon-window counts (đợt 6) come from the shared selector of
         §9.1 bước 2; the floor stays on the short window, so they never move
-        ``insufficient`` (C4)."""
+        ``insufficient`` (C4).  The display labels (window days, long cap) are
+        passed through verbatim from the policy so the dialog hard-codes no
+        number (đợt 6)."""
         moment = now if now is not None else datetime.now(UTC)
         context, outcome, rows = self._ai_context_and_outcome(
             scope_type, scope_value, moment
         )
+        window_set = HorizonWindowSet.from_policy(self._policy.ai_horizon_windows)
         return AiScopePreview(
             scope_type=scope_type,
             scope_value=scope_value,
@@ -1144,6 +1157,10 @@ class NewsController:
             rate_available=bool(context.rates),
             yields_available=context.yields is not None,
             context=context,
+            short_days=window_set.short_days,
+            mid_days=window_set.mid_days,
+            long_days=window_set.long_days,
+            long_max_rows=self._policy.ai_long_window_max_rows,
             short_rows=len(rows.short_events) + len(rows.short_items),
             mid_rows=len(rows.mid_events) + len(rows.mid_items),
             long_rows=len(rows.long_events) + len(rows.long_items),
