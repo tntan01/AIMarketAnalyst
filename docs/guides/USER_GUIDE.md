@@ -9,6 +9,7 @@
 5. [Auto-trade (Giao dịch tự động)](#5-auto-trade-giao-dịch-tự-động)
 6. [Diagnostics (Chẩn đoán)](#6-diagnostics-chẩn-đoán)
 7. [Settings (Cài đặt)](#7-settings-cài-đặt)
+7.1. [Tin tức — AI nhận định xu hướng (dialog 3 tab)](#71-tin-tức--ai-nhận-định-xu-hướng-dialog-3-tab)
 8. [Troubleshooting (Khắc phục sự cố)](#8-troubleshooting-khắc-phục-sự-cố)
 
 ## 1. Introduction (Giới thiệu)
@@ -274,6 +275,33 @@ OFF.
 Snapshot ngày 09/08/2026 không xác nhận JPY là safe haven trong sample: cả 7
 JPY pairs và AUD/NZD đều neutral; chỉ BTC/USD, XAG/USD và XAU/USD actionable
 theo raw gate. Vì vậy bật flag hiện tại không làm JPY pairs được giảm phạt.
+
+## 7.1. Tin tức — AI nhận định xu hướng (dialog 3 tab)
+
+Mở từ nút **AI nhận định xu hướng** ở màn Quản lý tin. Cửa sổ có **3 tab**, kèm
+một dòng cảnh báo cố định: *nhận định của AI chỉ để tham khảo*.
+
+- **Tab Tổng quan (mở mặc định):** lưới 11 tài sản (AUD CAD CHF EUR GBP JPY NZD
+  USD XAU XAG BTC) × 3 chân trời + cột "Verdict lúc" — chỉ **đọc lại** kết quả
+  đã lưu, **không gọi AI**. Bấm một dòng để sang tab Chi tiết của tài sản đó.
+  Nút **"Nhận định tất cả"** gọi AI cho **11 tài sản lần lượt** (chi phí: 11
+  lời gọi AI mỗi lượt bấm — chạy nền, hiện tiến trình "n/11"); một tài sản lỗi
+  hoặc thiếu dữ liệu **không dừng lượt**. Cuối lượt có tổng kết đủ / thiếu dữ
+  liệu / lỗi.
+- **Tab Chi tiết:** chọn 1 tài sản → xem 3 thẻ chân trời (hướng + độ tin cậy +
+  lập luận tiếng Việt + dẫn chứng bấm được để nhảy tới dòng tin), lịch sử nhận
+  định, và **dòng ngữ cảnh** (lãi suất điều hành + đi ngang/tăng/giảm, lợi suất
+  Mỹ 2Y/10Y + biến động, spread 2Y10Y, real yield). Thiếu dữ kiện nào thì hiện
+  "—", không suy đoán. Nút **"Nhận định"** chỉ chạy khi đủ số tin tối thiểu; nếu
+  chưa đủ, cửa sổ báo "Không đủ dữ liệu nhận định" và **không gọi AI**.
+- **Tab Cặp forex:** chọn cặp (31 cặp) → xem hai nhận định thành phần cạnh nhau
+  và **một dòng bias suy ra** ("Nghiêng tăng / Nghiêng giảm / Trung lập / Không
+  rõ"). Bias **được suy ra** từ hai nhận định từng đồng — **không phải** nhận
+  định riêng của AI và **không lưu database**. Nút **"Nhận định chuyên sâu cặp
+  này"** mới thực sự gọi AI cho cặp đó.
+
+> Lưu ý: nhận định AI **không** tham gia chấm điểm, cổng chặn hay tự động vào
+> lệnh — chỉ để bạn tham khảo.
 
 ## 8. Troubleshooting (Khắc phục sự cố)
 

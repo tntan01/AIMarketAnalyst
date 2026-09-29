@@ -30,7 +30,7 @@ Phần mềm nên gồm **9 màn hình chính** trong thiết kế (mục 2/3 Si
 | 7 | Journal Detail (Màn hình chi tiết nhật ký) | Xem lại chi tiết một phân tích đã lưu và ghi chú thêm |
 | 8 | Settings (Màn hình cài đặt) | Cấu hình AI, dữ liệu MT5, giao dịch, hiển thị và nâng cao |
 | 9 | Orders (Quản lý lệnh) | Theo dõi vị thế đang mở, lệnh chờ, BE & trailing stop tự động |
-| 10 | Tin tức (Quản lý tin) — **IMPLEMENTED** (nghiệm thu 25/09/2026 — ca "Nguồn dán FF" hoàn tất) | Quản lý database tin tức: xem/lọc, nhập tay, dán mã nguồn trang ForexFactory để cập nhật lịch kinh tế + actual (luồng 2 pha, xác nhận trước khi ghi); cửa sổ AI nhận định xu hướng (chỉ tham khảo) |
+| 10 | Tin tức (Quản lý tin) — **IMPLEMENTED** (nghiệm thu 25/09/2026 — ca "Nguồn dán FF" hoàn tất); cửa sổ AI nhận định **thiết kế lại 3 tab — đợt 5, IMPLEMENTED** (nghiệm thu 29/09/2026) | Quản lý database tin tức: xem/lọc, nhập tay, dán mã nguồn trang ForexFactory để cập nhật lịch kinh tế + actual (luồng 2 pha, xác nhận trước khi ghi); cửa sổ AI nhận định xu hướng từng tài sản (11 phạm vi + cặp chuyên sâu, chỉ tham khảo — đợt 5) |
 
 Nếu tính các tab (thẻ chức năng) bên trong Settings (Màn hình cài đặt), phần mềm có thể xem là **14 màn hình/tabs chức năng** (mục 14 triển khai tại ca Tin tức):
 
@@ -1536,7 +1536,8 @@ Khi scanner mở lệnh qua auto-trade, hệ thống tự động đăng ký BE 
 Cho phép người dùng xem toàn bộ tin trong database theo ngày, bổ sung tin mà
 nguồn tự động bỏ sót, loại trừ tin không có giá trị, **dán mã nguồn trang
 ForexFactory để cập nhật lịch kinh tế + actual** (kênh duy nhất — contract
-§6.1 đợt 3, 24/09/2026), và yêu cầu AI nhận định xu hướng một cặp tiền để
+§6.1 đợt 3, 24/09/2026), và yêu cầu AI nhận định xu hướng **từng đồng
+tiền/tài sản** (11 phạm vi — đợt 5, 28/09/2026) hoặc chuyên sâu một cặp để
 **tham khảo**.
 
 ### Bố cục
@@ -1614,6 +1615,8 @@ thị):
 | `confidence` (verdict AI) | `high` = "Cao" · `medium` = "Trung bình" · `low` = "Thấp" · `none` = "Không có" |
 | `horizon` (verdict AI) | `short` = "Ngắn hạn" · `mid` = "Trung hạn" · `long` = "Dài hạn" |
 | Trạng thái dòng bảng xem trước (đợt 4 — nhãn dẫn xuất, không persist) | mới = "Mới" · sẽ cập nhật = "Sẽ cập nhật" · xung đột = "Xung đột — giữ nhập tay" · đã chỉnh sửa = "Đã sửa" |
+| Bias cặp suy ra `pair_bias` (đợt 5 — nhãn dẫn xuất, không persist) | `bullish` = "Nghiêng tăng" · `bearish` = "Nghiêng giảm" · `neutral` = "Trung lập" · `unclear` = "Không rõ" |
+| Nhãn dialog AI 3 tab (đợt 5) | tab "Tổng quan" / "Chi tiết" / "Cặp forex" · nút "Nhận định tất cả" · nút "Nhận định chuyên sâu cặp này" · cột "Tài sản" / "Verdict lúc" · "Chưa có" (phạm vi chưa từng nhận định) |
 
 ### Hành vi dán mã nguồn trang ForexFactory (kênh cập nhật lịch + actual DUY NHẤT — 2 pha, xác nhận trước khi ghi; IMPLEMENTED — sửa đổi đợt 3+4 24/09/2026, ca "Nguồn dán FF" nghiệm thu 25/09/2026)
 
@@ -1670,40 +1673,101 @@ người dùng xác nhận trước khi ghi):
   Owner quyết 27/09/2026).
 - **Dialog AI nhận định:** trong lúc chờ verdict hiện progress + disable nút
   "Nhận định" (lời gọi chạy worker nền — đã quy định ở mục dưới); lỗi provider
-  → thông báo `friendly_error()`.
+  → thông báo `friendly_error()`. Đợt 5 (IMPLEMENTED — nghiệm thu 29/09/2026):
+  lượt batch "Nhận định tất cả" disable nút + hiện progress "n/11" từng phạm
+  vi; một phạm vi lỗi không dừng lô.
 - **Dán mã nguồn (2 pha):** xử lý cục bộ (không mạng); pha "Bóc tách" hiện
   progress trong lúc parse; pha ghi (sau bấm "Cập nhật") hiện progress và kết
   thúc bằng tóm tắt mới/cập nhật/xung đột (mục trên).
 
-### Cửa sổ AI nhận định xu hướng (dialog nhỏ)
+### Cửa sổ AI nhận định xu hướng (dialog nhỏ) — thiết kế lại 3 tab (đợt 5 — Owner duyệt 28/09/2026, IMPLEMENTED — nghiệm thu 29/09/2026; contract §9.1/§9.3 đợt 5)
 
-Mở từ nút **AI nhận định xu hướng**; kích thước tham khảo 520×640, không
-modal toàn app:
+> Trạng thái: **IMPLEMENTED** (ca đợt 5, lô B4) — layout 1 combo cũ đã bị thay
+> thế hoàn toàn. Mọi dữ liệu đọc qua `NewsController` → `NewsRepository` theo
+> contract mục 8/§9 — UI không tự tính bias, không gọi AI ngoài nút nhận định
+> (L1, S2).
+
+Mở từ nút **AI nhận định xu hướng**; kích thước tham khảo 560×640, không
+modal toàn app; chuyển từ 1 combo đơn sang **3 tab**:
 
 ```text
 [ AI nhận định xu hướng                                        ]
-Phạm vi: [ Cặp tiền EUR/USD ▼ ]   (hoặc chuyển sang chọn 1 đồng tiền)
-Cửa sổ tin: <ai_window_days> ngày gần nhất — <N> tin/sự kiện liên quan
-[ Nhận định ]
-
-─ Kết quả (3 thẻ chân trời, theo ai_horizons trong chính sách) ─
-[ Ngắn hạn ]  xu hướng ▲/▼/— + màu semantic, confidence, lập luận, dẫn chứng
-[ Trung hạn ] như trên
-[ Dài hạn ]   như trên
-
-Lịch sử nhận định của phạm vi này (mới nhất trước)
+[ Tổng quan | Chi tiết | Cặp forex ]
 ⚠ Nhận định của AI chỉ để tham khảo — không tham gia bất cứ quy trình nào
+
+─ Tab "Tổng quan" (mặc định) ─────────────────────────────────
+[ Nhận định tất cả ]   (đang chạy: "n/11", disable nút)
+
+  Tài sản | Ngắn hạn | Trung hạn | Dài hạn | Verdict lúc
+  AUD     |    ▲    |     —     |    ▼    | 28/09 14:02
+  CAD     |    …    |           |         |
+  … (11 dòng: AUD CAD CHF EUR GBP JPY NZD USD XAU XAG BTC)
+
+─ Tab "Chi tiết" ─────────────────────────────────────────────
+Tài sản: [ AUD ▼ ]
+Cửa sổ tin: <ai_window_days> ngày gần nhất — <N> tin/sự kiện liên quan
+Ngữ cảnh: Lãi suất 4.35% (hold) · US 2Y 3.72% (−0.08) · US 10Y 3.91% (+0.02)
+          · Spread 2Y10Y +0.19 · Real yield 1.55%
+[ Nhận định ]
+─ Kết quả: 3 thẻ chân trời (theo ai_horizons) + lập luận + dẫn chứng ─
+Lịch sử nhận định của phạm vi này (mới nhất trước)
+
+─ Tab "Cặp forex" ────────────────────────────────────────────
+Cặp: [ EUR/USD ▼ ]
+  EUR: ▲ Tăng (Cao)   ‖   USD: ▼ Giảm (Trung bình)
+  → Bias cặp: nghiêng tăng — "suy ra từ nhận định từng đồng,
+    không phải verdict riêng của AI"
+[ Nhận định chuyên sâu cặp này ]
 ```
+
+**Tab "Tổng quan":**
+
+- Khi mở: **chỉ đọc** verdict mới nhất mỗi tài sản qua `verdicts_for`
+  (không gọi AI — tôn trọng nguyên tắc preview contract §9.1 bước 2); tài
+  sản chưa từng nhận định → dòng "Chưa có".
+- Ký hiệu ▲/▼/— theo `direction` + màu semantic; confidence hiện nhãn nhỏ
+  cạnh ký hiệu; cột "Verdict lúc" = mốc `created_at` theo múi giờ hiển thị.
+- Bấm 1 dòng → chuyển sang tab "Chi tiết" của tài sản đó.
+- Nút **"Nhận định tất cả"** (chi phí: 11 lời gọi AI/lượt bấm — Owner duyệt
+  D1): chạy **tuần tự 11** phạm vi trong worker nền; trong lúc chạy disable
+  nút + hiện progress "n/11" từng phạm vi; **một phạm vi lỗi hoặc "Không đủ
+  dữ liệu" không dừng lô** — phạm vi kế vẫn chạy; cuối lượt tổng kết
+  ok/insufficient/lỗi (contract §9.1 bước 7).
+
+**Tab "Chi tiết"** (giữ khuôn 3 thẻ chân trời hiện hành):
+
+- 3 thẻ: hướng + ký hiệu màu semantic, confidence, lập luận tiếng Việt,
+  hàng dẫn chứng bấm được; lịch sử phạm vi (mới nhất trước).
+- **Dòng ngữ cảnh dữ kiện (đợt 5):** lãi suất điều hành + trend
+  hike/cut/hold, 2Y/10Y + biến động trong cửa sổ, spread 2Y10Y, real yield —
+  hiển thị để người dùng biết AI đã "nhìn" dữ kiện nào (nguồn:
+  `latest_rates` + `latest_bond_yields`); thiếu dữ kiện nào → "—" phần đó,
+  không bịa. Scope XAU/XAG/BTC hiển thị thêm ngữ cảnh USD (định giá bằng
+  USD — contract §9.3 khoản 4).
+
+**Tab "Cặp forex"** (chỉ đọc — không gọi AI trừ nút chuyên sâu):
+
+- Combo cặp từ `SUPPORTED_SYMBOLS` → hiển thị 2 verdict thành phần cạnh nhau
+  (hướng + confidence) + **1 dòng bias cặp suy ra** từ `core/pair_bias.py`
+  (contract §9.3 khoản 2 — UI không tự tính) — ghi nhãn rõ "suy ra từ nhận
+  định từng đồng, không phải verdict riêng của AI"; verdict thiếu 1 bên hoặc
+  1 bên `insufficient_data` → bias "Không rõ". Bias **không lưu database**.
+- Nút **"Nhận định chuyên sâu cặp này"** → gọi AI `scope_type=pair` đúng
+  luồng hiện hành (hợp tin 2 đồng — contract §9.3 khoản 3); kết quả hiển thị
+  theo khuôn 3 thẻ chân trời.
+
+Quy tắc chung (giữ nguyên từ thiết kế cũ):
 
 - Trước khi gọi AI hiển thị số tin/sự kiện sẽ đưa vào prompt; nếu dưới
   `ai_min_items` → hiện "Không đủ dữ liệu nhận định" và **không gọi AI**
-  (fail-closed, contract mục 9.1).
+  (fail-closed, contract §9.1 bước 2 — áp cho từng phạm vi đơn và lượt
+  chuyên sâu cặp; batch áp từng phạm vi, không tổng hợp).
 - Lời gọi AI chạy trong worker nền (không block GUI); lỗi provider hiển thị
   bằng thông báo thân thiện từ `friendly_error()`.
 - Mỗi mục dẫn chứng bấm được → đóng dialog và nhảy tới dòng tin tương ứng
   trong bảng.
-- Dòng cảnh báo advisory **luôn hiển thị** trong dialog (chữ thường trực,
-  không chỉ trong tooltip).
+- Dòng cảnh báo advisory **luôn hiển thị** trong dialog, **ở mọi tab** (chữ
+  thường trực, không chỉ trong tooltip).
 
 ### Nguyên tắc
 
@@ -1722,4 +1786,7 @@ Lịch sử nhận định của phạm vi này (mới nhất trước)
   file, thêm dialog dán mã nguồn **2 pha (bảng xem trước + xác nhận)** —
   **IMPLEMENTED** (ca "Nguồn dán FF" nghiệm thu 25/09/2026). Panel "Sự kiện
   đang thiếu actual" đã có từ ca đó bị **GỠ** (Owner quyết 26/09/2026 — bỏ
-  tính năng khỏi hệ thống, theo contract §13).
+  tính năng khỏi hệ thống, theo contract §13). **Đợt 5 (28/09/2026):** cửa sổ
+  AI nhận định thiết kế lại **3 tab** (Tổng quan 11 tài sản + batch, Chi tiết,
+  Cặp forex) — **IMPLEMENTED** (nghiệm thu 29/09/2026), thay thế hoàn toàn thiết
+  kế 1 combo cũ (contract §9.3, §13 đợt 5).

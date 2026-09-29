@@ -82,7 +82,7 @@ seed/stale/schema cũ/thiếu bằng chứng bị bỏ qua; loader có thể dù
 fallback hợp lệ và chỉ flat khi không còn candidate eligible. Runner calibration
 không được tự bật flag.
 
-### 3.5 Tin tức & Quản lý tin — IMPLEMENTED (tầng dữ liệu nghiệm thu 23/09/2026; sửa đổi ca "Nguồn dán FF" IMPLEMENTED — nghiệm thu 25/09/2026)
+### 3.5 Tin tức & Quản lý tin — IMPLEMENTED (tầng dữ liệu nghiệm thu 23/09/2026; sửa đổi ca "Nguồn dán FF" IMPLEMENTED — nghiệm thu 25/09/2026; đợt 5 IMPLEMENTED — nghiệm thu 29/09/2026)
 
 Tính năng tầng dữ liệu tin tức theo contract duy nhất
 [`news/news-architecture.md`](../news/news-architecture.md):
@@ -105,11 +105,24 @@ Tính năng tầng dữ liệu tin tức theo contract duy nhất
   được → xác nhận cập nhật — kênh duy nhất của lịch kinh tế + actual). (Xuất/nhập
   file CSV-JSON đã bãi bỏ đợt 3 — sao lưu thuộc về tệp database; bù ngày app
   không chạy bằng dán mã nguồn trang của ngày cũ.)
-- **AI nhận định xu hướng:** cửa sổ trong màn Quản lý tin gọi AI đánh giá xu
-  hướng ngắn hạn/trung hạn/dài hạn của cặp tiền từ tin trong database. Kết
-  quả **chỉ để người dùng tham khảo — không tham gia bất cứ quy trình nào**
-  (không chấm điểm, không gate, không thực thi lệnh, không alert). Quyết
-  định Owner 20/09/2026, thay đổi cần quyết định mới tường minh.
+- **Tín hiệu lợi suất trái phiếu (đợt 5):** bảng `bond_yields` + bộ sản xuất
+  `bond_yield_producer` thu lợi suất USD 2Y/10Y + breakeven 10Y (FRED, kênh dự
+  phòng Yahoo — giai đoạn 1 chỉ USD). Dữ liệu này dùng làm **ngữ cảnh** cho AI
+  và hiển thị ở tab Chi tiết (lãi suất điều hành + trend, 2Y/10Y + biến động,
+  spread 2Y10Y, real yield).
+- **AI nhận định xu hướng theo từng tài sản (đợt 5):** cửa sổ trong màn Quản lý
+  tin gọi AI đánh giá xu hướng ngắn/trung/dài hạn của **từng đồng/tài sản**
+  (11 phạm vi — AUD CAD CHF EUR GBP JPY NZD USD XAU XAG BTC, rút từ
+  `SUPPORTED_SYMBOLS`); nút **"Nhận định tất cả"** chạy **tuần tự 11 phạm vi**
+  (một phạm vi lỗi hoặc thiếu dữ liệu không dừng lượt); nút **"Nhận định chuyên
+  sâu cặp này"** giữ luồng cặp tiền. Cửa sổ có **3 tab**: Tổng quan (lưới kết
+  quả mới nhất mỗi tài sản + nút nhận định tất cả), Chi tiết (3 thẻ chân trời,
+  lập luận, dẫn chứng bấm được, lịch sử, **dòng ngữ cảnh lãi suất + lợi suất**),
+  Cặp forex (**bias suy ra** từ hai nhận định thành phần — không phải verdict
+  riêng của AI, không lưu database). Kết quả **chỉ để người dùng tham khảo —
+  không tham gia bất cứ quy trình nào** (không chấm điểm, không gate, không thực
+  thi lệnh, không alert). Quyết định Owner 20/09/2026 + 28/09/2026 (mô hình
+  theo tài sản + batch + bias cặp), thay đổi cần quyết định mới tường minh.
 - Mọi con số vận hành (chu kỳ thu tin, ân hạn, cửa sổ AI...) nằm trong một
   tệp chính sách duy nhất `config/news_policy.json`; giá trị đã được Owner
   chốt trong contract.

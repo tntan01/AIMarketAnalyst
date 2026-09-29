@@ -7,7 +7,7 @@
 ; platform locale encoding (cp1252 on Windows), so non-ASCII bytes break the tool.
 ;
 ; Scope is the MINIMAL News-domain scope (B6 - legacy violations of older code are not
-; pulled into this gate): only the six core/ modules of the domain are sources, and the
+; pulled into this gate): only the core/ modules of the domain are sources, and the
 ; contract forbids them from importing the outer layers or PyQt6.
 
 [importlinter]
@@ -22,10 +22,11 @@ include_external_packages = True
 [importlinter:contract:news-core-independence]
 name = News core must not depend on outer layers or PyQt6
 type = forbidden
-; The six core/ modules of the News domain (news_policy, news_models, news_freshness,
-; rate_trend, trend_prompt_builder, trend_verdict_parser). Listed explicitly: this tool
-; only accepts whole-segment wildcards, and core.* would pull legacy core modules
-; (which do import services/ui) into the gate, breaking the minimal scope required by B6.
+; The core/ modules of the News domain (news_policy, news_models, news_freshness,
+; rate_trend, trend_prompt_builder, trend_verdict_parser, yield_context, pair_bias).
+; Listed explicitly: this tool only accepts whole-segment wildcards, and core.* would
+; pull legacy core modules (which do import services/ui) into the gate, breaking the
+; minimal scope required by B6.
 source_modules =
     core.news_policy
     core.news_models
@@ -33,6 +34,8 @@ source_modules =
     core.rate_trend
     core.trend_prompt_builder
     core.trend_verdict_parser
+    core.yield_context
+    core.pair_bias
 forbidden_modules =
     services
     ui

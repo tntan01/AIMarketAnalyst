@@ -201,6 +201,24 @@ Không còn kill switch phần mềm. Dừng khẩn cấp: tắt feature flag
 (áp dụng ngay, không cần restart), đóng lệnh ở terminal broker hoặc ngắt kết
 nối MT5. Đây là lựa chọn có chủ đích của owner.
 
+## Tin tức — tín hiệu lợi suất trái phiếu + AI nhận định 11 tài sản (29/09/2026)
+
+Miền Tin tức (tầng dữ liệu) đã mở rộng theo **đợt 5** (contract
+[`news-architecture.md`](../news/news-architecture.md) §4.7/§6.6/§9.3;
+**IMPLEMENTED** — nghiệm thu 29/09/2026):
+
+- **Tín hiệu `bond_yields`** (bảng mới trong `news.db`): lợi suất trái phiếu USD
+  2Y/10Y + breakeven 10Y do `bond_yield_producer` thu (FRED `DGS2`/`DGS10`/`T10YIE`
+  → Yahoo `2YY=F`/`^TNX` fallback; giai đoạn 1 chỉ USD). Cadence là khóa chính sách
+  `bond_yield_refresh_hours` trong `config/news_policy.json` — tài liệu trỏ về khóa,
+  không chép giá trị (D5).
+- **AI nhận định theo 11 tài sản** (AUD CAD CHF EUR GBP JPY NZD USD XAU XAG BTC,
+  rút từ `SUPPORTED_SYMBOLS`): cửa sổ AI nhận định **3 tab** — Tổng quan (lưới chỉ
+  đọc + batch "Nhận định tất cả" 11 lời gọi tuần tự, một phạm vi lỗi không dừng lô),
+  Chi tiết (3 thẻ chân trời + dòng ngữ cảnh lãi suất/lợi suất), Cặp forex (2 verdict
+  thành phần + bias suy ra — không persist). Verdict vẫn **advisory-only** — không
+  tham gia scoring/gate/alert (contract §9.2; cổng E2 cưỡng chế).
+
 ## Khôi phục cấu hình
 
 Bản sao cấu hình trước thay đổi (thời điểm 24/07/2026) được lưu tại:

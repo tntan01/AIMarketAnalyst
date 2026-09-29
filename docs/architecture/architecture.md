@@ -96,18 +96,21 @@ MT5 / Yahoo / ForexFactory ──► services (data) ──► core (phân tích
 - `services/yahoo_chart_fetcher.py` — Yahoo fallback
 - `services/forex_factory_client.py` + `macro_*` — tin tức/vĩ mô
 
-**Tin tức (tầng dữ liệu) — IMPLEMENTED, READY-FOR-CONNECT (nghiệm thu 23/09/2026; contract [`news/news-architecture.md`](../news/news-architecture.md)) — sửa đổi đợt 3+4 (24/09/2026, IMPLEMENTED — ca "Nguồn dán FF" nghiệm thu 25/09/2026): kênh ForexFactory chuyển sang dán mã nguồn trang, bỏ thu tự động FF + xuất/nhập file**
+**Tin tức (tầng dữ liệu) — IMPLEMENTED, READY-FOR-CONNECT (nghiệm thu 23/09/2026; contract [`news/news-architecture.md`](../news/news-architecture.md)) — sửa đổi đợt 3+4 (24/09/2026, IMPLEMENTED — ca "Nguồn dán FF" nghiệm thu 25/09/2026): kênh ForexFactory chuyển sang dán mã nguồn trang, bỏ thu tự động FF + xuất/nhập file — sửa đổi đợt 5 (28/09/2026, IMPLEMENTED — nghiệm thu 29/09/2026, lô B1–B5): tín hiệu lợi suất trái phiếu `bond_yields` + AI nhận định theo 11 tài sản + khối Market context trong prompt AI (contract §4.7, §6.6, §9.3, §13 đợt 5)**
 - `services/news_repository.py` — điểm truy cập duy nhất (đọc + ghi) vào `news.db`
 - `services/ff_source_parser.py` — bóc tách mã nguồn trang ForexFactory do người dùng dán (JSON `calendarComponentStates` → sự kiện lịch kinh tế + actual + lãi suất `ff_html`) — **kênh duy nhất** của lịch kinh tế/actual, không mạng (contract §6.1 đợt 3; thay thế các đường fetch của `ff_calendar_producer` — gỡ tại ca "Nguồn dán FF")
 - `services/news_producers/rss_producer.py` — bộ sản xuất tin văn bản (headline, phát biểu chính thức) — tự động định kỳ
 - `services/news_producers/fred_rate_producer.py` — bộ sản xuất quan sát lãi suất FRED (API + config fallback; kênh FF-HTML qua mạng bị gỡ đợt 3 — lãi suất `ff_html` đến từ parser dán nguồn; hấp thụ `interest_rate_service.py` — file cũ bị xóa tại đấu nối vĩ mô)
-- `controllers/news_controller.py` — điều phối lịch producer, tiếp nhận nhập tay + mã nguồn trang FF dán, lời gọi AI nhận định
-- `core/news_models.py` — mô hình miền có kiểu của miền Tin tức (`CalendarEvent`, `NewsItem`, `RateObservation`, `TrendVerdict`, `IngestRun`, `StoreState`)
+- `services/news_producers/bond_yield_producer.py` (đợt 5 — IMPLEMENTED) — bộ sản xuất quan sát lợi suất trái phiếu (FRED `DGS2`/`DGS10`/`T10YIE` → Yahoo `2YY=F`/`^TNX` fallback; giai đoạn 1 chỉ USD) — ghi bảng `bond_yields`
+- `controllers/news_controller.py` — điều phối lịch producer, tiếp nhận nhập tay + mã nguồn trang FF dán, lời gọi AI nhận định (đợt 5: thêm batch "Nhận định tất cả" 11 phạm vi)
+- `core/news_models.py` — mô hình miền có kiểu của miền Tin tức (`CalendarEvent`, `NewsItem`, `RateObservation`, `BondYieldObservation` — đợt 5, `TrendVerdict`, `IngestRun`, `StoreState`)
 - `core/news_freshness.py` — phân loại trạng thái dữ liệu (`scheduled/released/stale`, `fresh/degraded/unavailable`)
 - `core/rate_trend.py` — dẫn xuất trend lãi suất (hike/cut/hold) từ hai quan sát gần nhất
-- `core/trend_prompt_builder.py` + `core/trend_verdict_parser.py` — contract AI nhận định xu hướng (chỉ tư vấn, không tham gia bất cứ quy trình nào)
+- `core/yield_context.py` (đợt 5 — IMPLEMENTED) — dẫn xuất delta/spread 2Y10Y/real yield từ các quan sát lợi suất gần nhất
+- `core/pair_bias.py` (đợt 5 — IMPLEMENTED) — dẫn xuất bias cặp forex từ hai verdict tài sản đơn (chỉ hiển thị, không persist)
+- `core/trend_prompt_builder.py` + `core/trend_verdict_parser.py` — contract AI nhận định xu hướng (chỉ tư vấn, không tham gia bất cứ quy trình nào; đợt 5: builder thêm khối Market context — lãi suất + trend, lợi suất, real yield — context không tính vào floor `ai_min_items`)
 - `ui/screens/news_screen.py` — màn Quản lý tin
-- Chính sách vận hành: `config/news_policy.json` — nguồn duy nhất của mọi con số vận hành miền này (tài liệu trỏ về khóa, không chép giá trị — D5)
+- Chính sách vận hành: `config/news_policy.json` — nguồn duy nhất của mọi con số vận hành miền này (tài liệu trỏ về khóa, không chép giá trị — D5; đợt 5: thêm khóa `bond_yield_refresh_hours`)
 
 Nhóm module Tin tức thay thế dần `services/news_service.py` và
 `services/forex_factory_client.py`; hai file cũ bị xóa khi di trú xong (ngoại lệ
@@ -421,7 +424,7 @@ Các màn hình chính trong ứng dụng:
 * `journal_screen.py`: Nhật ký giao dịch; tổng quan, thống kê và bộ lọc.
 * `journal_detail_screen.py`: Chi tiết một giao dịch trong nhật ký.
 * `orders_screen.py`: Quản lý lệnh/vị thế đang mở và trạng thái Order Management (SL/BE/trailing).
-* `news_screen.py`: Quản lý tin — **IMPLEMENTED** (ca Tin tức, Bước 3; **sửa đổi ca "Nguồn dán FF" IMPLEMENTED 25/09/2026**): gỡ 2 nút fetch ForexFactory + xuất/nhập file CSV-JSON, toolbar **[ Dán mã nguồn trang | Nhập tin | AI nhận định xu hướng ]** với dialog dán mã nguồn **2 pha** (bảng xem trước chỉ sửa được cột actual + Cập nhật/Hủy, xác nhận trước khi ghi). Contract dữ liệu: [`news/news-architecture.md`](../news/news-architecture.md); thiết kế màn hình: `ui/screen_design.md`.
+* `news_screen.py`: Quản lý tin — **IMPLEMENTED** (ca Tin tức, Bước 3; **sửa đổi ca "Nguồn dán FF" IMPLEMENTED 25/09/2026**): gỡ 2 nút fetch ForexFactory + xuất/nhập file CSV-JSON, toolbar **[ Dán mã nguồn trang | Nhập tin | AI nhận định xu hướng ]** với dialog dán mã nguồn **2 pha** (bảng xem trước chỉ sửa được cột actual + Cập nhật/Hủy, xác nhận trước khi ghi). **Đợt 5 (28/09/2026, IMPLEMENTED — nghiệm thu 29/09/2026):** cửa sổ AI nhận định thiết kế lại **3 tab** (Tổng quan 11 tài sản + batch "Nhận định tất cả", Chi tiết kèm dòng ngữ cảnh lãi suất/lợi suất, Cặp forex với bias suy ra). Contract dữ liệu: [`news/news-architecture.md`](../news/news-architecture.md); thiết kế màn hình: `ui/screen_design.md`.
 * `settings_screen.py`: Cài đặt AI, dữ liệu MT5, giao dịch, hiển thị và nâng cao; gồm kill-switch VIX pair-aware mặc định OFF.
 
 Nếu cần màn hình hoặc widget chart riêng, đặt dưới dạng component/view phụ và dùng `QWebEngineView`; không thay thế màn hình kết quả phân tích.

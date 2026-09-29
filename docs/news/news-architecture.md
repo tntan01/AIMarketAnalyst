@@ -4,7 +4,10 @@
 > Owner duyệt 24/09/2026:** ForexFactory chuyển sang kênh **dán mã nguồn trang
 > (page source) do người dùng cung cấp** — bỏ mọi đường thu tự động của FF;
 > **bỏ xuất/nhập file CSV-JSON**; RSS và FRED giữ tự động định kỳ (§6.1, §10,
-> §13 đợt 3). Tài liệu này
+> §13 đợt 3). **Sửa đổi đợt 5 — Owner duyệt 28/09/2026:** thêm tín hiệu lợi
+> suất trái phiếu `bond_yields` (§4.7, §6.6); khối "Market context" trong
+> prompt AI (§9.1, §9.3); mô hình phạm vi nhận định **11 tài sản** + chế độ
+> batch "Nhận định tất cả" + bias cặp forex suy ra (§9.3, §13 đợt 5). Tài liệu này
 > là đặc tả thẩm quyền **duy nhất** của miền Tin tức (V2): code phải đúng từng
 > hành vi mô tả ở đây; lệch tài liệu ↔ code = defect phải đóng. Toàn bộ giá
 > trị chính sách đã được Owner chốt (mục 7, 13) — không còn điểm `OPEN`.
@@ -38,7 +41,9 @@
    ứng — mục 12), cộng với màn **Quản lý tin** (xem/nhập tay/dán mã nguồn
    trang).
 4. Màn Quản lý tin có cửa sổ nhỏ gọi **AI nhận định xu hướng ngắn hạn/trung
-   hạn/dài hạn** của cặp tiền — kết quả **chỉ tư vấn cho người dùng**, không
+   hạn/dài hạn** của **từng đồng tiền/tài sản** (đợt 5 — 28/09/2026: 11 phạm
+   vi `currency` — §9.3; trước đó là cặp tiền; chuyên sâu cặp giữ theo yêu
+   cầu) — kết quả **chỉ tư vấn cho người dùng**, không
    là đầu vào của scoring, gate, guard thực thi hay alert (quyết định chốt
    20/09/2026).
 5. Riêng ForexFactory: **không thu tự động dưới bất kỳ hình thức nào** —
@@ -55,7 +60,9 @@
 | Sự kiện lịch kinh tế (calendar event) | Một tin có lịch công bố trước từ ForexFactory: giờ, đồng tiền, tên, mức tác động, dự báo/kỳ trước/thực tế |
 | Tin văn bản (news item) | Headline, phát biểu chính thức hoặc ghi chú nhập tay — có giờ đăng, tiêu đề, nội dung/tóm tắt, đồng tiền liên quan |
 | Quan sát lãi suất (rate observation) | Một lần ghi nhận lãi suất điều hành của một đồng tiền, kèm nguồn và ngày quan sát |
+| Quan sát lợi suất trái phiếu (bond yield observation) | Một lần ghi nhận lợi suất trái phiếu chính phủ của một đồng tiền theo kỳ hạn (2 năm/10 năm) hoặc breakeven lạm phát 10 năm, kèm nguồn và ngày quan sát (đợt 5 — §4.7) |
 | Nhận định xu hướng (trend verdict) | Kết quả AI đánh giá xu hướng một cặp tiền/đồng tiền theo một chân trời thời gian (horizon) |
+| Bias cặp suy ra (derived pair bias) | Giá trị hiển thị suy ra từ hai verdict tài sản đơn của một cặp forex — không gọi AI, không persist (đợt 5 — §9.3) |
 | Bộ sản xuất (producer) | Mô-đun duy nhất được phép GHI một loại tín hiệu vào database (S6) |
 | Bên tiêu thụ (consumer) | Mô-đun chỉ ĐỌC database qua giao diện kho truy cập |
 | Kho tin tức (`NewsRepository`) | Điểm truy cập database duy nhất (đọc + ghi) của miền |
@@ -77,9 +84,12 @@ BÊN GHI (chỉ GHI)                             DATABASE                      B
 Người dùng dán mã nguồn trang FF        ───►  news_events              ───►  Dashboard (đặc tả: screen_design.md — viết sau)
  (qua NewsController                          news_items               ───►  Chấm điểm vĩ mô/gate (đặc tả: macro_score_architecture.md — viết sau)
   + services/ff_source_parser.py)       ───►  interest_rates           ───►  Màn Quản lý tin (xem/nhập tay/dán mã nguồn)
-rss_producer (Google News, FXStreet,          ai_trend_verdicts        ───►  Cửa sổ AI nhận định xu hướng (đọc lịch sử verdict)
- Investing)                             ───►  ingest_runs
-fred_rate_producer (FRED API + config fallback)
+rss_producer (Google News, FXStreet,          bond_yields (đợt 5)      ───►  Cửa sổ AI nhận định xu hướng (đọc lịch sử verdict)
+ Investing)                             ───►  ai_trend_verdicts
+fred_rate_producer (FRED API + config          ingest_runs
+ fallback)
+bond_yield_producer (FRED DGS2/DGS10/T10YIE
+ → Yahoo fallback — đợt 5)
 Người dùng nhập tay (form, qua NewsController)
 
 Mọi đọc/ghi đi qua NewsRepository — điểm truy cập database duy nhất (S1).
@@ -94,8 +104,8 @@ ui → controllers → core ← services (repository, producer, parser)
 
 | Lớp | Mô-đun của miền này | Vai trò |
 |---|---|---|
-| `services/` | `news_repository.py`; `ff_source_parser.py`; `news_producers/rss_producer.py`; `news_producers/fred_rate_producer.py` | Vào/ra + tầng chống ăn mòn (C2): biên dịch dữ liệu thô nguồn ngoài (XML RSS, JSON feed FRED, **mã nguồn trang FF người dùng dán**) → mô hình miền có tên ngay tại biên; dữ liệu thô không tồn tại ngoài bộ chuyển đổi |
-| `core/` | `news_policy.py`; `news_models.py`; `news_freshness.py`; `rate_trend.py`; `trend_prompt_builder.py`; `trend_verdict_parser.py` | Logic thuần: nạp và xác thực chính sách miền, mô hình miền, phân loại trạng thái dữ liệu, dẫn xuất trend lãi suất, dựng prompt, parse verdict. Không vào/ra, không chuỗi hiển thị (L2, L3). Mô hình miền **bắt buộc đặt trong `core/`** vì L1 cấm `Core → Services` (hàm thuần `core/` nhận mô hình làm tham số) |
+| `services/` | `news_repository.py`; `ff_source_parser.py`; `news_producers/rss_producer.py`; `news_producers/fred_rate_producer.py`; `news_producers/bond_yield_producer.py` (đợt 5) | Vào/ra + tầng chống ăn mòn (C2): biên dịch dữ liệu thô nguồn ngoài (XML RSS, JSON feed FRED, **mã nguồn trang FF người dùng dán**) → mô hình miền có tên ngay tại biên; dữ liệu thô không tồn tại ngoài bộ chuyển đổi |
+| `core/` | `news_policy.py`; `news_models.py`; `news_freshness.py`; `rate_trend.py`; `trend_prompt_builder.py`; `trend_verdict_parser.py`; `yield_context.py` (đợt 5); `pair_bias.py` (đợt 5) | Logic thuần: nạp và xác thực chính sách miền, mô hình miền, phân loại trạng thái dữ liệu, dẫn xuất trend lãi suất, dẫn xuất delta/spread/real yield lợi suất trái phiếu (đợt 5), dẫn xuất bias cặp từ hai verdict (đợt 5), dựng prompt, parse verdict. Không vào/ra, không chuỗi hiển thị (L2, L3). Mô hình miền **bắt buộc đặt trong `core/`** vì L1 cấm `Core → Services` (hàm thuần `core/` nhận mô hình làm tham số) |
 | `controllers/` | `news_controller.py` | Điều phối: lên lịch producer, phục vụ truy vấn cho bên tiêu thụ, tiếp nhận nhập tay **và mã nguồn trang FF dán** (giao parser, ghi qua repository), điều phối gọi AI trong worker |
 | `workers/` | worker nền cho producer poll + lời gọi AI | Bao bọc concurrency, không logic nghiệp vụ |
 | `ui/` | màn Quản lý tin, mục tin Dashboard | Chỉ hiển thị dữ liệu miền đã định dạng (đặc tả ở tài liệu UI — ngoài phạm vi tài liệu này) |
@@ -224,7 +234,7 @@ và `NewsRepository` chỉ gọi hàm này, không tự tính (L1 — tính toá
 | Cột | Kiểu | Ghi chú |
 |---|---|---|
 | `id` | INTEGER PK | |
-| `producer` | TEXT enum | `ff_crawler` \| `rss` \| `fred` \| `user` \| `on_demand_lookup` — chuỗi đóng băng (V3(a)); từ đợt 3 (24/09/2026): `ff_crawler`, `on_demand_lookup` là giá trị lịch sử, không phát sinh thêm; **lượt dán mã nguồn trang ghi `user`** |
+| `producer` | TEXT enum | `ff_crawler` \| `rss` \| `fred` \| `user` \| `on_demand_lookup` \| `bond_yield` — chuỗi đóng băng (V3(a)); từ đợt 3 (24/09/2026): `ff_crawler`, `on_demand_lookup` là giá trị lịch sử, không phát sinh thêm; **lượt dán mã nguồn trang ghi `user`**; từ đợt 5 (28/09/2026): `bond_yield` là giá trị mới (lượt refresh của `bond_yield_producer` — §6.6), không đổi giá trị đã persist |
 | `started_at` / `finished_at` | TEXT | |
 | `status` | TEXT enum | `ok` \| `partial` \| `failed` |
 | `items_written` | INTEGER | số bản ghi upsert |
@@ -233,6 +243,29 @@ và `NewsRepository` chỉ gọi hàm này, không tự tính (L1 — tính toá
 **Retention (Owner chốt 20/09/2026):** giá trị vận hành nằm ở khóa
 `ingest_runs_retention_days` của tệp chính sách (mục 7); dọn tự động khi
 khởi động app. Chỉ áp cho log vận hành; tin tức và verdict không bị xóa.
+
+### 4.7. Bảng `bond_yields` — quan sát lợi suất trái phiếu (đợt 5 — Owner duyệt 28/09/2026)
+
+| Cột | Kiểu | Ghi chú |
+|---|---|---|
+| `id` | INTEGER PK | |
+| `currency` | TEXT | giai đoạn 1: `USD` (phạm vi phủ — B2/§13 đợt 5); mở rộng từng đồng tiền cần danh mục series được Owner duyệt riêng |
+| `maturity` | TEXT enum | `2y` \| `10y` \| `be10y` — chuỗi đóng băng từ lúc tạo (V3(a)); `be10y` = breakeven lạm phát 10 năm (series FRED `T10YIE`) — đầu vào tính real yield |
+| `value` | REAL | %/năm |
+| `observed_at` | TEXT | ngày quan sát của số liệu |
+| `source` | TEXT enum | `fred` \| `yahoo` — chuỗi đóng băng từ lúc tạo (V3(a)); `yahoo` chỉ phát sinh cho `2y`/`10y` (kênh dự phòng — §6.6) |
+| `fetched_at` | TEXT | |
+| UNIQUE | | `(currency, maturity, observed_at, source)` |
+
+Index: `(currency, maturity, observed_at)`.
+
+Delta trong cửa sổ, spread 2y–10y và **real yield 10y (= `10y` − `be10y`)**
+**không lưu** — dẫn xuất lúc đọc. Chủ sở hữu phép dẫn xuất là
+**`core/yield_context.py`** (hàm thuần, khuôn `rate_trend.py` §4.4 — danh
+tính M5: "Sở hữu tri thức dẫn xuất delta/spread/real yield từ các quan sát lợi
+suất gần nhất"); `bond_yield_producer` và `NewsRepository` chỉ gọi hàm này,
+không tự tính (L1 — tính toán thuộc `core/`, `services/` cấm chứa công thức).
+Thiếu `be10y` → real yield `None`, không suy đoán (B4).
 
 ## 5. Mô hình miền có kiểu (C2, C3)
 
@@ -245,9 +278,10 @@ dataclass tường minh, **không dùng dict không kiểu**:
 | `CalendarEvent` | `news_events` | thời gian, currency, title, impact, forecast/previous/actual, status, source, dedupe_key |
 | `NewsItem` | `news_items` | kind, source, title, content, url, published_utc, currencies, impact_hint, speaker_role, excluded |
 | `RateObservation` | `interest_rates` | currency, rate, observed_at, source |
+| `BondYieldObservation` | `bond_yields` (đợt 5) | currency, maturity, value, observed_at, source |
 | `TrendVerdict` | `ai_trend_verdicts` | scope, horizon, direction, confidence, rationale, evidence ids, snapshot, provider/model, prompt_hash |
 | `IngestRun` | `ingest_runs` | producer, mốc thời gian, status, items_written, lỗi |
-| `StoreState` | — (dẫn xuất từ `ingest_runs` + `news_freshness`) | trạng thái `fresh`/`degraded`/`unavailable` từng tín hiệu (`events`, `items`, `rates`) + giờ ingest thành công cuối |
+| `StoreState` | — (dẫn xuất từ `ingest_runs` + `news_freshness`) | trạng thái `fresh`/`degraded`/`unavailable` từng tín hiệu (`events`, `items`, `rates`, `yields` — đợt 5) + giờ ingest thành công cuối |
 
 Bộ chuyển đổi nguồn (trong từng producer và trong `ff_source_parser.py`) là
 nơi **duy nhất** nhìn thấy dữ liệu thô (JSON feed FRED, XML RSS, **mã nguồn
@@ -261,6 +295,7 @@ cấp/khuôn dạng nguồn = thay bộ chuyển đổi, giữ nguyên mô hình
 | Sự kiện lịch kinh tế + actual (ForexFactory) | đường dán mã nguồn: `news_controller` (tiếp nhận) + `services/ff_source_parser.py` (bóc tách) | Parser: Sở hữu tri thức chuyển mã nguồn trang ForexFactory thành mô hình miền có kiểu |
 | Headline + phát biểu chính thức | `rss_producer` | Sở hữu tri thức thu thập tin văn bản công khai thành `NewsItem` |
 | Quan sát lãi suất | `fred_rate_producer` (FRED) | Sở hữu tri thức thu thập lãi suất điều hành 8 đồng tiền thành `RateObservation` |
+| Quan sát lợi suất trái phiếu (đợt 5) | `bond_yield_producer` (FRED → Yahoo fallback) | Sở hữu tri thức thu thập lợi suất trái phiếu 2 năm/10 năm + breakeven 10 năm thành `BondYieldObservation` |
 | Ghi chú nhập tay | `news_controller` (đường nhập tay) | Sở hữu tri thức tiếp nhận và xác thực tin người dùng nhập |
 | Nhận định xu hướng AI | `news_controller` (đường AI, ghi qua repository) | Sở hữu điều phối lời gọi AI; thẩm quyền nội dung verdict thuộc parser (mục 9) |
 
@@ -423,6 +458,32 @@ không sinh chuỗi hiển thị):
   liệu miền vĩ mô quy định** (mục 12) — tài liệu này chỉ sở hữu việc phân
   loại và công bố trạng thái.
 
+### 6.6. `bond_yield_producer` (đợt 5 — Owner duyệt 28/09/2026)
+
+File mới `services/news_producers/bond_yield_producer.py` — chủ sở hữu duy
+nhất của tín hiệu lợi suất trái phiếu (S6). **Chuỗi nguồn mỗi kỳ hạn:
+FRED → Yahoo fallback** (B4/§13 đợt 5):
+
+- **FRED (kênh chính):** series `DGS2` (2 năm), `DGS10` (10 năm), `T10YIE`
+  (breakeven 10 năm) — dùng API key + endpoint kế thừa `fred_rate_producer`
+  (`FRED_OBSERVATIONS_URL`); series map khai báo trong file producer theo
+  khuôn `FRED_SERIES` (§6.3), không tạo config mới.
+- **Yahoo (kênh dự phòng):** ticker `2YY=F` (2 năm) / `^TNX` (10 năm) — kế
+  thừa runtime hiện hành của `market_data_service` (B5 — không bịa mã
+  ticker). Kênh Yahoo chỉ phục vụ `2y`/`10y`; **`be10y` không có kênh dự
+  phòng** (chỉ FRED).
+- **Phạm vi phủ giai đoạn 1: USD** (đủ 2y/10y/be10y — dùng làm ngữ cảnh toàn
+  cục, §9.3). Mở rộng đồng tiền khác cần danh mục series FRED được Owner duyệt
+  riêng (coverage không đồng đều — không suy đoán series).
+
+Một lượt refresh = một dòng `ingest_runs` (`producer=bond_yield`, §4.6); chu
+kỳ theo khóa `bond_yield_refresh_hours` (§7). **Trend/delta/spread/real
+yield không suy diễn trong producer** — bên tiêu thụ gọi `core/yield_context.py`
+khi đọc (khuôn §4.4/§4.7). Kênh FRED không giao được → dùng bản ghi kênh
+Yahoo cho kỳ hạn tương ứng; cả hai kênh chết → run `failed` (B4 — không im
+lặng lạc quan). Producer không ghi đè bản ghi `(currency, maturity,
+observed_at, source)` đã có — chống trùng bằng UNIQUE §4.7.
+
 ## 7. Chính sách có phiên bản (S4, B5, D5)
 
 Mọi con số vận hành của miền nằm trong **một** tệp chính sách
@@ -434,6 +495,7 @@ máy đọc, V3(a)). Tài liệu này trỏ về khóa, **không chép giá tr�
 | `rss_poll_interval_minutes` | chu kỳ thăm dò (poll) tin văn bản | **15** |
 | `rss_window_hours` | cửa sổ thu tin văn bản mỗi lượt | **24** (kế thừa runtime hiện hành — bằng chứng: đang chạy) |
 | `fred_refresh_hours` | chu kỳ fetch lãi suất | giữ giá trị hiện hành của `interest_rate_service` (bằng chứng: đang chạy) |
+| `bond_yield_refresh_hours` (đợt 5) | chu kỳ refresh lợi suất trái phiếu | **= giá trị khóa `fred_refresh_hours` hiện hành** (Owner chốt 28/09/2026 — không sinh số mới) |
 | `event_stale_grace_minutes` | ân hạn trước khi `stale` | **15** |
 | `ingest_freshness_hours` | tuổi tối đa lượt ingest thành công trước khi `degraded` | **2** |
 | `ingest_runs_retention_days` | retention log vận hành | **30** |
@@ -460,6 +522,7 @@ ra ổn định; đổi cách lưu trữ bên trong không buộc bên tiêu th�
 
 **Ghi (chỉ producer/controller gọi):** `upsert_events(list[CalendarEvent])`,
 `upsert_items(list[NewsItem])`, `add_rate_observations(...)`,
+`add_bond_observations(...)` (đợt 5),
 `add_verdicts(list[TrendVerdict])`, `record_run(IngestRun)`,
 `set_excluded(item_id, bool)`, `delete_user_note(item_id)`,
 `purge_expired_runs()` — tất cả trả số bản ghi đã ghi/lỗi có kiểu.
@@ -471,7 +534,8 @@ ra ổn định; đổi cách lưu trữ bên trong không buộc bên tiêu th�
 | `events_in_range(from_utc, to_utc, currencies=None, include_non_impact=True)` | sự kiện theo cửa sổ, đã phân loại `status` |
 | `items_in_range(from_utc, to_utc=None, kinds=None, currencies=None, exclude_flagged=True)` | tin văn bản; mặc định bỏ tin `excluded=1` |
 | `latest_rates(currencies)` | quan sát gần nhất mỗi đồng tiền + trend dẫn xuất |
-| `store_state()` | trả `StoreState` — mô hình có kiểu (C3, cấm dict trần qua ranh giới): trạng thái `fresh`/`degraded`/`unavailable` cho từng tín hiệu (`events`, `items`, `rates`) + giờ ingest thành công cuối mỗi tín hiệu (từ `ingest_runs`) |
+| `latest_bond_yields(currencies)` (đợt 5) | quan sát gần nhất mỗi `(currency, maturity)` + dẫn xuất qua `core/yield_context.py`: delta trong cửa sổ, spread 2y–10y, real yield 10y |
+| `store_state()` | trả `StoreState` — mô hình có kiểu (C3, cấm dict trần qua ranh giới): trạng thái `fresh`/`degraded`/`unavailable` cho từng tín hiệu (`events`, `items`, `rates`, `yields` — đợt 5) + giờ ingest thành công cuối mỗi tín hiệu (từ `ingest_runs`) |
 | `verdicts_for(scope_type, scope_value, limit)` | lịch sử nhận định AI, mới nhất trước |
 
 **Cấm trong repository:** công thức chấm điểm, quyết định nghiệp vụ (gate),
@@ -481,15 +545,27 @@ chuỗi hiển thị — vi phạm lớp `services/` (mục 3).
 
 ### 9.1. Luồng
 
-1. Người dùng chọn phạm vi (cặp tiền hoặc đồng tiền) trong cửa sổ AI của màn
-   Quản lý tin (UI đặc tả sau — mục 12).
+1. Người dùng chọn phạm vi trong cửa sổ AI của màn Quản lý tin (UI đặc tả —
+   `screen_design.md` mục News Screen): **tài sản đơn** là chế độ mặc định
+   (đợt 5 — 11 phạm vi `currency`: AUD, CAD, CHF, EUR, GBP, JPY, NZD, USD,
+   XAU, XAG, BTC — §9.3); **cặp tiền** (`pair`) chỉ qua nút "Nhận định chuyên
+   sâu cặp" (A3 — §13 đợt 5).
 2. `NewsController` đọc qua repository: sự kiện + tin văn bản (`excluded=0`)
-   liên quan base/quote trong cửa sổ `ai_window_days`; nếu tổng < `ai_min_items`
-   → trả trạng thái `insufficient_data`, **không gọi AI** (B4).
+   liên quan đồng tiền của phạm vi trong cửa sổ `ai_window_days`; nếu tổng <
+   `ai_min_items` → trả trạng thái `insufficient_data`, **không gọi AI**
+   (B4). **Floor vẫn chỉ đếm sự kiện + tin văn bản** — khối Market context
+   (bước 3) không tính vào (C4/§13 đợt 5).
 3. `core/trend_prompt_builder.py` (thuần) dựng prompt từ tập dữ liệu đã chuẩn
    hóa: AI **chỉ nhận định trên dữ liệu được đưa vào prompt**, cấm bịa sự
    kiện/số liệu (kế thừa doctrine tin tức hiện hành). Khuôn prompt thay đổi →
-   `prompt_hash` thay đổi (provenance).
+   `prompt_hash` thay đổi (provenance). **Khối "Market context" (đợt 5 —
+   C1-C3/§13 đợt 5):** (a) lãi suất điều hành + trend hike/cut/hold của đồng
+   của phạm vi (qua `latest_rates` + `derive_rate_trend`); (b) lợi suất 2y/10y
+   + biến động trong cửa sổ + spread 2y–10y (qua `latest_bond_yields`); (c)
+   real yield 10y; (d) phạm vi XAU/XAG/BTC kèm ngữ cảnh USD (định giá bằng
+   USD). Context là **ngữ cảnh lập luận, không được dẫn chứng vào
+   `evidence_item_ids`** — hợp đồng parser giữ nguyên trạng (chỉ id sự
+   kiện/tin được dẫn chứng).
 4. Gọi `AIService.analyze()` trong worker nền (không block GUI).
 5. `core/trend_verdict_parser.py` (thuần) parse JSON 3 horizon
    (`short`/`mid`/`long` theo định nghĩa `ai_horizons`), mỗi horizon:
@@ -498,6 +574,11 @@ chuỗi hiển thị — vi phạm lớp `services/` (mục 3).
    `friendly_error()` của provider adapter; **không lưu verdict rác**.
 6. Repository lưu 3 dòng `ai_trend_verdicts` kèm `input_snapshot_json` +
    `prompt_hash`; cửa sổ hiển thị kết quả + lịch sử.
+7. **Chế độ batch "Nhận định tất cả" (đợt 5 — D1/D2/§13 đợt 5):** một worker
+   nền chạy **tuần tự** verdict cho 11 phạm vi tài sản (mỗi phạm vi đi đủ
+   bước 2–6 độc lập); một phạm vi lỗi hoặc `insufficient_data` **không dừng
+   lô** — phạm vi kế vẫn chạy; cuối lượt trả tổng kết
+   ok/insufficient/lỗi từng phạm vi cho UI hiển thị.
 
 ### 9.2. Ranh giới cứng (Owner chốt 20/09/2026)
 
@@ -510,7 +591,32 @@ Bên tiêu thụ duy nhất của `ai_trend_verdicts` là màn Quản lý tin (q
 `NewsRepository.verdicts_for`). Cơ chế cưỡng chế tự động (E2): battery có
 kiểm thử ghim — (a) không mô-đun scoring/gate/alert/producer nào import hoặc
 query `verdicts_for`/bảng verdict; (b) import-linter chặn phụ thuộc ngược vào
-`core/`; (c) parser/prompt builder được kiểm thử như hàm thuần (L2).
+`core/`; (c) parser/prompt builder được kiểm thử như hàm thuần (L2). **Từ đợt
+5:** `bond_yields` là tín hiệu dữ liệu (không phải verdict) — các bên tiêu
+thụ khác (vd vĩ mô ở đấu nối b) được đọc qua hợp đồng repository như mọi tín
+hiệu khác (S1/S6); ranh giới §9.2 chỉ áp cho `ai_trend_verdicts`.
+
+### 9.3. Mô hình phạm vi và chế độ hiển thị (đợt 5 — Owner duyệt 28/09/2026)
+
+1. **Nền tảng: nhận định theo từng tài sản.** 11 phạm vi `currency` — 8 đồng
+   chính (AUD, CAD, CHF, EUR, GBP, JPY, NZD, USD) + XAU + XAG + BTC — rút từ
+   `SUPPORTED_SYMBOLS`, không bịa danh sách (B5). Căn cứ: dữ liệu miền gắn
+   theo đồng đơn (§4.2 `currency`, §4.3 `currencies_json`, §4.4); nhận định
+   từng cặp lặp lại dữ liệu (USD xuất hiện trong ~15 cặp), tốn lời gọi AI và
+   dễ mâu thuẫn giữa các cặp (A1/§13 đợt 5).
+2. **Cặp forex = lớp suy ra trên UI.** Hai verdict thành phần hiển thị cạnh
+   nhau + một dòng bias suy ra từ hàm thuần **`core/pair_bias.py`** (đầu vào
+   2 verdict → enum `bullish`/`bearish`/`neutral`/`unclear`; trả enum, không
+   trả chuỗi hiển thị — L3; UI không tự tính — L1). Bias suy ra **không gọi
+   AI, không ghi `ai_trend_verdicts`** (A4/§13 đợt 5 — verdict là của AI,
+   §9.2); hiển thị ghi nhãn "suy ra từ nhận định từng đồng".
+3. **Chuyên sâu cặp theo yêu cầu:** nút riêng gọi đúng luồng §9.1 với
+   `scope_type=pair` (hợp tin 2 đồng của cặp — hành vi hiện hành giữ
+   nguyên).
+4. **Ngữ cảnh scope XAU/XAG/BTC:** kèm dữ kiện USD (lãi suất + trend, lợi
+   suất, real yield) vì định giá bằng USD (C3/§13 đợt 5).
+5. **Chi phí batch:** "Nhận định tất cả" = 11 lời gọi AI mỗi lượt bấm (D1),
+   chạy tuần tự — một phạm vi lỗi không dừng lô (D2).
 
 ## 10. Provenance và nhập mã nguồn trang FF
 
@@ -537,6 +643,8 @@ query `verdicts_for`/bảng verdict; (b) import-linter chặn phụ thuộc ngư
 | Đổi schema DB tin tức | migration mới + `NewsRepository` | bên tiêu thụ chỉ đọc qua hợp đồng repository (C1/C4) — kiểm thử consumer xanh nguyên trạng |
 | Đổi quy tắc phân loại `stale`/`fresh` | `core/news_freshness.py` | thẩm quyền duy nhất (S1) + kiểm thử hàm thuần |
 | Đổi khuôn prompt AI | `core/trend_prompt_builder.py` | `prompt_hash` provenance + kiểm thử parser không đổi (C4) |
+| Thêm/đổi series lợi suất trái phiếu (mở rộng đồng mới — đợt 5) | bộ chuyển đổi trong `services/news_producers/bond_yield_producer.py` | mô hình `BondYieldObservation` bất biến (C2) + danh mục series cần Owner duyệt (B2/§13 đợt 5) |
+| Đổi khối Market context trong prompt (đợt 5) | `core/trend_prompt_builder.py` | `prompt_hash` provenance + kiểm thử parser không đổi (C4) |
 | Đổi trường nhập tay | `NewsController` + form (tài liệu UI) | repository là điểm ghi duy nhất |
 | Đổi cách Dashboard hiển thị sự kiện | tài liệu UI + mô-đun trình bày | hợp đồng `events_in_range` bất biến (ngoài phạm vi tài liệu này) |
 | Đổi cách vĩ mô đọc tin | tài liệu vĩ mô + `macro_context_builder` (miền vĩ mô) | hợp đồng repository bất biến (ngoài phạm vi tài liệu này) |
@@ -550,7 +658,10 @@ query `verdicts_for`/bảng verdict; (b) import-linter chặn phụ thuộc ngư
 | Phân loại dòng của lô dán so với database (`Mới`/`Sẽ cập nhật`/`Xung đột — giữ nhập tay`) + **chung thiện lô đã chỉnh sửa** (stamp `source=user` cho dòng có sửa, giữ giá trị gốc vào `raw_json`) — hàm thuần, không I/O | `services/ff_source_parser.py` |
 | Sản xuất tín hiệu tin văn bản tự động | `rss_producer` |
 | Sản xuất quan sát lãi suất (FRED API + config fallback) | `fred_rate_producer` |
-| Khai báo mô hình miền tin tức (`CalendarEvent`, `NewsItem`, `RateObservation`, `TrendVerdict`, `IngestRun`, `StoreState`) | `core/news_models.py` |
+| Sản xuất quan sát lợi suất trái phiếu (FRED → Yahoo fallback — đợt 5) | `bond_yield_producer` |
+| Dẫn xuất delta/spread 2y–10y/real yield từ các quan sát lợi suất (đợt 5) | `core/yield_context.py` |
+| Dẫn xuất bias cặp từ hai verdict tài sản đơn (đợt 5) | `core/pair_bias.py` |
+| Khai báo mô hình miền tin tức (`CalendarEvent`, `NewsItem`, `RateObservation`, `BondYieldObservation` — đợt 5, `TrendVerdict`, `IngestRun`, `StoreState`) | `core/news_models.py` |
 | Công thức `dedupe_key` của `news_events` (§4.2) | `core/news_models.py` |
 | Công thức `dedupe_key` của `news_items` (§4.3) | `core/news_models.py` |
 | Nạp và validate chính sách miền Tin tức | `core/news_policy.py` |
@@ -570,7 +681,7 @@ Viết **sau** khi phần Tin tức được duyệt và triển khai (theo quy�
 
 | Tài liệu | Nội dung tiếp nhận từ miền này |
 |---|---|
-| `docs/ui/screen_design.md` | **ĐÃ GHI 20/09/2026 + IMPLEMENTED 23/09/2026:** màn Quản lý tin + layout cửa sổ AI (mục News Screen — ca Tin tức đã nghiệm thu). **Viết sau (ca đấu nối a):** đặc tả hiển thị mục tin Dashboard (cột/tab/dialog/empty state) — tiêu thụ hợp đồng repository mục 8 |
+| `docs/ui/screen_design.md` | **ĐÃ GHI 20/09/2026 + IMPLEMENTED 23/09/2026:** màn Quản lý tin + layout cửa sổ AI (mục News Screen — ca Tin tức đã nghiệm thu). **Đợt 5 (ghi 28/09/2026 — chưa triển khai):** thiết kế lại cửa sổ AI thành 3 tab (Tổng quan 11 tài sản + batch, Chi tiết, Cặp forex) theo §9.3. **Viết sau (ca đấu nối a):** đặc tả hiển thị mục tin Dashboard (cột/tab/dialog/empty state) — tiêu thụ hợp đồng repository mục 8 |
 | `docs/macro/macro_score_architecture.md` | Mapping 3 tier + gate sang đọc DB; hệ quả fail-closed từ `store_state`/`stale`; công thức và ngưỡng vĩ mô giữ nguyên |
 | `docs/scanner/scanner-architecture.md` + `scanner-flow.md` | MacroGate/news gate đọc `events_in_range` + trạng thái `stale` — fail-closed: độ tươi dữ kiện FF phụ thuộc kỷ luật dán mã nguồn của người dùng (đợt 3, 24/09/2026 — không còn đường tự chữa `event_actual_or_lookup`); khẳng định verdict AI ngoài guard chain |
 | `docs/architecture/architecture.md` | Bản đồ module/luồng dữ liệu mới; xóa mô tả `news_service.py` cũ |
@@ -637,6 +748,31 @@ khác của đợt 3 giữ nguyên hiệu lực):
 | Phân loại dòng preview | Hàm thuần trong `services/ff_source_parser.py` (đăng ký §11b) — controller không tự tính (S2), UI không tự tính (L1) |
 | Căn cứ | Người dùng là chốt chặn cuối trước khi số liệu vào nguồn chân lý duy nhất (nuôi vĩ mô/gate tại đấu nối b); parser lệch do FF đổi cấu trúc → thấy ngay trên bảng preview và hủy, thay vì nhiễm DB âm thầm (B4) |
 
+Chốt ngày 28/09/2026, đợt 5 (AI nhận định theo tài sản + tín hiệu lợi suất
+trái phiếu — đặc tả hành vi: §4.7, §6.6, §9.1, §9.3):
+
+| Hạng mục | Quyết định |
+|---|---|
+| Mô hình phạm vi nhận định (A1) | **Theo từng đồng/tài sản làm gốc; cặp forex là lớp suy ra trên UI** (không gọi AI, không lưu DB) |
+| Danh sách phạm vi (A2) | **11 tài sản**: AUD, CAD, CHF, EUR, GBP, JPY, NZD, USD, XAU, XAG, BTC — rút từ `SUPPORTED_SYMBOLS` |
+| Chuyên sâu cặp (A3) | GIỮ nút "Nhận định chuyên sâu cặp" — gọi AI `scope_type=pair` đúng luồng §9.1 (hành vi hiện hành) |
+| Bias cặp suy ra (A4) | **Không persist** — chỉ hiển thị, ghi nhãn "suy ra từ nhận định từng đồng" (§9.3 khoản 2) |
+| Tín hiệu lợi suất trái phiếu (B1) | **CÓ** — bảng mới `bond_yields` (§4.7) + producer mới (§6.6); dùng làm ngữ cảnh prompt AI (§9.1 bước 3) và hiển thị |
+| Phạm vi phủ giai đoạn 1 (B2) | **Chỉ USD** (2y/10y/be10y); mở rộng từng đồng cần danh mục series FRED được duyệt riêng |
+| Real yield (B3) | **CÓ** — lấy thêm `T10YIE` (breakeven 10y); real yield = 10y − be10y, dẫn xuất lúc đọc (`core/yield_context.py`) |
+| Chuỗi nguồn lợi suất (B4) | **FRED → Yahoo fallback** (`DGS2`/`DGS10`/`T10YIE`; `2YY=F`/`^TNX` kế thừa runtime hiện hành); enum nguồn `fred` \| `yahoo` đóng băng từ lúc tạo |
+| Chu kỳ refresh (B5) | Khóa `bond_yield_refresh_hours` **= giá trị khóa `fred_refresh_hours` hiện hành** (không sinh số mới) |
+| Lãi suất + trend vào prompt (C1) | **CÓ** — từ `latest_rates` + `derive_rate_trend` (dữ liệu đã có trong DB) |
+| 2y/10y + spread + real yield vào prompt (C2) | **CÓ** (phụ thuộc B1) |
+| Ngữ cảnh USD cho XAU/XAG/BTC (C3) | **CÓ** — tài sản định giá bằng USD (§9.3 khoản 4) |
+| Context với floor `ai_min_items` (C4) | **KHÔNG tính** — floor vẫn chỉ đếm sự kiện + tin văn bản (§9.1 bước 2); fail-closed giữ nguyên; context không được dẫn chứng vào `evidence_item_ids` (§9.1 bước 3) |
+| `prompt_hash` (C5) | Ghi nhận đổi **đúng một lần** khi đổi khung prompt (provenance — §11a) |
+| Batch "Nhận định tất cả" (D1) | **CÓ** — 11 lời gọi AI tuần tự mỗi lượt bấm (§9.1 bước 7) |
+| Lỗi một phạm vi trong batch (D2) | **Tiếp tục phạm vi kế** — cuối lượt tổng kết ok/insufficient/lỗi (§9.1 bước 7) |
+| Chính sách AI hiện hành (D3) | `ai_window_days` / `ai_min_items` / `ai_horizons` GIỮ NGUYÊN |
+| Lộ trình lô (E1) | B1 (migration + models + policy) → B2 (producer + repository) → B3 (khối Market context prompt) → B4 (dialog 3 tab + batch + `pair_bias`) → B5 (nghiệm thu + cổng E2) — mỗi lô plan riêng theo vòng đời D3 |
+| Lộ trình tài liệu (E2) | `news-architecture.md` + `screen_design.md` cập nhật trước khi code; `architecture.md` / `product_spec.md` / `USER_GUIDE.md` theo từng lô; `runtime-status.md` khi nghiệm thu |
+
 ## 14. Kiểm thử (C4, B3, E2)
 
 - **Hàm thuần (`core/`):** `news_freshness` (bảng trạng thái theo biên thời
@@ -663,6 +799,18 @@ khác của đợt 3 giữ nguyên hiệu lực):
 - **Producer RSS/FRED:** HTTP giả lập — RSS: fixture XML từng feed, dedupe,
   feed chết → `partial`; FRED: chuỗi nguồn API → config fallback đúng thứ tự,
   không còn kênh FF-HTML qua mạng.
+- **Producer lợi suất trái phiếu (đợt 5, §6.6):** HTTP giả lập — chuỗi FRED →
+  Yahoo đúng thứ tự; FRED chết → bản ghi kênh Yahoo cho `2y`/`10y`; cả hai
+  kênh chết → run `failed` (B4); `be10y` không có kênh dự phòng; chống trùng
+  UNIQUE `(currency, maturity, observed_at, source)`.
+- **Hàm thuần đợt 5:** `yield_context` — delta/spread/real yield theo biên;
+  thiếu `be10y` → real yield `None`, không suy đoán (B4). `pair_bias` — ma
+  trận hai verdict (đủ/thiếu/insufficient từng bên) → bias đúng enum.
+  `trend_prompt_builder` — kiểm thử hiện hành giữ + khối Market context
+  không vào floor, context không được dẫn chứng, hash khung mới ổn định.
+- **Batch (đợt 5, §9.1 bước 7):** 11 phạm vi tuần tự; một phạm vi lỗi không
+  dừng lô; insufficient từng phạm vi đúng B4 (không gọi AI phạm vi đó); tab
+  cặp forex chỉ đọc — không lời gọi AI, không ghi DB (§9.3 khoản 2).
 - **Kiểm thử hợp đồng (C4):** ghim chữ ký + ngữ nghĩa phương thức đọc mục 8 —
   bên tiêu thụ (Dashboard, vĩ mô) viết kiểm thử theo hợp đồng này, xanh nguyên
   trạng khi nội bộ repository thay đổi.
@@ -720,3 +868,26 @@ luồng dán 2 pha đầu-cuối đúng điều khoản §6.1 đợt 4). Tuyên 
 READY-FOR-CONNECT — hai ca đấu nối (a) Dashboard / (b) vĩ mô không đổi lộ trình
 (§3.1 khoản 3-4); sổ nợ #1 **chưa đóng** — chỉ đóng tại đấu nối (b) khi xóa
 `news_service.py` + `forex_factory_client.py`.
+
+**Sửa đổi đợt 5 (28/09/2026):** ca "AI nhận định theo tài sản + lợi suất trái
+phiếu" — tín hiệu `bond_yields` (§4.7, §6.6), khối Market context trong prompt
+(§9.1, §9.3), mô hình phạm vi 11 tài sản + batch "Nhận định tất cả" + bias cặp
+suy ra (§9.3); triển khai theo plan riêng (vòng đời D3), các lô B1–B5 theo
+quyết định E1/§13 đợt 5. Lộ trình 4 bước ở trên giữ nguyên làm ghi nhận lịch
+sử của ca tầng dữ liệu.
+
+**Ghi chú hoàn tất ca "AI nhận định theo tài sản + lợi suất trái phiếu"
+(29/09/2026):** 5 lô B1–B5 đều **IMPLEMENTED**; nghiệm thu tổng xanh — battery họ
+tin tức (`pytest tests -k news`) **869 passed** (cổng E2 mở rộng **20 passed**:
+quét cách ly tín hiệu `bond_yields` + import-linter 8 mô-đun `core/`); 3 smoke
+**EXIT=0** (`scanner_smoke.py`, `smc_ui_smoke.py` offscreen + windows); build
+`.exe` PyInstaller **exit 0** (bundle đủ `config/news_policy.json` +
+`data/migrations/news/001`+`002`); boot bản đóng gói **ALIVE sau 15s**, migration
+002 tự áp trên database cũ (`bond_yields` tồn tại), **không sinh lượt `ff_crawler`**
+(ingest_runs 150 = 150). Kiểm thử thật (máy có key FRED + AI provider cấu hình):
+`refresh_bond_yields()` ghi **3 dòng USD** (2y/10y/be10y, `source=fred`); "Nhận
+định tất cả" 11 phạm vi → **11 ok / 0 lỗi**, lưu đủ **33 dòng verdict** (11×3).
+Tuyên bố: ca đợt 5 **HOÀN TẤT**; miền Tin tức giữ READY-FOR-CONNECT — hai ca đấu
+nối (a) Dashboard / (b) vĩ mô không đổi lộ trình (§3.1 khoản 3-4); sổ nợ #1
+**chưa đóng** — chỉ đóng tại đấu nối (b) khi xóa `news_service.py` +
+`forex_factory_client.py`.
