@@ -13,7 +13,12 @@
 > `ai_horizon_windows` — §7, §9.1); context mở rộng **rate path 6 tháng +
 > yield delta 3m/6m** (§6.6, §9.1); khung prompt v2 — render `status` sự kiện
 > + chỉ dẫn đối chiếu độ phủ bằng chứng với chân trời (§9.1, `prompt_hash` đổi
-> lần 2); panel "độ phủ theo chân trời" trong dialog (§9.3, `screen_design.md`). Tài liệu này
+> lần 2); panel "độ phủ theo chân trời" trong dialog (§9.3, `screen_design.md`).
+> **Sửa đổi đợt 7 — 30/09/2026 (ca "Nhận định AI — độ bền kết quả"):** độ bền
+> của lượt nhận định AI — nhãn dòng dữ kiện bỏ `#` và nói rõ id là **số nguyên
+> trần** (`prompt_hash` đổi **lần 3**), lần retry thứ hai mang nội dung khác theo
+> loại lỗi (chỉ dẫn sửa / nâng ngân sách), `error_type` có kiểu cho chẩn đoán
+> (§9.1 bước 3/5, §16). Tài liệu này
 > là đặc tả thẩm quyền **duy nhất** của miền Tin tức (V2): code phải đúng từng
 > hành vi mô tả ở đây; lệch tài liệu ↔ code = defect phải đóng. Toàn bộ giá
 > trị chính sách đã được Owner chốt (mục 7, 13) — không còn điểm `OPEN`.
@@ -589,7 +594,11 @@ chuỗi hiển thị — vi phạm lớp `services/` (mục 3).
 3. `core/trend_prompt_builder.py` (thuần) dựng prompt từ tập dữ liệu đã chuẩn
    hóa: AI **chỉ nhận định trên dữ liệu được đưa vào prompt**, cấm bịa sự
    kiện/số liệu (kế thừa doctrine tin tức hiện hành). Khuôn prompt thay đổi →
-   `prompt_hash` thay đổi (provenance; đợt 6 đổi **lần 2** — C3/§13 đợt 6).
+   `prompt_hash` thay đổi (provenance; đợt 6 đổi **lần 2** — C3/§13 đợt 6;
+   đợt 7 đổi **lần 3** — lô A ca "Nhận định AI — độ bền kết quả": nhãn dòng dữ
+   kiện bỏ ký hiệu `#` và prompt nói rõ `evidence_item_ids` là **số nguyên
+   trần**, vì model từng bắt chước `#` của nhãn vào mảng JSON làm phản hồi không
+   parse được; hash ghim `766db7e2…`).
    **Khối "Market context" (đợt 5 — C1-C3/§13 đợt 5):** (a) lãi suất điều
    hành + trend hike/cut/hold của đồng của phạm vi (qua `latest_rates` +
    `derive_rate_trend`); (b) lợi suất 2y/10y + biến động trong cửa sổ + spread
@@ -985,6 +994,20 @@ khung prompt v2 (render `status` + chỉ dẫn đối chiếu độ phủ — `p
 lần 2), panel độ phủ theo chân trời trong dialog (§9.3 khoản 6); triển khai
 theo plan riêng (vòng đời D3), các lô C1–C5 theo quyết định E1/§13 đợt 6 —
 **plan được commit ngay khi mở ca** (bài học D3 từ đợt 5).
+
+**Sửa đổi đợt 7 (30/09/2026):** ca "Nhận định AI — độ bền kết quả" — **sửa lỗi
+độ bền** của lượt nhận định AI (không thêm/đổi khóa chính sách nào; giữ nguyên
+luật "retry một lần" của §9.1 bước 5). Ba gốc lỗi, đo thật 30/09/2026: (1) nhãn
+dòng dữ kiện in id kèm `#` nên model bắt chước `#` vào mảng `evidence_item_ids`
+⇒ JSON không parse được; (2) độ dài suy luận biến thiên cực mạnh (4,2k → 26,3k
+ký tự cho cùng prompt) nên có lượt hết ngân sách output, `content` rỗng; (3) mọi
+loại thất bại hiển thị chung một câu nên không chẩn đoán được. Ba lô A/B/C theo
+plan riêng (vòng đời D3): **A** bỏ `#` khỏi nhãn + nói rõ id là số nguyên trần
+(`prompt_hash` đổi **lần 3**); **B** lần retry thứ hai mang *nội dung khác theo
+loại lỗi* (chỉ dẫn sửa cho lỗi parse; nâng ngân sách cho lỗi hết ngân sách);
+**C** `TrendAnalysisResult` mang `error_type` có kiểu và controller map sang
+thông báo chính xác theo loại. Nền tảng đã có từ lô sửa trước đó (ngân sách
+token tường minh `AI_TREND_MAX_TOKENS`) và dòng "Lý do lỗi" của tổng kết batch.
 
 **Ghi chú hoàn tất ca "Độ sâu dữ liệu theo chân trời" (29/09/2026):** 5 lô
 C1–C5 đều **IMPLEMENTED**, nghiệm thu tổng trên **cây commit thuần** (worktree):

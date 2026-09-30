@@ -169,6 +169,9 @@ Rules:
   codes or row ids.
 - Every id in "evidence_item_ids" must be a row id printed in this prompt;
   citing any other id makes the whole answer invalid.
+- Write those ids as PLAIN INTEGERS in the JSON array (e.g. [12, 34]): no "#"
+  prefix, no quotes, no other decoration. A row printed as "[event no-id]" has
+  no id and must never be cited.
 - Judge each horizon against the coverage of its data window: when the rows of
   a horizon cover fewer days than that horizon, lower the confidence or answer
   "{insufficient}" for it.
@@ -207,11 +210,11 @@ JSON:"""
 # Frame fragments: fixed text, rendered per row/horizon (placeholders only).
 _HORIZON_LINE_TEMPLATE = "- {horizon}: {unit} {min_value}-{max_value}"
 _EVENT_LINE_TEMPLATE = (
-    "- [event #{row_id}] {event_time_utc} | {currency} | {title} | impact={impact}"
+    "- [event {row_id}] {event_time_utc} | {currency} | {title} | impact={impact}"
     " | status={status} | actual={actual} | forecast={forecast} | previous={previous}"
 )
 _NEWS_LINE_TEMPLATE = (
-    "- [news #{row_id}] {published_utc} | {currency} | {kind} | {title}"
+    "- [news {row_id}] {published_utc} | {currency} | {kind} | {title}"
     " | content={content} | source={source}"
 )
 _SECTION_LINE_TEMPLATE = (
@@ -348,7 +351,7 @@ def _schema_block(horizons: Mapping[str, HorizonDefinition]) -> str:
                 directions=_DIRECTION_VALUES,
                 confidences=_CONFIDENCE_VALUES,
                 rationale="reasoning in Vietnamese",
-                evidence="ids printed above",
+                evidence="12, 34",
                 comma="," if index < len(keys) - 1 else "",
             )
         )

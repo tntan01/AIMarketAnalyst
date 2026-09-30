@@ -263,18 +263,20 @@ class TestPromptStabilityAndHash:
         assert len(prompt.prompt_hash) == 64
         assert set(prompt.prompt_hash) <= set("0123456789abcdef")
 
-    def test_market_context_block_changed_the_frame_hash_exactly_once(self):
-        # C5 (đợt 5): adding the market-context block re-hashed the frame ONCE.
-        # C3 (đợt 6): the wave-6 frame (3 window sections + status + coverage
-        # rule + rate path/deltas) re-hashed it a SECOND and final time; this
-        # pins the value so a later accidental frame edit is red (C4/C5 must not
-        # touch the frame again).
+    def test_the_frame_hash_is_pinned(self):
+        # The frame re-hashed once per sanctioned amendment: C5 (đợt 5) added the
+        # market-context block, C3 (đợt 6) the wave-6 frame (3 window sections +
+        # status + coverage rule + rate path/deltas), and lô A of the ca "Nhận
+        # định AI — độ bền kết quả" (đợt 7) removed the "#" from the row-id label
+        # and spelled out that evidence ids are plain integers (a stray "#" inside
+        # the JSON array made the model's answer unparseable).  This pins the
+        # value so any later accidental frame edit is red.
         prompt = _build().prompt
 
         assert prompt is not None
         assert (
             prompt.prompt_hash
-            == "9f39d7eefe6a6793bf6c41cf519477dce7ec8128ddf9976096b16b0f1503d72f"
+            == "766db7e27126393cc4ebd78a1578cb54a2930e630a86bb586bd665e921053e68"
         )
 
     def test_hash_is_independent_of_the_market_context(self):
@@ -349,10 +351,10 @@ class TestPromptContent:
     def test_prompt_carries_every_row_with_its_id_and_fields(self):
         text = self._text()
 
-        assert "[event #11] 2026-09-20T14:30:00Z | USD | FOMC Meeting | impact=high" in text
+        assert "[event 11] 2026-09-20T14:30:00Z | USD | FOMC Meeting | impact=high" in text
         assert "| status=scheduled |" in text
         assert "actual=5.50% | forecast=5.50% | previous=5.25%" in text
-        assert "[news #22] 2026-09-21T08:00:00Z | USD | headline | Fed signals patience" in text
+        assert "[news 22] 2026-09-21T08:00:00Z | USD | headline | Fed signals patience" in text
         assert "content=Powell: patience | source=google_news_rss" in text
 
     def test_prompt_carries_the_three_window_sections(self):
@@ -407,7 +409,7 @@ class TestPromptContent:
 
         assert prompt is not None
         news_line = next(
-            line for line in prompt.text.splitlines() if line.startswith("- [news #22]")
+            line for line in prompt.text.splitlines() if line.startswith("- [news 22]")
         )
         assert "status=" not in news_line
 
@@ -423,6 +425,25 @@ class TestPromptContent:
 
         assert 'Never invent events, numbers, dates, currency' in text
         assert "must be a row id printed in this prompt" in text
+
+    def test_row_ids_are_bare_numbers_and_the_rule_says_so(self):
+        # Lô A (ca "Nhận định AI — độ bền kết quả"): nhãn dòng bỏ "#" và prompt
+        # nói rõ id là SỐ NGUYÊN TRẦN — model từng bắt chước "#" của nhãn prompt
+        # vào mảng "evidence_item_ids" (vd [378, #3289]) làm JSON không parse được
+        # ⇒ mất cả phạm vi.  Khung prompt phải sạch ký tự "#" (dữ liệu thì không
+        # kiểm được: tiêu đề tin có thể chứa "#" hợp lệ).
+        assert "#" not in builder._EVENT_LINE_TEMPLATE
+        assert "#" not in builder._NEWS_LINE_TEMPLATE
+
+        prompt = _build(events=[_event(row_id=11)], items=[_item(row_id=22)]).prompt
+
+        assert prompt is not None
+        assert "[event 11]" in prompt.text and "[news 22]" in prompt.text
+        assert 'as PLAIN INTEGERS in the JSON array' in prompt.text
+        assert 'no "#"\n  prefix' in prompt.text
+        # Mẫu schema dẫn ví dụ bằng SỐ (trước đây là chuỗi "ids printed above"
+        # — cũng là một nguồn gây hiểu sai).
+        assert '"evidence_item_ids": [12, 34]' in prompt.text
 
     def test_prompt_asks_for_vietnamese_rationale_and_bare_json(self):
         text = self._text()
@@ -478,7 +499,7 @@ class TestEvidenceAndSnapshot:
         assert prompt is not None
         # the same row prints in all three windows; only ids are citable
         assert prompt.evidence_item_ids == (22, 22, 22)
-        assert "[event #no-id]" in prompt.text
+        assert "[event no-id]" in prompt.text
 
     def test_snapshot_holds_the_window_and_the_counts_only(self):
         prompt = _build(
