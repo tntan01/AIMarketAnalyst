@@ -24,6 +24,7 @@ import os
 import sys
 import threading
 import time
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -102,6 +103,20 @@ EXCLUDED_NOTE = NewsItem(
 )
 
 
+def _event(time_utc: str, title: str = "Sự kiện") -> CalendarEvent:
+    return CalendarEvent(
+        day_key=time_utc[:10],
+        event_time_utc=time_utc,
+        currency="USD",
+        title=title,
+        impact=EventImpact.HIGH,
+        status=EventStatus.SCHEDULED,
+        source=EventSource.FF_HTML,
+        dedupe_key=f"key-{time_utc}-{title}",
+        fetched_at=time_utc,
+    )
+
+
 class FakeNewsController:
     """Controller giả có kiểu: ghi lại lời gọi, trả mô hình miền thật."""
 
@@ -134,6 +149,13 @@ def _close_screens():
     for screen in _SCREENS:
         screen.shutdown()
     _app().processEvents()
+
+
+@pytest.fixture(autouse=True)
+def _fixed_now(monkeypatch):
+    """Chốt "hiện tại" xa (2030) để mọi fixture 2026-09 là quá khứ — mặc định
+    không sinh dòng "sắp tới gần nhất" (kết quả tất định theo ngày chạy test)."""
+    monkeypatch.setattr(news, "_now_utc", lambda: datetime(2030, 1, 1, tzinfo=UTC))
 
 
 def _screen(
@@ -218,11 +240,12 @@ class TestDisplayDictionary:
     def test_column_filter_and_toolbar_labels_are_the_registered_block(self):
         assert news.COLUMN_LABELS == (
             "Thời gian",
-            "Loại",
             "Nguồn",
             "Đồng tiền",
-            "Tiêu đề/Nội dung",
-            "Tác động",
+            "Loại",
+            "Nội dung",
+            "Kỳ trước",
+            "Dự báo",
             "Thực tế",
             "Trạng thái",
             "Chi tiết",
@@ -268,7 +291,14 @@ class TestTableModel:
             model.headerData(index, Qt.Orientation.Horizontal)
             for index in range(model.columnCount())
         ]
-        assert headers == list(news.COLUMN_LABELS)
+        # Cột "Chi tiết" thay tiêu đề chữ bằng icon → header DisplayRole rỗng.
+        expected = list(news.COLUMN_LABELS)
+        detail_col = news.COLUMN_LABELS.index("Chi tiết")
+        expected[detail_col] = ""
+        assert headers == expected
+        assert model.headerData(
+            detail_col, Qt.Orientation.Horizontal, Qt.ItemDataRole.DecorationRole
+        ) is not None
 
     def test_event_row_shows_the_registered_labels(self):
         # Múi giờ hiển thị cố định (Asia/Ho_Chi_Minh) — không phụ thuộc settings
@@ -281,28 +311,33 @@ class TestTableModel:
             return model.data(model.index(0, column), Qt.ItemDataRole.DisplayRole)
 
         assert model.data(index, Qt.ItemDataRole.DisplayRole) == "20/09/2026 21:30"
-        assert cell(1) == news.EVENT_TEXT
-        assert cell(2) == "Forex Factory"
-        assert cell(3) == "USD"
+        assert cell(1) == "Forex Factory"
+        assert cell(2) == "USD"
+        assert cell(3) == news.EVENT_ICON
         assert cell(4) == "FOMC Meeting"
-        assert cell(5) == "Cao"
+        assert cell(5) == "5.25%"
         assert cell(6) == "5.50%"
-        assert cell(7) == "Đã có số liệu"
-        assert cell(8) == "Chi tiết"
+        assert cell(7) == "5.50%"
+        assert cell(8) == "Đã có số liệu"
+        assert cell(9) == ""  # cột "Chi tiết" thay chữ bằng icon
+        assert model.data(
+            model.index(0, 9), Qt.ItemDataRole.DecorationRole
+        ) is not None
 
-    def test_item_row_shows_kind_source_and_impact_hint_labels(self):
+    def test_item_row_shows_type_icon_and_values(self):
         model = self._model()
         row = 1
 
         def cell(column: int) -> str:
             return model.data(model.index(row, column), Qt.ItemDataRole.DisplayRole)
 
-        assert cell(1) == "Headline"
-        assert cell(2) == "Google News"
-        assert cell(3) == "USD, EUR"
-        assert cell(5) == "Trung bình"
-        assert cell(6) == news.NO_VALUE  # tin văn bản không có "thực tế"
-        assert cell(7) == news.NO_VALUE  # không có trạng thái sự kiện, không bị loại trừ
+        assert cell(1) == "Google News"
+        assert cell(2) == "USD, EUR"
+        assert cell(3) == news.ITEM_ICON
+        assert cell(5) == news.NO_VALUE  # tin văn bản không có "kỳ trước"
+        assert cell(6) == news.NO_VALUE  # tin văn bản không có "dự báo"
+        assert cell(7) == news.NO_VALUE  # tin văn bản không có "thực tế"
+        assert cell(8) == news.NO_VALUE  # không có trạng thái sự kiện, không bị loại trừ
 
     def test_excluded_item_shows_the_registered_flag_label(self):
         model = self._model()
@@ -311,21 +346,30 @@ class TestTableModel:
             return model.data(model.index(row, column), Qt.ItemDataRole.DisplayRole)
 
         assert cell(2, 1) == "Nhập tay"
-        assert cell(2, 2) == "Nhập tay"
-        assert cell(2, 7) == news.EXCLUDED_TEXT
-        assert cell(2, 3) == "JPY"
+        assert cell(2, 2) == "JPY"
+        assert cell(2, 3) == news.ITEM_ICON
+        assert cell(2, 8) == news.EXCLUDED_TEXT
 
-    def test_status_and_impact_cells_carry_a_semantic_colour(self):
+    def test_impact_rows_carry_a_semantic_colour(self):
         model = self._model()
 
-        status_color = model.data(model.index(0, 7), Qt.ItemDataRole.ForegroundRole)
-        excluded_color = model.data(model.index(2, 7), Qt.ItemDataRole.ForegroundRole)
-        detail_color = model.data(model.index(0, 8), Qt.ItemDataRole.ForegroundRole)
+        # Dòng tác động cao (sự kiện) — đỏ (danger): cả chữ lẫn nền.
+        high_fg = model.data(model.index(0, 1), Qt.ItemDataRole.ForegroundRole)
+        high_bg = model.data(model.index(0, 1), Qt.ItemDataRole.BackgroundRole)
+        assert high_fg is not None and high_fg.isValid()
+        assert high_bg is not None and high_bg.isValid()
 
-        assert status_color is not None and status_color.isValid()
-        assert excluded_color is not None and excluded_color.isValid()
-        assert detail_color is not None and detail_color.isValid()
-        assert status_color != excluded_color
+        # Dòng tác động trung bình (headline có impact_hint) — cam (warning).
+        medium_fg = model.data(model.index(1, 1), Qt.ItemDataRole.ForegroundRole)
+        assert medium_fg is not None and medium_fg.isValid()
+        assert medium_fg != high_fg
+
+        # Dòng không rõ mức tác động — không tô nền dòng.
+        none_bg = model.data(model.index(2, 1), Qt.ItemDataRole.BackgroundRole)
+        assert none_bg is None
+        # Cờ loại trừ vẫn mang màu semantic của nó.
+        excluded_fg = model.data(model.index(2, 8), Qt.ItemDataRole.ForegroundRole)
+        assert excluded_fg is not None and excluded_fg.isValid()
 
 
 # ---- 3. bộ lọc ----------------------------------------------------------------
@@ -423,15 +467,59 @@ class TestScreenLayout:
             screen.table_model.headerData(index, Qt.Orientation.Horizontal)
             for index in range(screen.table_model.columnCount())
         ]
-        assert headers == list(news.COLUMN_LABELS)
+        expected = list(news.COLUMN_LABELS)
+        expected[news.COLUMN_LABELS.index("Chi tiết")] = ""
+        assert headers == expected
 
-    def test_date_filter_defaults_to_the_last_month(self):
+    def test_date_filter_defaults_to_today(self):
         screen = _screen()
 
         from PyQt6.QtCore import QDate
 
+        # Mặc định mở màn: khoảng ngày = hôm nay (cả hai đầu).
+        assert screen.date_from_input.date() == QDate.currentDate()
         assert screen.date_to_input.date() == QDate.currentDate()
-        assert screen.date_from_input.date() == QDate.currentDate().addMonths(-1)
+
+
+# ---- 4b. tin sắp tới gần nhất (mặc định) -------------------------------------
+
+
+class TestNearestUpcoming:
+    def test_nearest_is_bold_green_with_a_separator(self, monkeypatch):
+        # now = 21/09 00:00 UTC → EVENT (20/09) quá khứ; HEADLINE (21/09 08:00)
+        # là tin sắp tới gần nhất; EXCLUDED_NOTE (22/09) sau đó.
+        monkeypatch.setattr(news, "_now_utc", lambda: datetime(2026, 9, 21, 0, 0, tzinfo=UTC))
+        screen = _screen()
+        rows = screen.table_model.rows
+
+        assert [row.section_text is not None for row in rows] == [False, True, False, False]
+        assert rows[1].section_text == news.NEAREST_SECTION_TEXT
+        assert rows[1].row_type == news.SECTION_ROW
+
+        nearest = rows[2]
+        assert nearest is screen.table_model.nearest
+        assert nearest.title == HEADLINE.title
+
+        title_col = next(i for i, (k, _l) in enumerate(screen.table_model.COLUMNS) if k == "title")
+        fg = screen.table_model.data(screen.table_model.index(2, title_col), Qt.ItemDataRole.ForegroundRole)
+        font = screen.table_model.data(screen.table_model.index(2, title_col), Qt.ItemDataRole.FontRole)
+        assert fg is not None and fg.isValid()
+        assert font is not None and font.bold()
+
+        # Dòng ngăn cách trải toàn bề ngang bảng (khuôn span dashboard).
+        assert screen.table.columnSpan(1, 0) == screen.table_model.columnCount()
+
+    def test_open_scrolls_nearest_to_the_top(self, monkeypatch):
+        monkeypatch.setattr(news, "_now_utc", lambda: datetime(2026, 9, 30, 12, 0, tzinfo=UTC))
+        past = [_event(f"2026-09-30T{h:02d}:00:00Z", f"P{h}") for h in range(1, 8)]
+        upcoming = [_event(f"2026-09-30T{h:02d}:00:00Z", f"U{h}") for h in range(13, 20)]
+        controller = FakeNewsController(events=past + upcoming, items=[])
+        screen = _screen(controller)
+
+        nearest = screen.table_model.nearest
+        assert nearest is not None and nearest.title == "U13"
+        assert screen._initial_scroll_done is True
+        assert _wait_until(lambda: screen.table.verticalScrollBar().value() > 0)
 
 
 # ---- 5. trạng thái tải và rỗng -------------------------------------------------

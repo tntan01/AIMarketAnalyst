@@ -161,7 +161,7 @@ Khai báo đọc-hiểu (V2):
   dung — không bóp chữ, không tràn. Thanh công cụ 2 nút (đợt 3) càng không
   vượt sàn.
 * Bảng đặt bề ngang cột tường minh (khuôn ``scanner_screen._configure_table_columns``):
-  cột "Tiêu đề/Nội dung" giãn, các cột còn lại cố định đủ đọc trọn nhãn cột;
+  cột "Nội dung" giãn, các cột còn lại cố định đủ đọc trọn nhãn cột;
   cửa sổ hẹp thì bảng cuộn ngang (``ScrollBarAsNeeded``) thay vì bóp cột tới mức
   chữ bị cắt.
 """
@@ -179,6 +179,7 @@ from PyQt6.QtCore import (
     QModelIndex,
     QSize,
     QTime,
+    QTimer,
     Qt,
     QThread,
 )
@@ -219,10 +220,12 @@ from core.news_models import (
     TrendVerdict,
 )
 from core.pair_bias import derive_pair_bias
+from ui.icons import flat_icon
 from ui.layout_system import LayoutTokens, configure_table
 from ui.responsive_row import ResponsiveGrid
 from ui.rich_text import compile_rich_html, empty_state_html, set_rich_html
 from ui.screens.shared import action_button, card, form_row, page_header
+from ui.theme.fonts import get_body_font, get_subtitle_font
 from ui.theme_manager import semantic_qcolor, set_dynamic_property
 from workers.news_worker import NewsAiBatchWorker, NewsReadWorker
 
@@ -262,6 +265,12 @@ SOURCE_TEXT: dict[str, str] = {
 # Nhãn loại dòng sự kiện — bullet bộ lọc screen_design d.1551 + contract §2.
 EVENT_TEXT = "Sự kiện"
 
+# Glyph icon mức tác động của cột "Loại" — lấy NGUYÊN khuôn dashboard
+# (``NewsTypeIcon``: "●" cho sự kiện, "▤" cho tin văn bản; màu theo ``impact``
+# qua semantic palette — dashboard_screen._render_news_rows + ui/styles/base.qss).
+EVENT_ICON = "●"
+ITEM_ICON = "▤"
+
 # Vai trò màu semantic cho badge (screen_design: "badge theo semantic palette").
 STATUS_ROLE: dict[str, str] = {
     "scheduled": "text_muted",
@@ -281,11 +290,12 @@ EMPTY_TONE = "muted"
 # Nhãn khối "Bố cục" (nguyên văn screen_design).
 COLUMN_LABELS: tuple[str, ...] = (
     "Thời gian",
-    "Loại",
     "Nguồn",
     "Đồng tiền",
-    "Tiêu đề/Nội dung",
-    "Tác động",
+    "Loại",
+    "Nội dung",
+    "Kỳ trước",
+    "Dự báo",
     "Thực tế",
     "Trạng thái",
     "Chi tiết",
@@ -617,6 +627,8 @@ def _button_cell(field: QWidget) -> QWidget:
 
 EVENT_ROW = "event"
 ITEM_ROW = "item"
+SECTION_ROW = "section"  # dòng ngăn cách nhóm (khuôn zone header của dashboard)
+NEAREST_SECTION_TEXT = "─── SẮP TỚI GẦN NHẤT ───"  # nguyên văn dashboard
 
 # Tên object (ASCII) cho combo lọc — dùng cho QSS/kiểm thử.
 _COMBO_NAMES: dict[str, str] = {
@@ -647,11 +659,32 @@ class NewsRow:
     currencies: tuple[str, ...]
     title: str
     impact: str | None
+    previous: str | None
+    forecast: str | None
     actual: str | None
     status: str | None
     excluded: bool
     event: CalendarEvent | None = None
     item: NewsItem | None = None
+    section_text: str | None = None
+
+    @classmethod
+    def section(cls, text: str) -> "NewsRow":
+        """Dòng ngăn cách nhóm (khuôn zone header dashboard) — không phải tin."""
+        return cls(
+            row_type=SECTION_ROW,
+            timestamp_utc="",
+            source="",
+            currencies=(),
+            title=text,
+            impact=None,
+            previous=None,
+            forecast=None,
+            actual=None,
+            status=None,
+            excluded=False,
+            section_text=text,
+        )
 
     @property
     def kind(self) -> str:
@@ -676,6 +709,8 @@ def _row_from_event(event: CalendarEvent) -> NewsRow:
         currencies=(event.currency,) if event.currency else (),
         title=event.title,
         impact=event.impact.value,
+        previous=event.previous,
+        forecast=event.forecast,
         actual=event.actual,
         status=event.status.value,
         excluded=False,
@@ -691,6 +726,8 @@ def _row_from_item(item: NewsItem) -> NewsRow:
         currencies=tuple(item.currencies),
         title=item.title,
         impact=item.impact_hint.value if item.impact_hint is not None else None,
+        previous=None,
+        forecast=None,
         actual=None,
         status=None,
         excluded=item.excluded,
@@ -763,10 +800,11 @@ def _row_matches(
 # cuộn ngang khi cửa sổ hẹp — không bóp cột tới mức chữ bị cắt.
 _COLUMN_WIDTHS: dict[str, int] = {
     "timestamp_utc": 130,
-    "kind": 90,
+    "kind": 55,
     "source": 160,
     "currencies": 90,
-    "impact": 90,
+    "previous": 100,
+    "forecast": 100,
     "actual": 80,
     "status": 110,
     "detail": 80,
@@ -775,14 +813,15 @@ _STRETCH_COLUMN = "title"
 
 _COLUMNS: tuple[tuple[str, str], ...] = (
     ("timestamp_utc", COLUMN_LABELS[0]),
-    ("kind", COLUMN_LABELS[1]),
-    ("source", COLUMN_LABELS[2]),
-    ("currencies", COLUMN_LABELS[3]),
+    ("source", COLUMN_LABELS[1]),
+    ("currencies", COLUMN_LABELS[2]),
+    ("kind", COLUMN_LABELS[3]),
     ("title", COLUMN_LABELS[4]),
-    ("impact", COLUMN_LABELS[5]),
-    ("actual", COLUMN_LABELS[6]),
-    ("status", COLUMN_LABELS[7]),
-    ("detail", COLUMN_LABELS[8]),
+    ("previous", COLUMN_LABELS[5]),
+    ("forecast", COLUMN_LABELS[6]),
+    ("actual", COLUMN_LABELS[7]),
+    ("status", COLUMN_LABELS[8]),
+    ("detail", COLUMN_LABELS[9]),
 )
 
 
@@ -794,6 +833,9 @@ class NewsTableModel(QAbstractTableModel):
     def __init__(self) -> None:
         super().__init__()
         self.rows: list[NewsRow] = []
+        # Dòng "sắp tới gần nhất" (đánh dấu xanh in đậm — khuôn dashboard);
+        # giữ THAM CHIẾU tới dòng gốc để không phá nhận diện ở ``_jump_to_evidence``.
+        self.nearest: NewsRow | None = None
 
     def rowCount(self, parent: QModelIndex = QModelIndex()) -> int:
         return 0 if parent.isValid() else len(self.rows)
@@ -809,11 +851,19 @@ class NewsTableModel(QAbstractTableModel):
         if role == Qt.ItemDataRole.DisplayRole:
             return self._display(row, key)
         if role == Qt.ItemDataRole.TextAlignmentRole:
-            if key in {"timestamp_utc", "kind", "source", "currencies", "impact", "actual", "status", "detail"}:
+            if row.section_text is not None:
+                return Qt.AlignmentFlag.AlignCenter
+            if key in {"timestamp_utc", "kind", "source", "currencies", "previous", "forecast", "actual", "status", "detail"}:
                 return Qt.AlignmentFlag.AlignCenter
             return Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft
+        if role == Qt.ItemDataRole.FontRole:
+            return self._font(row)
+        if role == Qt.ItemDataRole.DecorationRole:
+            return self._decoration(row, key)
         if role == Qt.ItemDataRole.ForegroundRole:
             return self._foreground(row, key)
+        if role == Qt.ItemDataRole.BackgroundRole:
+            return self._background(row, key)
         if role == Qt.ItemDataRole.ToolTipRole:
             return self._tooltip(row, key)
         return None
@@ -821,15 +871,20 @@ class NewsTableModel(QAbstractTableModel):
     def headerData(
         self, section: int, orientation: Qt.Orientation, role: int = Qt.ItemDataRole.DisplayRole
     ):
-        if role != Qt.ItemDataRole.DisplayRole:
-            return None
         if orientation == Qt.Orientation.Horizontal:
-            return self.COLUMNS[section][1]
-        return str(section + 1)
+            key, label = self.COLUMNS[section]
+            if key == "detail":
+                # Tiêu đề cột "Chi tiết" thay chữ bằng icon mắt.
+                if role == Qt.ItemDataRole.DecorationRole:
+                    return flat_icon("eye", DETAIL_ROLE)
+                return "" if role == Qt.ItemDataRole.DisplayRole else None
+            return label if role == Qt.ItemDataRole.DisplayRole else None
+        return str(section + 1) if role == Qt.ItemDataRole.DisplayRole else None
 
-    def set_rows(self, rows: list[NewsRow]) -> None:
+    def set_rows(self, rows: list[NewsRow], *, nearest: NewsRow | None = None) -> None:
         self.beginResetModel()
         self.rows = list(rows)
+        self.nearest = nearest
         self.endResetModel()
 
     def row_at(self, index: int) -> NewsRow | None:
@@ -840,10 +895,12 @@ class NewsTableModel(QAbstractTableModel):
     # -- cell rendering ---------------------------------------------------------
 
     def _display(self, row: NewsRow, key: str) -> str:
+        if row.section_text is not None:
+            return row.section_text if key == self.COLUMNS[0][0] else ""
         if key == "timestamp_utc":
             return _display_time(row.timestamp_utc)
         if key == "kind":
-            return KIND_TEXT.get(row.kind, row.kind) if row.row_type == ITEM_ROW else EVENT_TEXT
+            return EVENT_ICON if row.row_type == EVENT_ROW else ITEM_ICON
         if key == "source":
             return SOURCE_TEXT.get(row.source, row.source or NO_VALUE)
         if key == "currencies":
@@ -854,6 +911,10 @@ class NewsTableModel(QAbstractTableModel):
             if row.impact is None:
                 return NO_VALUE
             return IMPACT_TEXT.get(row.impact, row.impact)
+        if key == "previous":
+            return row.previous or NO_VALUE
+        if key == "forecast":
+            return row.forecast or NO_VALUE
         if key == "actual":
             return row.actual or NO_VALUE
         if key == "status":
@@ -863,10 +924,23 @@ class NewsTableModel(QAbstractTableModel):
                 return NO_VALUE
             return STATUS_TEXT.get(row.status, row.status)
         if key == "detail":
-            return DETAIL_TEXT
+            # Cột "Chi tiết" thay chữ bằng ICON (DecorationRole) — xem ``_decoration``.
+            return ""
         return NO_VALUE
 
+    def _decoration(self, row: NewsRow, key: str):
+        """Icon của cột "Chi tiết": glyph mắt phẳng (``ui/icons.py``), tint theo
+        semantic role ``DETAIL_ROLE`` — tự đổi màu khi đổi theme."""
+        if key != "detail" or row.section_text is not None:
+            return None
+        return flat_icon("eye", DETAIL_ROLE)
+
     def _foreground(self, row: NewsRow, key: str) -> QColor | None:
+        if row.section_text is not None or row is self.nearest:
+            return semantic_qcolor("success")
+        role = self._row_impact_role(row)
+        if role is not None:
+            return semantic_qcolor(role)
         if key == "detail":
             return semantic_qcolor(DETAIL_ROLE)
         if key == "status":
@@ -874,9 +948,40 @@ class NewsTableModel(QAbstractTableModel):
                 return semantic_qcolor(EXCLUDED_ROLE)
             role = STATUS_ROLE.get(row.status or "")
             return semantic_qcolor(role) if role else None
-        if key == "impact" and row.impact is not None:
-            role = IMPACT_ROLE.get(row.impact)
-            return semantic_qcolor(role) if role else None
+        return None
+
+    def _background(self, row: NewsRow, key: str) -> QColor | None:
+        """Nền dòng: xanh cho dòng ngăn cách/ sắp tới gần nhất (khuôn dashboard),
+        còn lại tô theo mức tác động (danger/warning, alpha 25); mức thấp/không
+        rõ để nguyên nền mặc định."""
+        if row.section_text is not None:
+            return semantic_qcolor("success", alpha=24)
+        if row is self.nearest:
+            return semantic_qcolor("success", alpha=28)
+        role = self._row_impact_role(row)
+        if role is not None:
+            return semantic_qcolor(role, alpha=25)
+        return None
+
+    def _font(self, row: NewsRow):
+        """Chữ đậm cho dòng ngăn cách (khuôn subtitle) và dòng sắp tới gần nhất
+        (in đậm — dashboard); dòng thường trả ``None`` (font mặc định)."""
+        if row.section_text is not None:
+            return get_subtitle_font()
+        if row is self.nearest:
+            font = get_body_font()
+            font.setBold(True)
+            return font
+        return None
+
+    @staticmethod
+    def _row_impact_role(row: NewsRow) -> str | None:
+        """Vai trò màu semantic theo mức tác động của dòng (dashboard: đỏ =
+        ``high``, cam = ``medium``; thấp/không rõ → không đổi màu)."""
+        if row.impact == "high":
+            return "danger"
+        if row.impact == "medium":
+            return "warning"
         return None
 
     def _tooltip(self, row: NewsRow, key: str) -> str | None:
@@ -932,6 +1037,24 @@ def _display_time(value: str) -> str:
     if moment.tzinfo is None:
         moment = moment.replace(tzinfo=UTC)
     return moment.astimezone(_display_timezone()).strftime("%d/%m/%Y %H:%M")
+
+
+def _now_utc() -> datetime:
+    """Mốc "hiện tại" để xác định tin sắp tới gần nhất (seam cho test)."""
+    return datetime.now(UTC)
+
+
+def _row_moment(value: str) -> datetime | None:
+    """Đọc mốc ISO-8601 của dòng thành ``datetime`` UTC; hỏng/thiếu → ``None``."""
+    if not value:
+        return None
+    try:
+        moment = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=UTC)
+    return moment.astimezone(UTC)
 
 
 def _ai_number(value: object) -> str:
@@ -2546,6 +2669,8 @@ class NewsScreen(QWidget):
         # Snapshot giá trị 7 control lọc tại lần áp gần nhất (vòng 6 — chốt mỗi
         # ``reload_rows``); ``None`` = chưa từng nạp được (app giả) → tắt dirty.
         self._applied_snapshot: tuple | None = None
+        # Lượt mở màn đầu tiên: kéo tin sắp tới gần nhất lên đầu (yêu cầu 3).
+        self._initial_scroll_done = False
         self.setObjectName("FormScreen")
         self._build_ui()
         self.reload_rows()
@@ -2617,7 +2742,7 @@ class NewsScreen(QWidget):
         self.date_from_input.ensurePolished()
         self.date_from_input.setMinimumWidth(self.date_from_input.sizeHint().width())
         self.date_from_input.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
-        self.date_from_input.setDate(QDate.currentDate().addMonths(-1))
+        self.date_from_input.setDate(QDate.currentDate())
 
         self.date_to_input = QDateEdit()
         self.date_to_input.setObjectName("NewsDateTo")
@@ -3079,8 +3204,32 @@ class NewsScreen(QWidget):
             status=self._selected(self.status_combo),
         )
         self._sync_currency_options(rows)
-        self.table_model.set_rows(visible)
+        nearest = self._nearest_upcoming(visible)
+        display = list(visible)
+        if nearest is not None:
+            at = next(i for i, row in enumerate(visible) if row is nearest)
+            display = visible[:at] + [NewsRow.section(NEAREST_SECTION_TEXT)] + visible[at:]
+        self.table_model.set_rows(display, nearest=nearest)
+        self._apply_section_spans()
         self.status_message.setVisible(False)
+
+    @staticmethod
+    def _nearest_upcoming(rows: list[NewsRow]) -> NewsRow | None:
+        """Tin sắp tới gần nhất = dòng đầu có mốc thời gian >= hiện tại (dashboard)."""
+        now = _now_utc()
+        for row in rows:
+            moment = _row_moment(row.timestamp_utc)
+            if moment is not None and moment >= now:
+                return row
+        return None
+
+    def _apply_section_spans(self) -> None:
+        """Trải dòng ngăn cách qua toàn bộ bề ngang bảng (khuôn span dashboard)."""
+        self.table.clearSpans()
+        width = self.table_model.columnCount()
+        for index, row in enumerate(self.table_model.rows):
+            if row.section_text is not None:
+                self.table.setSpan(index, 0, 1, width)
 
     def _sync_currency_options(self, rows: list[NewsRow]) -> None:
         """Danh mục đồng tiền của bộ lọc lấy từ chính dữ liệu đã đọc (không bịa danh sách)."""
@@ -3105,6 +3254,25 @@ class NewsScreen(QWidget):
     def _on_rows_loaded(self, payload: object) -> None:
         self._rows = list(payload) if isinstance(payload, list) else []
         self._apply_rows(self._rows)
+        if not self._initial_scroll_done:
+            self._initial_scroll_done = True
+            # Hoãn 1 vòng event-loop để view tính xong range thanh cuộn sau
+            # model reset rồi mới kéo (khuôn QTimer của dashboard).
+            QTimer.singleShot(0, self._scroll_to_nearest)
+
+    def _scroll_to_nearest(self) -> None:
+        """Đưa tin sắp tới gần nhất lên đầu bảng (mặc định khi mở màn — yêu cầu 3)."""
+        nearest = self.table_model.nearest
+        if nearest is None:
+            return
+        at = next(
+            (i for i, row in enumerate(self.table_model.rows) if row is nearest), None
+        )
+        if at is None:
+            return
+        self.table.scrollTo(
+            self.table_model.index(at, 0), QAbstractItemView.ScrollHint.PositionAtTop
+        )
 
     def _on_rows_failed(self, message: str) -> None:
         set_rich_html(self.status_message, empty_state_html(message, tone="danger", icon="alert-triangle", icon_role="danger"))
@@ -3118,7 +3286,7 @@ class NewsScreen(QWidget):
         if self.table_model.COLUMNS[index.column()][0] != "detail":
             return
         row = self.table_model.row_at(index.row())
-        if row is not None:
+        if row is not None and row.section_text is None:
             self.show_row_detail(row)
 
     def show_row_detail(self, row: NewsRow) -> None:

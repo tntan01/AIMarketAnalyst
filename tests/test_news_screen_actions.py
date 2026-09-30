@@ -25,6 +25,7 @@ import dataclasses
 import os
 import sys
 import time
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -235,6 +236,13 @@ def _close_screens():
     for screen in _SCREENS:
         screen.shutdown()
     _app().processEvents()
+
+
+@pytest.fixture(autouse=True)
+def _fixed_now(monkeypatch):
+    """Chốt "hiện tại" xa (2030) để fixture 2026-09 là quá khứ — không sinh
+    dòng "sắp tới gần nhất", giữ kết quả tất định theo ngày chạy test."""
+    monkeypatch.setattr(news, "_now_utc", lambda: datetime(2030, 1, 1, tzinfo=UTC))
 
 
 def _screen(controller: FakeNewsController | None = None, *, wait: bool = True) -> NewsScreen:
