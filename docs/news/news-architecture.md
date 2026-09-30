@@ -1033,6 +1033,24 @@ thông báo chính xác theo loại; **D** lần retry duy nhất phủ cả l�
 (parser đổi `retryable` → `document_level`, luật retry về người gọi). Nền tảng đã có từ lô sửa trước đó (ngân sách
 token tường minh `AI_TREND_MAX_TOKENS`) và dòng "Lý do lỗi" của tổng kết batch.
 
+**Ghi chú hoàn tất ca "Nhận định AI — độ bền kết quả" (30/09/2026):** 5 lô
+A0 (plan, commit ngay khi mở ca) + A + B + C + D đều **IMPLEMENTED**; plan đã xóa
+theo D3. Chẩn đoán (đo thật, trên bản sao `news.db` trong temp): lượt "Nhận định
+tất cả" hỏng 9/11 vì **ba gốc** — (1) nhãn dòng dữ kiện in id kèm `#` nên model
+bắt chước `#` vào mảng JSON; (2) độ dài suy luận biến thiên cực mạnh (4,2k →
+26,3k ký tự cho cùng prompt) làm lượt thì hết ngân sách output; (3) mọi loại
+thất bại hiển thị chung một câu nên không chẩn đoán được. Nghiệm thu lượt thật
+**11 phạm vi: 11/11 ok — 33 dòng verdict, 201s** (trước ca: **2/11**); lỗi phát
+sinh giữa ca (NZD, `UnexpectedHorizon` — lỗi sai cấu trúc **không** được retry
+theo doctrine cũ) đã đóng bằng lô D theo quyết định Owner 30/09/2026. Battery họ
+tin tức/AI/dialog/parser **2132 passed**; battery toàn repo **5714 passed** với
+đúng ngoại lệ danh tính đã biết (họ `test_step3_fred` 4 failed + collection error
+`test_smc_gate72_fix_acceptance` — đỏ sẵn ở HEAD, thiếu asset ngoài repo); 2 smoke
+**EXIT=0** (`scanner_smoke.py`, `smc_ui_smoke.py` offscreen — artifact ghi ra temp,
+không chạm repo). `prompt_hash` khung mới ghim **`766db7e2…`** (đổi **lần 3**;
+test ghim giá trị đầy đủ). Mọi lượt gọi AI của ca chạy trên **bản sao DB trong
+temp** — `%APPDATA%/ai-market-analyst/news.db` không bị chạm.
+
 **Ghi chú hoàn tất ca "Độ sâu dữ liệu theo chân trời" (29/09/2026):** 5 lô
 C1–C5 đều **IMPLEMENTED**, nghiệm thu tổng trên **cây commit thuần** (worktree):
 battery họ tin tức **951 passed** (gồm cổng E2 **20 passed** — cách ly tín hiệu
