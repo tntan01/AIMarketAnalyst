@@ -39,7 +39,9 @@ from controllers import app_controller as app_controller_module
 from controllers import news_controller as news_controller_module
 from controllers.app_controller import AppController
 from controllers.news_controller import (
+    NO_AI_CONFIG_TEXT,
     PARSE_FAIL_TEXT,
+    STRUCTURE_FAIL_TEXT,
     BatchScopeResult,
     BatchTrendResult,
     NewsController,
@@ -1674,6 +1676,75 @@ class TestAnalyzeTrendRetry:
         assert not result.ok and result.error_message
         assert len(ai.calls) == 2
         assert repo.add_verdict_calls == []
+
+    def test_schema_violation_carries_the_parser_code_and_no_retry(self):
+        # JSON đọc được nhưng thiếu horizon ⇒ parser từ chối KHÔNG retryable
+        # (§9.1: model đã trả lời, câu trả lời không dùng được) — và mã lỗi mang
+        # chính từ vựng có kiểu của parser, câu chữ là "sai cấu trúc" (lô C).
+        payload = json.dumps(
+            {
+                "short": {
+                    "direction": "bullish",
+                    "confidence": "high",
+                    "rationale": "x",
+                    "evidence_item_ids": [1],
+                }
+            }
+        )
+        ai = ScriptedAIService([payload])
+        controller, repo = self._controller(ai)
+
+        result = controller.analyze_trend("currency", "EUR")
+
+        assert not result.ok
+        assert result.error_type == "MissingHorizon"
+        assert result.error_message == STRUCTURE_FAIL_TEXT
+        assert len(ai.calls) == 1  # lỗi cấu trúc KHÔNG retry
+        assert repo.add_verdict_calls == []
+
+    def test_invalid_json_carries_its_code_and_the_json_text(self):
+        ai = ScriptedAIService(["hỏng", "vẫn hỏng"])
+        controller, _repo = self._controller(ai)
+
+        result = controller.analyze_trend("currency", "EUR")
+
+        assert result.error_type == "InvalidJson"
+        assert result.error_message == PARSE_FAIL_TEXT
+
+    def test_budget_and_provider_failures_carry_their_codes(self):
+        ai = ScriptedAIService(
+            [AIOutputBudgetError("hết ngân sách"), AIOutputBudgetError("hết ngân sách")]
+        )
+        controller, _repo = self._controller(ai)
+
+        budget = controller.analyze_trend("currency", "EUR")
+
+        assert budget.error_type == "OutputBudget"
+
+        ai_network = ScriptedAIService([RuntimeError("Không kết nối được AI API")])
+        controller, _repo = self._controller(ai_network)
+
+        provider = controller.analyze_trend("currency", "EUR")
+
+        assert provider.error_type == "Provider"
+        assert provider.error_message == "Không kết nối được AI API"
+
+    def test_missing_config_carries_its_code(self):
+        repo = FakeRepository()
+        repo.events = [_batch_event(1), _batch_event(2), _batch_event(3)]
+        controller = NewsController(
+            repo=repo,
+            policy=_policy(),
+            rss_producer=FakeRssProducer(),
+            bond_yield_producer=FakeBondYieldProducer(),
+            ai_config_provider=lambda: None,
+            schedule_starter=FakeStarter(),
+        )
+
+        result = controller.analyze_trend("currency", "EUR")
+
+        assert result.error_type == "NoConfig"
+        assert result.error_message == NO_AI_CONFIG_TEXT
 
 
 class TestAnalyzeAllTrends:

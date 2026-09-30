@@ -262,6 +262,17 @@ AI_TREND_MAX_TOKENS = 8000
 # lần hai nâng trần — chỉ tốn thêm khi lượt đầu đã hỏng.
 AI_TREND_RETRY_MAX_TOKENS = 16000
 
+# Mã lỗi máy đọc của các đường KHÔNG phải parser (đợt 7 — lô C ca "Nhận định AI —
+# độ bền kết quả"); lỗi do parser từ chối thì mang chính mã có kiểu của parser.
+AI_ERROR_OUTPUT_BUDGET = "OutputBudget"  # model đốt hết ngân sách output
+AI_ERROR_PROVIDER = "Provider"  # lỗi mạng/HTTP/nhà cung cấp
+AI_ERROR_NO_CONFIG = "NoConfig"  # chưa cấu hình provider/key (fail-closed)
+# Câu chữ theo LOẠI lỗi parse: JSON hỏng khác với verdict sai cấu trúc — gộp một
+# câu cho mọi loại là mất thông tin chẩn đoán (đợt 7 — lô C).  Phân biệt bằng
+# chính tín hiệu của parser (``retryable`` = lỗi mức tài liệu), không nhân bản
+# từ vựng lỗi của parser ở đây (S1).
+STRUCTURE_FAIL_TEXT = "AI trả về verdict sai cấu trúc."
+
 # Assets priced in USD (contract §9.3 khoản 4): their scope reads the USD rate
 # and USD bond-yield context (C3).  The full 11-asset scope list is a batch B4
 # concern (derived from SUPPORTED_SYMBOLS); here only the USD-priced trio named
@@ -351,7 +362,14 @@ class TrendAnalysisResult:
     fail-closed report (no AI call); ``verdicts`` carries the composed rows for
     the dialog to render; ``error_message`` is the friendly text (never a bare
     parser detail) when the run failed — and in every failure case nothing was
-    stored (§9.1: "không lưu verdict rác")."""
+    stored (§9.1: "không lưu verdict rác").
+
+    ``error_type`` is the **machine-readable** failure code (đợt 7 — lô C ca
+    "Nhận định AI — độ bền kết quả"): the parser's own typed code for a refused
+    answer (``InvalidJson``, ``InvalidResponse``, ``MissingHorizon``, …), or one
+    of ``OutputBudget`` / ``Provider`` / ``NoConfig`` for the other paths — so a
+    caller (and the batch's reason line) can tell "JSON hỏng" from "hết ngân
+    sách" from "sai cấu trúc" without reading prose."""
 
     ok: bool
     verdicts: tuple[TrendVerdict, ...] = ()
@@ -360,6 +378,7 @@ class TrendAnalysisResult:
     event_count: int = 0
     item_count: int = 0
     error_message: str | None = None
+    error_type: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -1216,6 +1235,7 @@ class NewsController:
             return TrendAnalysisResult(
                 ok=False,
                 error_message=NO_AI_CONFIG_TEXT,
+                error_type=AI_ERROR_NO_CONFIG,
                 event_count=outcome.event_count,
                 item_count=outcome.item_count,
             )
@@ -1237,12 +1257,12 @@ class NewsController:
                 )
             except AIOutputBudgetError as exc:
                 if attempt == 1:
-                    return self._ai_failure(exc, outcome)
+                    return self._ai_failure(exc, outcome, AI_ERROR_OUTPUT_BUDGET)
                 max_tokens = AI_TREND_RETRY_MAX_TOKENS
                 continue
             except Exception as exc:
                 # Provider lỗi — adapter đã dịch qua friendly_error() khi raise.
-                return self._ai_failure(exc, outcome)
+                return self._ai_failure(exc, outcome, AI_ERROR_PROVIDER)
             if attempt == 0 and parsed.error is not None and parsed.error.retryable:
                 retry_prompt = with_retry_hint(prompt, parsed.error.detail)
                 max_tokens = AI_TREND_RETRY_MAX_TOKENS
@@ -1254,7 +1274,8 @@ class NewsController:
             # lưu verdict rác (§9.1).
             return TrendAnalysisResult(
                 ok=False,
-                error_message=PARSE_FAIL_TEXT,
+                error_message=self._refusal_text(parsed.error),
+                error_type=None if parsed.error is None else parsed.error.error_type,
                 event_count=outcome.event_count,
                 item_count=outcome.item_count,
             )
@@ -1470,18 +1491,32 @@ class NewsController:
         )
 
     def _ai_failure(
-        self, exc: Exception, outcome: TrendPromptOutcome
+        self, exc: Exception, outcome: TrendPromptOutcome, error_type: str
     ) -> TrendAnalysisResult:
         """Kết quả lỗi của một lượt phân tích (provider hoặc hết ngân sách).
 
-        ``error_message`` là thông báo thân thiện do adapter dịch khi raise; số
-        đếm dữ kiện giữ nguyên để UI hiển thị được ngữ cảnh của lượt hỏng."""
+        ``error_message`` là thông báo thân thiện do adapter dịch khi raise;
+        ``error_type`` là mã máy đọc của đường gây lỗi (đợt 7 — lô C); số đếm dữ
+        kiện giữ nguyên để UI hiển thị được ngữ cảnh của lượt hỏng."""
         return TrendAnalysisResult(
             ok=False,
             error_message=str(exc),
+            error_type=error_type,
             event_count=outcome.event_count,
             item_count=outcome.item_count,
         )
+
+    @staticmethod
+    def _refusal_text(error: object) -> str:
+        """Câu chữ theo LOẠI lỗi parser từ chối (đợt 7 — lô C).
+
+        Phân biệt bằng chính tín hiệu của parser: ``retryable`` = lỗi mức tài
+        liệu (không phải JSON) → "không trả về JSON hợp lệ"; còn lại là JSON đọc
+        được nhưng sai hợp đồng verdict → "sai cấu trúc" (không nhân bản từ vựng
+        lỗi của parser ở controller — S1)."""
+        if error is not None and getattr(error, "retryable", False):
+            return PARSE_FAIL_TEXT
+        return STRUCTURE_FAIL_TEXT
 
     def _compose_verdicts(
         self,

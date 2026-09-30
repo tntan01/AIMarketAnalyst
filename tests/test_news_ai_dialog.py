@@ -32,6 +32,7 @@ from controllers.news_controller import (
     BatchTrendResult,
     NewsController,
     PARSE_FAIL_TEXT,
+    STRUCTURE_FAIL_TEXT,
     TrendAnalysisResult,
     UserNoteResult,
 )
@@ -830,6 +831,24 @@ class TestAiOverview:
         assert dialog._batch_status.text() == news.AI_BATCH_SUMMARY_TEXT.format(
             ok=11, insufficient=0, error=0
         )
+
+    def test_batch_summary_shows_the_structure_reason_for_a_schema_failure(self):
+        # Lô C (ca "Nhận định AI — độ bền kết quả"): câu chữ theo LOẠI lỗi — lỗi
+        # cấu trúc verdict hiện đúng câu của nó, không lẫn với "JSON hỏng".
+        reason = STRUCTURE_FAIL_TEXT
+        controller = FakeAiController(
+            _preview(), batch_result=_batch_result_with_reasons({"XAU": reason})
+        )
+        dialog = _dialog(controller)
+
+        dialog._batch_button.click()
+        assert _wait_until(lambda: len(controller.batch_calls) == 1)
+        assert _wait_until(lambda: dialog._batch_button.isEnabled())
+
+        text = dialog._batch_status.text()
+        assert reason in text
+        assert "XAU" in text
+        assert reason != PARSE_FAIL_TEXT  # hai loại lỗi khác nhau, hai câu khác nhau
 
 
 class TestAiDialogAnalysis:

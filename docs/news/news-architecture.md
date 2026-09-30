@@ -640,6 +640,12 @@ chuỗi hiển thị — vi phạm lớp `services/` (mục 3).
    nâng ngân sách ở lần hai vì câu trả lời cụt vì chạm trần cũng hỏng ở tầng
    parse (JSON dở dang). Provenance không đổi: `prompt_hash`/`input_snapshot`
    vẫn của prompt **gốc**. Vẫn **đúng một lần** gọi lại — không có lần thứ ba.
+   **Chẩn đoán có kiểu (đợt 7 — lô C):** `TrendAnalysisResult.error_type` mang mã
+   máy đọc của lượt hỏng — mã có kiểu của parser (`InvalidJson`,
+   `InvalidResponse`, `MissingHorizon`, …) hoặc `OutputBudget` / `Provider` /
+   `NoConfig` cho các đường khác; câu chữ thân thiện theo **loại** (JSON hỏng
+   khác sai cấu trúc verdict khác hết ngân sách) nên dòng tổng kết batch tự nói
+   đúng lý do, không phải điều tra lại.
 6. Repository lưu 3 dòng `ai_trend_verdicts` kèm `input_snapshot_json` +
    `prompt_hash`; cửa sổ hiển thị kết quả + lịch sử.
 7. **Chế độ batch "Nhận định tất cả" (đợt 5 — D1/D2/§13 đợt 5):** một worker

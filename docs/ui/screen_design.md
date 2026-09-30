@@ -1790,6 +1790,11 @@ Cặp: [ EUR/USD ▼ ]
   — gom theo lý do, mỗi nhóm kèm danh sách phạm vi (vd `Lý do lỗi: AI hết giới
   hạn token… (EUR, USD)`), lý do lấy nguyên văn thông báo thân thiện từ
   provider/parser; không có phạm vi lỗi thì tổng kết giữ nguyên một dòng.
+  **Câu chữ theo LOẠI lỗi (đợt 7 — lô C):** controller map `error_type` máy đọc
+  sang câu chữ chính xác — "AI không trả về JSON hợp lệ." (lỗi mức tài liệu),
+  "AI trả về verdict sai cấu trúc." (JSON đọc được nhưng sai hợp đồng), "AI hết
+  ngân sách suy luận trước khi trả lời." (hết ngân sách output), hoặc thông báo
+  của nhà cung cấp — nên nhìn dòng lý do là biết hỏng ở khâu nào.
 
 **Tab "Chi tiết"** (giữ khuôn 3 thẻ chân trời hiện hành):
 
