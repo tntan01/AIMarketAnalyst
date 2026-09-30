@@ -115,6 +115,7 @@ class AIService:
 # These were previously module-level in ai_service.py.  They now live on
 # the adapters but are re-exported here so existing imports don't break.
 
+from services.ai.provider_adapter import AIOutputBudgetError  # noqa: E402, F401
 from services.ai.providers.gemini_adapter import GEMINI_REST_BASE  # noqa: E402, F401
 from services.ai.providers.gemini_adapter import _GEMINI_MODELS_CACHE  # noqa: E402, F401
 

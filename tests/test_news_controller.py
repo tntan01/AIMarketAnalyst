@@ -39,6 +39,7 @@ from controllers import app_controller as app_controller_module
 from controllers import news_controller as news_controller_module
 from controllers.app_controller import AppController
 from controllers.news_controller import (
+    PARSE_FAIL_TEXT,
     BatchScopeResult,
     BatchTrendResult,
     NewsController,
@@ -48,6 +49,8 @@ from controllers.news_controller import (
     UserNoteFieldError,
     UserNoteResult,
 )
+from services.ai_service import AIOutputBudgetError
+
 from core.news_models import (
     CalendarEvent,
     EventImpact,
@@ -1577,6 +1580,100 @@ class TestAiAssetScopes:
         controller = _controller(repo=FakeRepository())
 
         assert controller.AI_ASSET_SCOPES == ("AAA", "BBB", "CCC")
+
+
+class ScriptedAIService:
+    """Fake ``AIService`` theo kịch bản: mỗi lần gọi lấy một bước — chuỗi là câu
+    trả lời, ``Exception`` là raise.  Ghi prompt + ngân sách từng lần để kiểm
+    lần retry duy nhất (lô B ca "Nhận định AI — độ bền kết quả")."""
+
+    def __init__(self, script: list[object]) -> None:
+        self.script = list(script)
+        self.calls: list[str] = []
+        self.max_tokens_calls: list[int] = []
+
+    def analyze(self, prompt: str, max_tokens: int = 1800) -> str:
+        self.calls.append(prompt)
+        self.max_tokens_calls.append(max_tokens)
+        if not self.script:
+            raise AssertionError("ScriptedAIService hết kịch bản")
+        step = self.script.pop(0)
+        if isinstance(step, Exception):
+            raise step
+        return str(step)
+
+
+class TestAnalyzeTrendRetry:
+    """Lần retry DUY NHẤT (§9.1 bước 5) đổi NỘI DUNG theo loại lỗi của lần đầu.
+
+    Trước đây lần hai gửi lại y nguyên cùng ngân sách: câu trả lời hỏng vì lẫn
+    ký tự trang trí, hoặc bị cắt vì hết ngân sách, đều hỏng lại như cũ — chỉ tốn
+    thêm một lời gọi (đo thật 30/09/2026)."""
+
+    def _controller(self, ai) -> tuple[NewsController, FakeRepository]:
+        repo = FakeRepository()
+        repo.events = [_batch_event(1), _batch_event(2), _batch_event(3)]
+        return _batch_controller(ai, repo), repo
+
+    def test_parse_failure_retries_once_with_a_repair_hint(self):
+        ai = ScriptedAIService(["không phải JSON", _batch_verdict_json([1, 2, 3])])
+        controller, _repo = self._controller(ai)
+
+        result = controller.analyze_trend("currency", "EUR")
+
+        assert result.ok and result.inserted == 3
+        assert len(ai.calls) == 2  # ĐÚNG một lần retry — không có lần thứ ba
+        assert "Your previous answer was rejected" not in ai.calls[0]
+        assert "Your previous answer was rejected" in ai.calls[1]  # chỉ dẫn sửa
+        assert "Expecting value" in ai.calls[1]  # kèm lỗi cụ thể của parser
+        # Lần retry cũng nâng ngân sách: câu trả lời cụt vì chạm trần cũng hỏng
+        # ở tầng parse (JSON dở dang).
+        assert ai.max_tokens_calls == [
+            news_controller_module.AI_TREND_MAX_TOKENS,
+            news_controller_module.AI_TREND_RETRY_MAX_TOKENS,
+        ]
+
+    def test_output_budget_error_retries_once_with_a_bigger_budget(self):
+        ai = ScriptedAIService(
+            [
+                AIOutputBudgetError("AI hết giới hạn token trước khi tạo được nội dung."),
+                _batch_verdict_json([1, 2, 3]),
+            ]
+        )
+        controller, _repo = self._controller(ai)
+
+        result = controller.analyze_trend("currency", "EUR")
+
+        assert result.ok and result.inserted == 3
+        assert len(ai.calls) == 2
+        assert ai.max_tokens_calls == [
+            news_controller_module.AI_TREND_MAX_TOKENS,
+            news_controller_module.AI_TREND_RETRY_MAX_TOKENS,
+        ]
+        assert ai.calls[0] == ai.calls[1]  # không có gì để "sửa" → cùng prompt
+
+    def test_two_parse_failures_store_nothing_and_stop_at_two_calls(self):
+        ai = ScriptedAIService(["hỏng", "vẫn hỏng"])
+        controller, repo = self._controller(ai)
+
+        result = controller.analyze_trend("currency", "EUR")
+
+        assert not result.ok and not result.insufficient
+        assert result.error_message == PARSE_FAIL_TEXT
+        assert len(ai.calls) == 2  # retry một lần, không lặp vô hạn
+        assert repo.add_verdict_calls == []  # không lưu verdict rác
+
+    def test_two_budget_errors_store_nothing(self):
+        ai = ScriptedAIService(
+            [AIOutputBudgetError("hết ngân sách"), AIOutputBudgetError("hết ngân sách")]
+        )
+        controller, repo = self._controller(ai)
+
+        result = controller.analyze_trend("currency", "EUR")
+
+        assert not result.ok and result.error_message
+        assert len(ai.calls) == 2
+        assert repo.add_verdict_calls == []
 
 
 class TestAnalyzeAllTrends:

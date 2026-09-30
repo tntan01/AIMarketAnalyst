@@ -279,8 +279,7 @@ class TestPromptStabilityAndHash:
             == "766db7e27126393cc4ebd78a1578cb54a2930e630a86bb586bd665e921053e68"
         )
 
-    def test_hash_is_independent_of_the_market_context(self):
-        # The hash covers the frame, never the data: different contexts (even
+    def test_hash_is_independent_of_the_market_context(self):        # The hash covers the frame, never the data: different contexts (even
         # none) keep the same hash while the rendered prompt differs.
         empty = _build(context=MarketContext()).prompt
         full = _build(
@@ -295,6 +294,35 @@ class TestPromptStabilityAndHash:
         assert empty.prompt_hash == full.prompt_hash
         assert "market context: none" in empty.text
         assert "policy rate USD" in full.text
+
+
+class TestRetryHint:
+    """``with_retry_hint`` — prompt cho LẦN RETRY DUY NHẤT (§9.1 bước 5, lô B ca
+    "Nhận định AI — độ bền kết quả")."""
+
+    def test_hint_keeps_provenance_and_adds_the_repair_rules(self):
+        prompt = _build().prompt
+
+        hinted = builder.with_retry_hint(prompt, "Expecting value: line 18 column 32")
+
+        # Chỉ ``text`` đổi; provenance của verdict vẫn là khung prompt GỐC.
+        assert hinted.prompt_hash == prompt.prompt_hash
+        assert hinted.evidence_item_ids == prompt.evidence_item_ids
+        assert hinted.snapshot == prompt.snapshot
+        assert hinted.text.startswith(prompt.text)
+        assert "Your previous answer was rejected: Expecting value" in hinted.text
+        assert "ONE JSON object and nothing else" in hinted.text
+        assert 'as a plain integer' in hinted.text
+
+    def test_hint_quotes_the_parser_detail_verbatim(self):
+        # ``detail`` là thông báo lỗi NGẮN do chính parser của app sinh ra (không
+        # phải văn bản từ nguồn ngoài) nên không cần cắt — module thuần cấm số
+        # nguyên literal khác 0/1 (R4).
+        prompt = _build().prompt
+
+        hinted = builder.with_retry_hint(prompt, "response is not JSON: char 3322")
+
+        assert "Your previous answer was rejected: response is not JSON: char 3322" in hinted.text
 
 
 # ---- 2. ngưỡng ai_min_items (fail-closed, §9.1 bước 2) -------------------------

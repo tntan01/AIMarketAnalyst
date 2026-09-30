@@ -153,9 +153,10 @@ from core.trend_prompt_builder import (
     WindowRows,
     build_trend_prompt,
     select_rows_for_windows,
+    with_retry_hint,
 )
 from core.trend_verdict_parser import TrendParseOutcome, parse_trend_verdict
-from services.ai_service import AIProviderConfig, AIService
+from services.ai_service import AIOutputBudgetError, AIProviderConfig, AIService
 from services.ff_source_parser import (
     ParseError,
     RowDisposition,
@@ -253,6 +254,13 @@ PARSE_FAIL_TEXT = "AI không trả về JSON hợp lệ."
 # cho ca nặng nhất (USD); adapter DeepSeek có sàn 4000 riêng nhưng adapter
 # OpenAI-Compatible thì không, và scanner truyền 4000 cho prompt ngắn hơn.
 AI_TREND_MAX_TOKENS = 8000
+
+# Ngân sách của LẦN RETRY DUY NHẤT (§9.1 bước 5) khi lần đầu model đốt hết ngân
+# sách cho phần suy luận (``AIOutputBudgetError`` — ``finish_reason=length``,
+# ``content`` rỗng).  Gửi lại y nguyên cùng trần là chắc chắn hỏng lại (đã đo:
+# cùng một prompt EUR có lần reasoning 4.183 ký tự, có lần 26.306 ký tự), nên
+# lần hai nâng trần — chỉ tốn thêm khi lượt đầu đã hỏng.
+AI_TREND_RETRY_MAX_TOKENS = 16000
 
 # Assets priced in USD (contract §9.3 khoản 4): their scope reads the USD rate
 # and USD bond-yield context (C3).  The full 11-asset scope list is a batch B4
@@ -1212,20 +1220,35 @@ class NewsController:
                 item_count=outcome.item_count,
             )
         service, provider, model = resolved
-        try:
-            parsed = self._analyze_answer(service, prompt)
-            if parsed.error is not None and parsed.error.retryable:
-                # §9.1 bước 5 — retry ĐÚNG MỘT lần theo tín hiệu retryable
-                # của parser (parser không bao giờ tự retry).
-                parsed = self._analyze_answer(service, prompt)
-        except Exception as exc:
-            # Provider lỗi — các adapter đã dịch qua friendly_error() khi raise.
-            return TrendAnalysisResult(
-                ok=False,
-                error_message=str(exc),
-                event_count=outcome.event_count,
-                item_count=outcome.item_count,
-            )
+        # Nhiều nhất HAI lần gọi cho một lượt phân tích (§9.1 bước 5 — "retry một
+        # lần").  Lần hai KHÁC nội dung theo loại lỗi của lần đầu:
+        #  - parser từ chối câu trả lời (``retryable``) → prompt kèm chỉ dẫn sửa
+        #    (``with_retry_hint``: JSON trần + id số nguyên trần + lỗi cụ thể);
+        #  - model đốt hết ngân sách (``AIOutputBudgetError``) → nâng ngân sách.
+        # Cả hai ca đều nâng ngân sách ở lần hai: câu trả lời cụt vì chạm trần
+        # cũng có thể hỏng ở tầng parse (JSON dở dang).
+        parsed: TrendParseOutcome | None = None
+        retry_prompt = prompt
+        max_tokens = AI_TREND_MAX_TOKENS
+        for attempt in range(2):
+            try:
+                parsed = self._analyze_answer(
+                    service, retry_prompt, max_tokens=max_tokens
+                )
+            except AIOutputBudgetError as exc:
+                if attempt == 1:
+                    return self._ai_failure(exc, outcome)
+                max_tokens = AI_TREND_RETRY_MAX_TOKENS
+                continue
+            except Exception as exc:
+                # Provider lỗi — adapter đã dịch qua friendly_error() khi raise.
+                return self._ai_failure(exc, outcome)
+            if attempt == 0 and parsed.error is not None and parsed.error.retryable:
+                retry_prompt = with_retry_hint(prompt, parsed.error.detail)
+                max_tokens = AI_TREND_RETRY_MAX_TOKENS
+                continue
+            break
+        assert parsed is not None  # vòng lặp luôn trả về hoặc gán ``parsed``
         if not parsed.ok:
             # Thất bại cuối (retry cạn hoặc câu trả lời không hợp lệ) — không
             # lưu verdict rác (§9.1).
@@ -1430,17 +1453,34 @@ class NewsController:
             model,
         )
 
-    def _analyze_answer(self, service: object, prompt: TrendPrompt) -> TrendParseOutcome:
+    def _analyze_answer(
+        self, service: object, prompt: TrendPrompt, *, max_tokens: int | None = None
+    ) -> TrendParseOutcome:
         """One analyze+parse round; the caller owns the retry decision.
 
-        Ngân sách token truyền tường minh (``AI_TREND_MAX_TOKENS``) — mặc định
+        Ngân sách token truyền tường minh (``AI_TREND_MAX_TOKENS`` — mặc định
         1800 của ``AIService.analyze`` không đủ cho model suy luận, xem chú thích
-        hằng số."""
-        raw = service.analyze(prompt.text, max_tokens=AI_TREND_MAX_TOKENS)  # type: ignore[attr-defined]
+        hằng số; ``max_tokens`` dùng cho lần retry với trần lớn hơn)."""
+        budget = AI_TREND_MAX_TOKENS if max_tokens is None else max_tokens
+        raw = service.analyze(prompt.text, max_tokens=budget)  # type: ignore[attr-defined]
         return parse_trend_verdict(
             raw,
             horizons=tuple(self._policy.ai_horizons),
             evidence_item_ids=prompt.evidence_item_ids,
+        )
+
+    def _ai_failure(
+        self, exc: Exception, outcome: TrendPromptOutcome
+    ) -> TrendAnalysisResult:
+        """Kết quả lỗi của một lượt phân tích (provider hoặc hết ngân sách).
+
+        ``error_message`` là thông báo thân thiện do adapter dịch khi raise; số
+        đếm dữ kiện giữ nguyên để UI hiển thị được ngữ cảnh của lượt hỏng."""
+        return TrendAnalysisResult(
+            ok=False,
+            error_message=str(exc),
+            event_count=outcome.event_count,
+            item_count=outcome.item_count,
         )
 
     def _compose_verdicts(

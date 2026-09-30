@@ -156,6 +156,61 @@ def test_generate_handles_trailing_slash_base_url():
     assert captured["url"] == "https://my-host/v1/chat/completions"
 
 
+def test_generate_raises_typed_budget_error_when_the_model_hits_the_cap():
+    """``finish_reason=length`` + nội dung rỗng = model hết ngân sách output.
+
+    Lỗi phải CÓ KIỂU (``AIOutputBudgetError``) để đường gọi phân biệt với các ca
+    rỗng khác và nâng ngân sách ở lần retry duy nhất (contract news §9.1 bước 5).
+    """
+    from services.ai.provider_adapter import AIOutputBudgetError
+
+    adapter = _adapter()
+    captured: dict = {}
+    response = {
+        "choices": [{"message": {"content": "", "reasoning_content": "suy luận…"},
+                     "finish_reason": "length"}],
+        "usage": {"completion_tokens": 8000},
+    }
+    with patch("services.ai.provider_adapter.urlopen",
+               _make_fake_urlopen(captured, response)):
+        try:
+            adapter.generate("p", "m", "k", 8000, base_url="http://localhost:1234/v1")
+        except AIOutputBudgetError as exc:
+            assert "token" in str(exc)  # thông báo thân thiện giữ nguyên
+        else:  # pragma: no cover - nhánh chỉ chạy khi hành vi đổi
+            raise AssertionError("phải raise AIOutputBudgetError")
+
+
+def test_generate_keeps_plain_runtime_error_for_other_empty_reasons():
+    adapter = _adapter()
+    captured: dict = {}
+    response = {"choices": [{"message": {"content": ""}, "finish_reason": "content_filter"}]}
+    with patch("services.ai.provider_adapter.urlopen",
+               _make_fake_urlopen(captured, response)):
+        try:
+            adapter.generate("p", "m", "k", 100, base_url="http://localhost:1234/v1")
+        except RuntimeError as exc:
+            assert type(exc) is RuntimeError  # KHÔNG phải lỗi ngân sách
+        else:  # pragma: no cover
+            raise AssertionError("phải raise RuntimeError")
+
+
+def test_generate_still_falls_back_to_reasoning_when_the_turn_was_not_cut_off():
+    """Đường dự phòng cũ giữ nguyên cho lượt KHÔNG bị cắt: gateway chỉ trả
+    ``reasoning_content`` (``finish_reason=stop``) vẫn cho ra text như trước —
+    lô B chỉ chặn dự phòng đó khi lượt đã chạm trần token."""
+    adapter = _adapter()
+    captured: dict = {}
+    response = {
+        "choices": [{"message": {"content": "", "reasoning_content": "nội dung"},
+                     "finish_reason": "stop"}]
+    }
+    with patch("services.ai.provider_adapter.urlopen",
+               _make_fake_urlopen(captured, response)):
+        result = adapter.generate("p", "m", "k", 100, base_url="http://localhost:1234/v1")
+    assert result == "nội dung"
+
+
 def test_generate_empty_base_url_raises_clear_error():
     adapter = _adapter()
     try:

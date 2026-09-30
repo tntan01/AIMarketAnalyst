@@ -64,7 +64,7 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from typing import Final, Protocol
 
@@ -89,6 +89,7 @@ __all__ = [
     "WindowRows",
     "build_trend_prompt",
     "select_rows_for_windows",
+    "with_retry_hint",
 ]
 
 
@@ -228,6 +229,18 @@ _LONG_SECTION_LINE_TEMPLATE = (
 _SCHEMA_LINE_TEMPLATE = (
     '  "{horizon}": {{"direction": "{directions}", "confidence": "{confidences}", '
     '"rationale": "{rationale}", "evidence_item_ids": [{evidence}]}}{comma}'
+)
+
+# Hint appended to the frame for the SINGLE retry of an analysis turn (contract
+# section 9.1 step 5).  The retry text belongs to this owner, not to the caller:
+# sending the very same prompt again is useless when the answer was refused for
+# carrying decoration, so the retry spells out bare JSON + plain integer ids and
+# quotes the parser detail.
+_RETRY_HINT_TEMPLATE = (
+    "\n\nYour previous answer was rejected: {detail}\n"
+    "Answer the same task again with ONE JSON object and nothing else - no prose,\n"
+    'no markdown fence. Write every id in "evidence_item_ids" as a plain integer\n'
+    '(no "#" prefix, no quotes).\n\nJSON:'
 )
 
 # Market-context fragments (section 9.1 step 3, batch B3; wave 6 adds the rate
@@ -736,6 +749,19 @@ _IMPACT_RANK: Final[dict[EventImpact, int]] = {
 _MID_IMPACTS: Final[frozenset[EventImpact]] = frozenset(
     {EventImpact.HIGH, EventImpact.MEDIUM}
 )
+
+
+def with_retry_hint(prompt: TrendPrompt, detail: str) -> TrendPrompt:
+    """The prompt of the **single retry** of an analysis turn (pure).
+
+    The second call (section 9.1 step 5) never resends the exact same prompt: an
+    answer the parser refused comes with a short reminder - bare JSON, every id a
+    plain integer, **no** "#" prefix - plus ``detail`` (the parser's own short
+    failure message), so the model knows what was wrong.  Only ``text`` changes:
+    ``prompt_hash``/``snapshot``/``evidence_item_ids`` stay those of the original
+    prompt (the verdict's provenance is the original frame, section 4.5)."""
+    hint = _RETRY_HINT_TEMPLATE.format(detail=_text(detail))
+    return replace(prompt, text=prompt.text + hint)
 
 
 @dataclass(frozen=True, slots=True)

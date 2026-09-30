@@ -629,6 +629,17 @@ chuỗi hiển thị — vi phạm lớp `services/` (mục 3).
    `direction`, `confidence`, `rationale` tiếng Việt, `evidence_item_ids`.
    JSON không hợp lệ → retry một lần → thất bại trả lỗi thân thiện qua
    `friendly_error()` của provider adapter; **không lưu verdict rác**.
+   **Lần retry duy nhất đổi NỘI DUNG theo loại lỗi của lần đầu (đợt 7 — lô B
+   ca "Nhận định AI — độ bền kết quả"):** (a) parser từ chối câu trả lời
+   (`retryable`) → prompt lần hai mang thêm chỉ dẫn sửa do chủ sở hữu khung
+   prompt sinh (`core/trend_prompt_builder.with_retry_hint`: JSON trần, id là
+   **số nguyên trần**, kèm `detail` của parser); (b) model **đốt hết ngân sách
+   output** (`finish_reason=length` — lỗi **có kiểu** `AIOutputBudgetError` ở
+   tầng adapter, `content` rỗng; reasoning không bao giờ được coi là câu trả
+   lời khi lượt đã chạm trần) → lần hai **nâng ngân sách**. Cả hai nhánh đều
+   nâng ngân sách ở lần hai vì câu trả lời cụt vì chạm trần cũng hỏng ở tầng
+   parse (JSON dở dang). Provenance không đổi: `prompt_hash`/`input_snapshot`
+   vẫn của prompt **gốc**. Vẫn **đúng một lần** gọi lại — không có lần thứ ba.
 6. Repository lưu 3 dòng `ai_trend_verdicts` kèm `input_snapshot_json` +
    `prompt_hash`; cửa sổ hiển thị kết quả + lịch sử.
 7. **Chế độ batch "Nhận định tất cả" (đợt 5 — D1/D2/§13 đợt 5):** một worker

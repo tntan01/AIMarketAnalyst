@@ -48,7 +48,7 @@ class DeepSeekAdapter(BaseProviderAdapter):
         content = self._extract_chat_completion_text(data)
         if content:
             return content
-        raise RuntimeError(self._chat_completion_empty_reason(data))
+        raise self._chat_completion_empty_error(data)
 
     def generate_stream(
         self, prompt: str, model: str, api_key: str, max_tokens: int,

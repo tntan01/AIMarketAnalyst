@@ -15,6 +15,18 @@ from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+__all__ = ["AIOutputBudgetError", "BaseProviderAdapter"]
+
+
+class AIOutputBudgetError(RuntimeError):
+    """Model hết ngân sách output trước khi tạo được nội dung.
+
+    Dấu hiệu: ``finish_reason=length`` và ``message.content`` rỗng — với model
+    suy luận, phần lớn ``max_tokens`` đi vào ``reasoning_content``.  Lỗi **có
+    kiểu** để người gọi phân biệt được ca "cần thêm ngân sách" với các ca rỗng
+    khác (chặn nội dung, thiếu tài nguyên, tool call) và đổi **nội dung lần
+    retry duy nhất** cho đúng (contract news §9.1 bước 5)."""
+
 
 class BaseProviderAdapter(ABC):
     """Stateless adapter for one AI provider.
@@ -132,7 +144,17 @@ class BaseProviderAdapter(ABC):
         }
 
     def _extract_chat_completion_text(self, data: dict[str, object]) -> str:
-        """Extract text from a chat-completion response dict."""
+        """Extract text from a chat-completion response dict.
+
+        ``reasoning_content`` is chain-of-thought, **not** the answer — the SSE
+        path already never exposes it.  While the turn is still running (or ended
+        ``stop``) the legacy fallback is kept for gateways that put the whole
+        answer there, but a turn cut off by the token cap (``finish_reason ==
+        "length"``) has no answer at all: returning the (truncated) reasoning
+        would make the parser report "invalid JSON" for what is really an
+        exhausted output budget — the caller must see the typed budget error
+        instead so its single retry raises the cap.
+        """
         choices = data.get("choices", [])
         if not isinstance(choices, list) or not choices:
             return ""
@@ -140,9 +162,12 @@ class BaseProviderAdapter(ABC):
         if not isinstance(choice, dict):
             return ""
 
+        truncated = self._chat_completion_finish_reason(data) == "length"
+        fallback_keys = ("content",) if truncated else ("content", "reasoning_content")
+
         message = choice.get("message", {})
         if isinstance(message, dict):
-            for key in ("content", "reasoning_content"):
+            for key in fallback_keys:
                 text = self._text_from_chat_value(message.get(key))
                 if text:
                     return text
@@ -153,7 +178,7 @@ class BaseProviderAdapter(ABC):
 
         delta = choice.get("delta", {})
         if isinstance(delta, dict):
-            for key in ("content", "reasoning_content"):
+            for key in fallback_keys:
                 text = self._text_from_chat_value(delta.get(key))
                 if text:
                     return text
@@ -178,6 +203,30 @@ class BaseProviderAdapter(ABC):
             ).strip()
         return ""
 
+    def _chat_completion_empty_error(self, data: dict[str, object]) -> Exception:
+        """Exception cho phản hồi rỗng — **có kiểu** khi model hết ngân sách.
+
+        ``finish_reason=length`` nghĩa là model đã đốt hết ``max_tokens`` trước
+        khi tạo được nội dung (với model suy luận: phần lớn ngân sách đi vào
+        ``reasoning_content``).  Ca này người gọi xử lý được bằng **nâng ngân
+        sách ở lần retry duy nhất**, nên nó phải phân biệt được với các ca rỗng
+        khác (chặn nội dung, thiếu tài nguyên, tool call) — trả
+        :class:`AIOutputBudgetError`; các ca còn lại giữ ``RuntimeError``."""
+        reason = self._chat_completion_empty_reason(data)
+        if self._chat_completion_finish_reason(data) == "length":
+            return AIOutputBudgetError(reason)
+        return RuntimeError(reason)
+
+    def _chat_completion_finish_reason(self, data: dict[str, object]) -> str:
+        """``finish_reason`` của lựa chọn đầu tiên ("" khi không có/không hợp lệ)."""
+        choices = data.get("choices", [])
+        if not isinstance(choices, list) or not choices:
+            return ""
+        choice = choices[0]
+        if not isinstance(choice, dict):
+            return ""
+        return str(choice.get("finish_reason") or "").strip()
+
     def _chat_completion_empty_reason(self, data: dict[str, object]) -> str:
         """Build a human-readable reason for an empty chat-completion response."""
         choices = data.get("choices", [])
@@ -186,7 +235,7 @@ class BaseProviderAdapter(ABC):
         choice = choices[0] if choices else {}
         if not isinstance(choice, dict):
             return "AI trả về phản hồi không đúng định dạng."
-        finish_reason = str(choice.get("finish_reason") or "").strip()
+        finish_reason = self._chat_completion_finish_reason(data)
         if finish_reason == "content_filter":
             return "AI đã chặn nội dung phản hồi theo bộ lọc an toàn."
         if finish_reason == "length":
