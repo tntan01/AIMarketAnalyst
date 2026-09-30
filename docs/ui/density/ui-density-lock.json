@@ -343,6 +343,17 @@
         "200"
       ],
       "category": "container"
+    },
+    {
+      "path": "ui/screens/news_screen.py",
+      "line": 1349,
+      "method": "setFixedSize",
+      "receiver": "self",
+      "arguments": [
+        "800",
+        "600"
+      ],
+      "category": "container"
     }
   ],
   "python_category_counts": {

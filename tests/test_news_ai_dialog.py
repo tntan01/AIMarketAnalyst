@@ -639,6 +639,13 @@ class TestAiDialogSmoke:
         assert controller.analyze_calls == []
         assert controller.batch_calls == []
 
+    def test_dialog_is_fixed_800x600(self):
+        controller = FakeAiController(_preview())
+        dialog = _dialog(controller)
+
+        assert (dialog.width(), dialog.height()) == (800, 600)
+        assert dialog.minimumSize() == dialog.maximumSize()
+
     def test_overview_grid_lists_eleven_assets(self):
         controller = FakeAiController(_preview())
         dialog = _dialog(controller)

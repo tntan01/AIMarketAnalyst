@@ -405,6 +405,17 @@ class TestScreenLayout:
             assert button.isEnabled() is True
             assert button.receivers(button.clicked) >= 1
 
+    def test_toolbar_buttons_use_the_system_action_style_with_icons(self):
+        screen = _screen()
+
+        assert set(news.TOOLBAR_ICONS) == set(news.TOOLBAR_LABELS)
+        for label, button in screen.toolbar_buttons.items():
+            # Khuôn nút hành động hệ thống: primary + glyph (không phải nút chữ trơn).
+            assert button.objectName() == "PrimaryButton", label
+            assert button.icon().isNull() is False, label
+            # Bề ngang tự nhiên (vừa đủ chứa tiêu đề + icon), không giãn theo cột.
+            assert button.width() <= button.sizeHint().width() + 2, label
+
     def test_table_headers_are_rendered(self):
         screen = _screen()
 

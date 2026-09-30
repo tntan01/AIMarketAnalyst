@@ -1690,7 +1690,7 @@ người dùng xác nhận trước khi ghi):
 > `NewsController` → `NewsRepository` theo contract mục 8/§9 — UI không tự
 > tính bias/độ phủ, không gọi AI ngoài nút nhận định (L1, S2).
 
-Mở từ nút **AI nhận định xu hướng**; kích thước tham khảo 560×640, không
+Mở từ nút **AI nhận định xu hướng**; kích thước **cố định 800×600**, không
 modal toàn app; chuyển từ 1 combo đơn sang **3 tab**:
 
 ```text

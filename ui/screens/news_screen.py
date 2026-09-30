@@ -62,7 +62,7 @@ Khai báo đọc-hiểu lô F4 (V2):
   bảng tin (d.1611-1612); "Hủy" reject không chạm controller.
 
 **Lô L3.5 — cửa sổ AI nhận định xu hướng** (screen_design d.1621-1649; contract
-§9.1-§9.2): nút "AI nhận định xu hướng" mở ``AiTrendDialog`` (520×640, không
+§9.1-§9.2): nút "AI nhận định xu hướng" mở ``AiTrendDialog`` (800×600 cố định, không
 modal toàn app — WindowModal, d.1624); phạm vi = cặp tiền ``SUPPORTED_SYMBOLS``
 (tiêu thụ) hoặc 1 đồng tiền rút từ chính danh sách cặp; dòng đếm qua
 ``controller.ai_scope_preview`` (không gọi AI); dưới ``ai_min_items`` hiện
@@ -303,6 +303,13 @@ TOOLBAR_LABELS: tuple[str, ...] = (
     "Nhập tin",
     "AI nhận định xu hướng",
 )
+# Icon của 3 nút thanh công cụ — khuôn nút hành động hệ thống (primary + color
+# + icon_role "selection_text"), glyph phẳng từ ``ui/icons.py`` (style-guide §2).
+TOOLBAR_ICONS: dict[str, str] = {
+    TOOLBAR_LABELS[0]: "clipboard",  # dán mã nguồn trang
+    TOOLBAR_LABELS[1]: "edit",  # nhập tin
+    TOOLBAR_LABELS[2]: "bot",  # AI nhận định xu hướng
+}
 # Nút áp bộ lọc của card tìm kiếm (screen_design "Bố cục" d.1543-1545 — Owner
 # duyệt 26/09/2026: KHÔNG tự tìm khi chọn ô, chỉ tìm khi bấm nút; nút đọc lại
 # DB theo cửa sổ ngày mới).
@@ -1301,7 +1308,7 @@ class AiOverviewModel(QAbstractTableModel):
 
 
 class AiTrendDialog(QDialog):
-    """Cửa sổ AI nhận định xu hướng — 560×640, không modal toàn app (d.1704).
+    """Cửa sổ AI nhận định xu hướng — 800×600 cố định, không modal toàn app (d.1704).
 
     Thiết kế lại **3 tab** (đợt 5 — B4; screen_design d.1704-1791):
 
@@ -1339,7 +1346,7 @@ class AiTrendDialog(QDialog):
         self._batch_worker = None
         self.setObjectName("NewsAiDialog")
         self.setWindowTitle(AI_TEXT)
-        self.resize(560, 640)
+        self.setFixedSize(800, 600)
         self.setWindowModality(Qt.WindowModality.WindowModal)
         self._build()
         self._reload_overview()
@@ -2772,18 +2779,34 @@ class NewsScreen(QWidget):
         return table_card
 
     def _toolbar(self) -> QWidget:
-        toolbar = ResponsiveGrid(
-            widgets=[self._toolbar_button(label) for label in TOOLBAR_LABELS],
-            columns=len(TOOLBAR_LABELS),
-            compact_columns=len(TOOLBAR_LABELS),
-            stretch=False,
-        )
+        """Dãy 3 nút thanh công cụ — bề ngang tự nhiên, căn trái (khuôn dãy nút
+        hệ thống: HBox + stretch cuối), đồng nhất style nút hành động
+        (primary + màu + icon)."""
+        toolbar = QWidget()
         toolbar.setObjectName("NewsToolbarRow")
+        row = QHBoxLayout(toolbar)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(8)
+        for label in TOOLBAR_LABELS:
+            row.addWidget(self._toolbar_button(label))
+        row.addStretch(1)
         return toolbar
 
     def _toolbar_button(self, label: str) -> QPushButton:
-        """Nút thanh công cụ — đúng 3 nút nối hành vi (F4: [Dán | Nhập | AI])."""
-        button = action_button(label)
+        """Nút thanh công cụ — đúng 3 nút nối hành vi (F4: [Dán | Nhập | AI]).
+
+        Dùng đúng khuôn nút hành động của hệ thống (``action_button`` primary +
+        màu + glyph + ``icon_role``/``icon_disabled_role`` = ``selection_text``)
+        để đồng nhất với các màn khác; dãy nút căn trái nên mỗi nút giữ bề ngang
+        tự nhiên (vừa đủ chứa tiêu đề + icon)."""
+        button = action_button(
+            label,
+            primary=True,
+            color="info",
+            icon=TOOLBAR_ICONS[label],
+            icon_role="selection_text",
+            icon_disabled_role="selection_text",
+        )
         if label == TOOLBAR_LABELS[0]:
             button.clicked.connect(self.open_paste_dialog)
         elif label == TOOLBAR_LABELS[1]:
