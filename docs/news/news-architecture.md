@@ -17,8 +17,8 @@
 > **Sửa đổi đợt 7 — 30/09/2026 (ca "Nhận định AI — độ bền kết quả"):** độ bền
 > của lượt nhận định AI — nhãn dòng dữ kiện bỏ `#` và nói rõ id là **số nguyên
 > trần** (`prompt_hash` đổi **lần 3**), lần retry thứ hai mang nội dung khác theo
-> loại lỗi (chỉ dẫn sửa / nâng ngân sách), `error_type` có kiểu cho chẩn đoán
-> (§9.1 bước 3/5, §16). Tài liệu này
+> loại lỗi (chỉ dẫn sửa / nâng ngân sách; **mọi từ chối đều được thử lại một
+> lần**), `error_type` có kiểu cho chẩn đoán (§9.1 bước 3/5, §16). Tài liệu này
 > là đặc tả thẩm quyền **duy nhất** của miền Tin tức (V2): code phải đúng từng
 > hành vi mô tả ở đây; lệch tài liệu ↔ code = defect phải đóng. Toàn bộ giá
 > trị chính sách đã được Owner chốt (mục 7, 13) — không còn điểm `OPEN`.
@@ -629,17 +629,22 @@ chuỗi hiển thị — vi phạm lớp `services/` (mục 3).
    `direction`, `confidence`, `rationale` tiếng Việt, `evidence_item_ids`.
    JSON không hợp lệ → retry một lần → thất bại trả lỗi thân thiện qua
    `friendly_error()` của provider adapter; **không lưu verdict rác**.
-   **Lần retry duy nhất đổi NỘI DUNG theo loại lỗi của lần đầu (đợt 7 — lô B
-   ca "Nhận định AI — độ bền kết quả"):** (a) parser từ chối câu trả lời
-   (`retryable`) → prompt lần hai mang thêm chỉ dẫn sửa do chủ sở hữu khung
-   prompt sinh (`core/trend_prompt_builder.with_retry_hint`: JSON trần, id là
-   **số nguyên trần**, kèm `detail` của parser); (b) model **đốt hết ngân sách
+   **Lần retry duy nhất phủ MỌI từ chối và đổi NỘI DUNG theo loại lỗi của lần
+   đầu (đợt 7 — lô B + lô D ca "Nhận định AI — độ bền kết quả"):** (a) parser
+   từ chối câu trả lời — **cả lỗi mức tài liệu lẫn lỗi sai hợp đồng verdict**
+   (thiếu/thừa horizon, sai enum, dẫn chứng bịa…; QĐ Owner 30/09/2026: mọi từ
+   chối đều đáng một lần sửa — đo thật cho thấy chạy lại cùng prompt là model
+   trả về đúng) → prompt lần hai mang thêm chỉ dẫn sửa do chủ sở hữu khung
+   prompt sinh (`core/trend_prompt_builder.with_retry_hint`: JSON trần, **đúng
+   khoá**, id là **số nguyên trần**, kèm `detail` của parser); (b) model **đốt hết ngân sách
    output** (`finish_reason=length` — lỗi **có kiểu** `AIOutputBudgetError` ở
    tầng adapter, `content` rỗng; reasoning không bao giờ được coi là câu trả
    lời khi lượt đã chạm trần) → lần hai **nâng ngân sách**. Cả hai nhánh đều
    nâng ngân sách ở lần hai vì câu trả lời cụt vì chạm trần cũng hỏng ở tầng
    parse (JSON dở dang). Provenance không đổi: `prompt_hash`/`input_snapshot`
    vẫn của prompt **gốc**. Vẫn **đúng một lần** gọi lại — không có lần thứ ba.
+   Parser chỉ còn **phân loại** từ chối (`TrendParseError.document_level` = lỗi
+   mức tài liệu) — luật retry thuộc người gọi, parser không bao giờ tự retry.
    **Chẩn đoán có kiểu (đợt 7 — lô C):** `TrendAnalysisResult.error_type` mang mã
    máy đọc của lượt hỏng — mã có kiểu của parser (`InvalidJson`,
    `InvalidResponse`, `MissingHorizon`, …) hoặc `OutputBudget` / `Provider` /
@@ -1014,7 +1019,8 @@ theo plan riêng (vòng đời D3), các lô C1–C5 theo quyết định E1/§1
 
 **Sửa đổi đợt 7 (30/09/2026):** ca "Nhận định AI — độ bền kết quả" — **sửa lỗi
 độ bền** của lượt nhận định AI (không thêm/đổi khóa chính sách nào; giữ nguyên
-luật "retry một lần" của §9.1 bước 5). Ba gốc lỗi, đo thật 30/09/2026: (1) nhãn
+luật "retry một lần" của §9.1 bước 5, nhưng **mở rộng phạm vi lần retry cho mọi
+từ chối** — lô D, QĐ Owner 30/09/2026). Ba gốc lỗi, đo thật 30/09/2026: (1) nhãn
 dòng dữ kiện in id kèm `#` nên model bắt chước `#` vào mảng `evidence_item_ids`
 ⇒ JSON không parse được; (2) độ dài suy luận biến thiên cực mạnh (4,2k → 26,3k
 ký tự cho cùng prompt) nên có lượt hết ngân sách output, `content` rỗng; (3) mọi
@@ -1023,7 +1029,8 @@ plan riêng (vòng đời D3): **A** bỏ `#` khỏi nhãn + nói rõ id là s�
 (`prompt_hash` đổi **lần 3**); **B** lần retry thứ hai mang *nội dung khác theo
 loại lỗi* (chỉ dẫn sửa cho lỗi parse; nâng ngân sách cho lỗi hết ngân sách);
 **C** `TrendAnalysisResult` mang `error_type` có kiểu và controller map sang
-thông báo chính xác theo loại. Nền tảng đã có từ lô sửa trước đó (ngân sách
+thông báo chính xác theo loại; **D** lần retry duy nhất phủ cả lỗi sai cấu trúc
+(parser đổi `retryable` → `document_level`, luật retry về người gọi). Nền tảng đã có từ lô sửa trước đó (ngân sách
 token tường minh `AI_TREND_MAX_TOKENS`) và dòng "Lý do lỗi" của tổng kết batch.
 
 **Ghi chú hoàn tất ca "Độ sâu dữ liệu theo chân trời" (29/09/2026):** 5 lô

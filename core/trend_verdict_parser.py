@@ -31,12 +31,15 @@ Purity and layering (the review point of this batch):
 * **No display string (L3).**  The source stays ASCII; every error is a typed
   machine-readable report, not prose for the user.
 
-Retry signal (section 9.1 step 5, decided here on purpose): a response that is
-not a usable JSON document is flagged ``retryable`` - a second attempt is the
-sanctioned remedy for a fumbled answer.  A document that parses but violates the
+Failure kind, not retry policy (section 9.1 step 5): the SINGLE retry belongs to
+the caller, and since the Owner decision of 30/09/2026 (ca "Nhan dinh AI - do ben
+ket qua", lot D) it covers EVERY refusal - the model gets one repair attempt
+whether the answer was not a JSON document at all or parsed but violated the
 verdict contract (missing/extra horizon, missing field, value outside a frozen
-set, empty rationale, fabricated citation) is **not** retryable: the model
-answered, the answer is unusable, and no junk verdict is stored.
+set, empty rationale, fabricated citation).  What this module reports is the
+KIND of refusal: ``document_level`` is True when the answer was not a usable JSON
+document.  The parser itself never retries, never guesses and never lets a
+partial or junk verdict reach the store.
 """
 
 from __future__ import annotations
@@ -70,7 +73,11 @@ _INVALID_RATIONALE = "InvalidRationale"
 _INVALID_EVIDENCE_IDS = "InvalidEvidenceIds"
 
 # The document-level failures the sanctioned retry covers (section 9.1 step 5).
-_RETRYABLE = frozenset({_INVALID_RESPONSE, _INVALID_JSON})
+# Document-level failures: the answer was not a usable JSON document (as opposed
+# to a JSON document violating the verdict contract).  No longer a "may the
+# caller retry?" flag: since the Owner decision of 30/09/2026 every refusal gets
+# exactly one repair attempt from the caller, so this set only classifies.
+_DOCUMENT_LEVEL = frozenset({_INVALID_RESPONSE, _INVALID_JSON})
 
 
 @dataclass(frozen=True, slots=True)
@@ -94,13 +101,14 @@ class TrendParseError:
     """Typed refusal of one answer (contract section 4.6 style).
 
     ``error_type`` is from the frozen vocabulary of this module, ``detail`` names
-    the offending horizon/field for the operator, and ``retryable`` tells the
-    caller whether the single retry of section 9.1 step 5 applies (the caller
-    decides - this module never retries)."""
+    the offending horizon/field for the operator, and ``document_level`` says
+    whether the answer failed as a JSON document (True) or as a verdict contract
+    (False) - the caller picks its message and decides the single retry of
+    section 9.1 step 5 (this module never retries)."""
 
     error_type: str
     detail: str
-    retryable: bool
+    document_level: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -127,7 +135,7 @@ def _refuse(error_type: str, detail: str) -> TrendParseOutcome:
         error=TrendParseError(
             error_type=error_type,
             detail=detail,
-            retryable=error_type in _RETRYABLE,
+            document_level=error_type in _DOCUMENT_LEVEL,
         ),
     )
 

@@ -1241,9 +1241,11 @@ class NewsController:
             )
         service, provider, model = resolved
         # Nhiều nhất HAI lần gọi cho một lượt phân tích (§9.1 bước 5 — "retry một
-        # lần").  Lần hai KHÁC nội dung theo loại lỗi của lần đầu:
-        #  - parser từ chối câu trả lời (``retryable``) → prompt kèm chỉ dẫn sửa
-        #    (``with_retry_hint``: JSON trần + id số nguyên trần + lỗi cụ thể);
+        # lần").  Từ 30/09/2026 (lô D) lần retry phủ MỌI từ chối của parser —
+        # JSON hỏng lẫn verdict sai cấu trúc (đo thật: chạy lại cùng prompt là
+        # model trả về đúng), nên lần hai KHÁC nội dung theo loại lỗi của lần đầu:
+        #  - parser từ chối câu trả lời → prompt kèm chỉ dẫn sửa
+        #    (``with_retry_hint``: JSON trần + id số nguyên trần + đúng khoá);
         #  - model đốt hết ngân sách (``AIOutputBudgetError``) → nâng ngân sách.
         # Cả hai ca đều nâng ngân sách ở lần hai: câu trả lời cụt vì chạm trần
         # cũng có thể hỏng ở tầng parse (JSON dở dang).
@@ -1263,15 +1265,14 @@ class NewsController:
             except Exception as exc:
                 # Provider lỗi — adapter đã dịch qua friendly_error() khi raise.
                 return self._ai_failure(exc, outcome, AI_ERROR_PROVIDER)
-            if attempt == 0 and parsed.error is not None and parsed.error.retryable:
+            if attempt == 0 and parsed.error is not None:
                 retry_prompt = with_retry_hint(prompt, parsed.error.detail)
                 max_tokens = AI_TREND_RETRY_MAX_TOKENS
                 continue
             break
         assert parsed is not None  # vòng lặp luôn trả về hoặc gán ``parsed``
         if not parsed.ok:
-            # Thất bại cuối (retry cạn hoặc câu trả lời không hợp lệ) — không
-            # lưu verdict rác (§9.1).
+            # Thất bại cuối (đã dùng hết một lần retry) — không lưu verdict rác.
             return TrendAnalysisResult(
                 ok=False,
                 error_message=self._refusal_text(parsed.error),
@@ -1510,11 +1511,11 @@ class NewsController:
     def _refusal_text(error: object) -> str:
         """Câu chữ theo LOẠI lỗi parser từ chối (đợt 7 — lô C).
 
-        Phân biệt bằng chính tín hiệu của parser: ``retryable`` = lỗi mức tài
-        liệu (không phải JSON) → "không trả về JSON hợp lệ"; còn lại là JSON đọc
-        được nhưng sai hợp đồng verdict → "sai cấu trúc" (không nhân bản từ vựng
-        lỗi của parser ở controller — S1)."""
-        if error is not None and getattr(error, "retryable", False):
+        Phân biệt bằng chính tín hiệu có kiểu của parser: ``document_level`` =
+        câu trả lời không phải tài liệu JSON dùng được → "không trả về JSON hợp
+        lệ"; còn lại là JSON đọc được nhưng sai hợp đồng verdict → "sai cấu
+        trúc" (không nhân bản từ vựng lỗi của parser ở controller — S1)."""
+        if error is not None and getattr(error, "document_level", False):
             return PARSE_FAIL_TEXT
         return STRUCTURE_FAIL_TEXT
 

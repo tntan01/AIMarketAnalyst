@@ -1677,10 +1677,10 @@ class TestAnalyzeTrendRetry:
         assert len(ai.calls) == 2
         assert repo.add_verdict_calls == []
 
-    def test_schema_violation_carries_the_parser_code_and_no_retry(self):
-        # JSON đọc được nhưng thiếu horizon ⇒ parser từ chối KHÔNG retryable
-        # (§9.1: model đã trả lời, câu trả lời không dùng được) — và mã lỗi mang
-        # chính từ vựng có kiểu của parser, câu chữ là "sai cấu trúc" (lô C).
+    def test_schema_violation_gets_the_repair_retry(self):
+        # JSON đọc được nhưng thiếu horizon ⇒ parser từ chối; lô D (QĐ 30/09/2026)
+        # cho lần retry duy nhất chạy cho CẢ ca này; mã lỗi là mã có kiểu của
+        # parser, câu chữ "sai cấu trúc" (lô C), và lần hai mang chỉ dẫn sửa.
         payload = json.dumps(
             {
                 "short": {
@@ -1691,7 +1691,7 @@ class TestAnalyzeTrendRetry:
                 }
             }
         )
-        ai = ScriptedAIService([payload])
+        ai = ScriptedAIService([payload, payload])
         controller, repo = self._controller(ai)
 
         result = controller.analyze_trend("currency", "EUR")
@@ -1699,8 +1699,23 @@ class TestAnalyzeTrendRetry:
         assert not result.ok
         assert result.error_type == "MissingHorizon"
         assert result.error_message == STRUCTURE_FAIL_TEXT
-        assert len(ai.calls) == 1  # lỗi cấu trúc KHÔNG retry
+        assert len(ai.calls) == 2  # đúng một lần retry, rồi dừng
+        assert "Your previous answer was rejected" in ai.calls[1]
         assert repo.add_verdict_calls == []
+
+    def test_schema_violation_repaired_on_the_retry_stores_verdicts(self):
+        # Đo thật 30/09/2026: model thêm khoá lạ ở lượt đầu, chạy lại cùng prompt
+        # là trả về đúng ⇒ lần retry cứu được phạm vi (lô D).
+        bad = json.dumps({"short": {"direction": "bullish", "confidence": "high",
+                                    "rationale": "x", "evidence_item_ids": [1]}})
+        ai = ScriptedAIService([bad, _batch_verdict_json([1, 2, 3])])
+        controller, repo = self._controller(ai)
+
+        result = controller.analyze_trend("currency", "EUR")
+
+        assert result.ok and result.inserted == 3
+        assert len(ai.calls) == 2
+        assert repo.add_verdict_calls != []
 
     def test_invalid_json_carries_its_code_and_the_json_text(self):
         ai = ScriptedAIService(["hỏng", "vẫn hỏng"])

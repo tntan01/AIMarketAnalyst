@@ -239,7 +239,8 @@ _SCHEMA_LINE_TEMPLATE = (
 _RETRY_HINT_TEMPLATE = (
     "\n\nYour previous answer was rejected: {detail}\n"
     "Answer the same task again with ONE JSON object and nothing else - no prose,\n"
-    'no markdown fence. Write every id in "evidence_item_ids" as a plain integer\n'
+    "no markdown fence, no extra keys - use exactly the horizon keys listed\n"
+    'above. Write every id in "evidence_item_ids" as a plain integer\n'
     '(no "#" prefix, no quotes).\n\nJSON:'
 )
 

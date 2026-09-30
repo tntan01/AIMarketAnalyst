@@ -10,7 +10,7 @@
   missing field, a value outside the frozen sets, an empty rationale or a
   fabricated citation leaves ``verdicts`` empty - nothing is ever stored (§9.1:
   "không lưu verdict rác");
-* a response that is not a usable JSON document is flagged ``retryable`` (the
+* a response that is not a usable JSON document is flagged ``document_level`` (the
   single retry of §9.1 bước 5 belongs to the caller); a document that parses but
   violates the verdict contract is not - the retry is never performed here;
 * purity and layering: stdlib + ``core.news_models`` only, ASCII source, no Qt,
@@ -149,24 +149,24 @@ class TestUnusableResponse:
             '["short", "mid", "long"]',
         ],
     )
-    def test_response_that_is_not_a_bare_json_object_is_retryable(self, raw):
+    def test_response_that_is_not_a_bare_json_object_is_document_level(self, raw):
         outcome = _parse(raw)
 
         assert outcome.ok is False
         assert outcome.verdicts == ()
         assert outcome.error is not None
-        assert outcome.error.retryable is True
+        assert outcome.error.document_level is True
         assert outcome.error.error_type in ("InvalidResponse", "InvalidJson")
 
     def test_markdown_fence_is_refused_rather_than_unwrapped(self):
-        """Prompt đòi JSON trần; câu trả lời cần bóc vỏ là câu trả lời hỏng → retry."""
+        """Prompt đòi JSON trần; câu trả lời cần bóc vỏ là câu trả lời hỏng (mức tài liệu)."""
         fenced = "```json\n" + _answer() + "\n```"
 
         outcome = _parse(fenced)
 
         assert outcome.error is not None
         assert outcome.error.error_type == "InvalidJson"
-        assert outcome.error.retryable is True
+        assert outcome.error.document_level is True
 
 
 # ---- 3. tài liệu hợp lệ nhưng sai hợp đồng ⇒ từ chối toàn bộ -------------------
@@ -183,7 +183,7 @@ class TestContractViolations:
         assert outcome.error is not None
         assert outcome.error.error_type == "MissingHorizon"
         assert "mid" in outcome.error.detail
-        assert outcome.error.retryable is False
+        assert outcome.error.document_level is False
 
     def test_extra_horizon_refuses_the_whole_answer(self):
         outcome = _parse(_answer(weekly=_block()))
@@ -192,7 +192,7 @@ class TestContractViolations:
         assert outcome.error is not None
         assert outcome.error.error_type == "UnexpectedHorizon"
         assert "weekly" in outcome.error.detail
-        assert outcome.error.retryable is False
+        assert outcome.error.document_level is False
 
     @pytest.mark.parametrize(
         "field", ["direction", "confidence", "rationale", "evidence_item_ids"]
@@ -207,7 +207,7 @@ class TestContractViolations:
         assert outcome.error is not None
         assert outcome.error.error_type == "MissingField"
         assert field in outcome.error.detail
-        assert outcome.error.retryable is False
+        assert outcome.error.document_level is False
 
     def test_non_object_horizon_block_is_refused(self):
         outcome = _parse(_answer(mid="bullish"))
@@ -215,7 +215,7 @@ class TestContractViolations:
         assert outcome.verdicts == ()
         assert outcome.error is not None
         assert outcome.error.error_type == "InvalidHorizonBlock"
-        assert outcome.error.retryable is False
+        assert outcome.error.document_level is False
 
     @pytest.mark.parametrize(
         "value", ["Bullish", "up", "", "bull", 1, None, True]
@@ -226,7 +226,7 @@ class TestContractViolations:
         assert outcome.verdicts == ()
         assert outcome.error is not None
         assert outcome.error.error_type == "InvalidEnumValue"
-        assert outcome.error.retryable is False
+        assert outcome.error.document_level is False
 
     def test_surrounding_whitespace_on_an_enum_value_is_tolerated(self):
         outcome = _parse(_answer(short=_block(direction=" neutral ", confidence=" high ")))
@@ -241,7 +241,7 @@ class TestContractViolations:
         assert outcome.verdicts == ()
         assert outcome.error is not None
         assert outcome.error.error_type == "InvalidEnumValue"
-        assert outcome.error.retryable is False
+        assert outcome.error.document_level is False
 
     @pytest.mark.parametrize("value", ["", "   ", None, 7, ["lý do"]])
     def test_empty_or_untyped_rationale_is_refused(self, value):
@@ -250,7 +250,7 @@ class TestContractViolations:
         assert outcome.verdicts == ()
         assert outcome.error is not None
         assert outcome.error.error_type == "InvalidRationale"
-        assert outcome.error.retryable is False
+        assert outcome.error.document_level is False
 
     @pytest.mark.parametrize("value", ["11", 11, {"11": 1}, None])
     def test_evidence_that_is_not_a_list_is_refused(self, value):
@@ -259,7 +259,7 @@ class TestContractViolations:
         assert outcome.verdicts == ()
         assert outcome.error is not None
         assert outcome.error.error_type == "InvalidEvidenceIds"
-        assert outcome.error.retryable is False
+        assert outcome.error.document_level is False
 
     @pytest.mark.parametrize("entry", ["11", 11.5, True, None, [11]])
     def test_evidence_entry_that_is_not_an_integer_id_is_refused(self, entry):
@@ -268,7 +268,7 @@ class TestContractViolations:
         assert outcome.verdicts == ()
         assert outcome.error is not None
         assert outcome.error.error_type == "InvalidEvidenceIds"
-        assert outcome.error.retryable is False
+        assert outcome.error.document_level is False
 
     def test_citation_outside_the_prompt_refuses_the_whole_answer(self):
         """Doctrine §9.1 bước 3: dẫn chứng không có trong prompt = bịa."""
@@ -278,7 +278,7 @@ class TestContractViolations:
         assert outcome.error is not None
         assert outcome.error.error_type == "InvalidEvidenceIds"
         assert "999" in outcome.error.detail
-        assert outcome.error.retryable is False
+        assert outcome.error.document_level is False
 
     def test_citation_check_is_skipped_when_the_caller_supplies_no_id_set(self):
         outcome = _parse(_answer(mid=_block(evidence=[999])), with_ids=False)
@@ -387,5 +387,7 @@ class TestPurityAndLayerBoundary:
             "InvalidEvidenceIds",
         }
 
-    def test_the_retryable_set_covers_the_document_level_failures_only(self):
-        assert parser._RETRYABLE == {"InvalidResponse", "InvalidJson"}
+    def test_the_document_level_set_covers_the_json_document_failures(self):
+        # Luật retry đã chuyển về NGƯỜI GỌI (QĐ 30/09/2026 — lô D): mọi từ chối
+        # đều được thử lại một lần, nên parser chỉ còn phân loại LỖI MỨC TÀI LIỆU.
+        assert parser._DOCUMENT_LEVEL == {"InvalidResponse", "InvalidJson"}

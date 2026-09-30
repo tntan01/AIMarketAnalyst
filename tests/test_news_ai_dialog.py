@@ -282,33 +282,61 @@ class TestParseFailures:
         assert result.error_message == PARSE_FAIL_TEXT
         assert _stored_verdicts(controller) == []  # không lưu verdict rác
 
-    def test_non_retryable_answer_is_refused_after_one_call(self, tmp_path):
-        """Câu trả lời parse được nhưng vi phạm hợp đồng (thừa horizon) — không retry."""
+    def test_schema_violation_gets_the_repair_retry_too(self, tmp_path):
+        """Câu trả lời parse được nhưng vi phạm hợp đồng (thừa horizon).
+
+        Lô D (QĐ 30/09/2026): lần retry duy nhất phủ MỌI từ chối — đo thật cho
+        thấy chạy lại cùng prompt là model trả về đúng; cứu được phạm vi thay vì
+        mất trắng."""
         ai = FakeAI()
         controller = _ai_controller(tmp_path, ai)
         _seed_items(controller, 3)
         ids = _item_ids(controller)
         bad = json.loads(_verdict_json(ids))
         bad["extra_horizon"] = {"direction": "bullish", "confidence": "high", "rationale": "x", "evidence_item_ids": []}
-        ai.responses.append(json.dumps(bad))
+        ai.responses.extend([json.dumps(bad), _verdict_json(ids)])
 
         result = controller.analyze_trend("pair", "EUR/USD", NOW)
 
-        assert result.ok is False
-        assert len(ai.calls) == 1  # không retry (không retryable)
-        assert _stored_verdicts(controller) == []
+        assert result.ok is True
+        assert len(ai.calls) == 2
+        assert "Your previous answer was rejected" in ai.calls[1]
+        assert len(_stored_verdicts(controller)) == 3
 
-    def test_fabricated_evidence_ids_refuse_the_whole_answer(self, tmp_path):
-        """Doctrine §9.1 bước 3: dẫn chứng ngoài prompt = bịa — từ chối toàn bộ."""
+    def test_two_schema_violations_still_store_nothing(self, tmp_path):
         ai = FakeAI()
         controller = _ai_controller(tmp_path, ai)
         _seed_items(controller, 3)
-        ai.responses.append(_verdict_json([9_999_999]))  # id không có trong prompt
+        ids = _item_ids(controller)
+        bad = json.loads(_verdict_json(ids))
+        bad["extra_horizon"] = {"direction": "bullish", "confidence": "high", "rationale": "x", "evidence_item_ids": []}
+        ai.responses.extend([json.dumps(bad), json.dumps(bad)])
 
         result = controller.analyze_trend("pair", "EUR/USD", NOW)
 
         assert result.ok is False
-        assert len(ai.calls) == 1
+        assert result.error_message == STRUCTURE_FAIL_TEXT
+        assert result.error_type == "UnexpectedHorizon"
+        assert len(ai.calls) == 2  # vẫn đúng một lần retry
+        assert _stored_verdicts(controller) == []
+
+    def test_fabricated_evidence_ids_refuse_the_whole_answer(self, tmp_path):
+        """Doctrine §9.1 bước 3: dẫn chứng ngoài prompt = bịa — từ chối toàn bộ.
+
+        Lô D: lần retry duy nhất chạy cho cả ca này (model có thể sửa sang id
+        thật), nhưng hai lần bịa thì không verdict nào được lưu."""
+        ai = FakeAI()
+        controller = _ai_controller(tmp_path, ai)
+        _seed_items(controller, 3)
+        ai.responses.extend(
+            [_verdict_json([9_999_999]), _verdict_json([9_999_999])]  # id không có trong prompt
+        )
+
+        result = controller.analyze_trend("pair", "EUR/USD", NOW)
+
+        assert result.ok is False
+        assert result.error_type == "InvalidEvidenceIds"
+        assert len(ai.calls) == 2  # một lần retry, rồi dừng
         assert _stored_verdicts(controller) == []
 
 
