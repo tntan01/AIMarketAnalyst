@@ -1551,7 +1551,7 @@ tiền/tài sản** (11 phạm vi — đợt 5, 28/09/2026) hoặc chuyên sâu 
 [ Bảng tin ]
   Thời gian | Loại | Nguồn | Đồng tiền | Tiêu đề/Nội dung | Tác động | Thực tế | Trạng thái | Chi tiết
 
-[ Thanh công cụ: Dán mã nguồn trang | Nhập tin | AI nhận định xu hướng ]
+[ Thanh công cụ: Dán mã nguồn trang | Nhập tin | AI nhận định xu hướng | Tải lại ]
 ```
 
 - **Bảng tin:** hợp nhất sự kiện lịch kinh tế (`news_events`) và tin văn bản
@@ -1642,8 +1642,34 @@ tiền/tài sản** (11 phạm vi — đợt 5, 28/09/2026) hoặc chuyên sâu 
   nút hành động chung của hệ thống** — nút phụ (`action_button`, objectName
   `SecondaryButton`, cùng khuôn "Hủy"/"Làm mới"/"Quay lại" ở các màn khác, cao
   24px như nút "Tìm kiếm" cùng hàng), **không tự đặt style riêng**.
-- **Chi tiết dòng:** dialog xem đầy đủ nội dung/provenance (nguồn, giờ fetch,
-  `raw_json` nếu có); với tin văn bản có URL thì kèm liên kết ngoài.
+- **Thanh công cụ (4 nút — Owner yêu cầu 30/09/2026 thêm nút "Tải lại"):** mỗi
+  nút một hành vi, cùng khuôn nút hành động của hệ thống (`action_button` primary
+  + màu + glyph). **Bố cục (Owner chốt 30/09/2026):** 3 nút hành vi chính — "Dán
+  mã nguồn trang", "Nhập tin", "AI nhận định xu hướng" — **căn TRÁI** (nhóm sát
+  nhau, bề ngang tự nhiên, biết xuống dòng khi bị bóp); nút **"Tải lại" căn
+  PHẢI** ở mép đối diện. Nút "Tải lại" **đọc lại database theo đúng cửa sổ
+  ngày/bộ lọc đang áp** (cùng đường với nút "Tìm kiếm" — không đổi khoảng ngày,
+  không mở dialog; trạng thái tải hiển thị như mọi lượt đọc). Nhóm trái là
+  `ResponsiveGrid` `stretch=False` (khuôn dải lọc của chính màn này) vì dãy HBox
+  cứng 4 nút phá contract kích thước ở cửa sổ tối thiểu 800px (đo thật: cần
+  832px > 752px bề ngang nội dung shell).
+
+- **Chi tiết dòng (dialog mở từ nút xem ở cột "Chi tiết" — Owner yêu cầu
+  30/09/2026):** dialog có **nút "Đóng"** theo khuôn nút hệ thống (nút phụ kèm
+  icon `x`, khuôn `action_button` như các dialog khác của app).
+  - **Tin SỰ KIỆN FF:** hiển thị chính **số liệu của sự kiện** — Thời gian,
+    Nguồn, **Kỳ trước, Dự báo, Thực tế** (giá trị thiếu = "—") — **không** hiện
+    "giờ fetch"/`raw_json` (provenance kỹ thuật, vô nghĩa với người dùng).
+    Kèm **khung "Giải thích chỉ số"** + nút **"Giải thích"**: bấm nút → nút đổi
+    trạng thái **"AI đang giải thích"** (khoá nút) và lời gọi AI chạy trong
+    worker nền; xong → nội dung giải thích tiếng Việt vào khung, nút trở lại
+    bấm được. Khung khởi đầu bằng câu gợi ý "Bấm nút để AI giải thích chỉ số
+    này."; lỗi (chưa cấu hình AI / provider) → câu thân thiện vào khung. **Kết
+    quả chỉ để tham khảo — không lưu database, không vào bất kỳ quy trình nào**
+    (§9.2); AI phải chú trọng **tác động của sự kiện tới đồng tiền của nó**,
+    dùng đúng số liệu in trong khung, không bịa và không khuyến nghị mua/bán.
+  - **Tin văn bản:** giữ nguyên provenance (nguồn, giờ fetch, `raw_json` nếu có;
+    tin có URL kèm liên kết ngoài).
 
 ### Từ điển hiển thị tiếng Việt (S5, D6 — Owner duyệt 21/09/2026)
 
@@ -1663,6 +1689,7 @@ thị):
 | `horizon` (verdict AI) | `short` = "Ngắn hạn" · `mid` = "Trung hạn" · `long` = "Dài hạn" |
 | Trạng thái dòng bảng xem trước (đợt 4 — nhãn dẫn xuất, không persist) | mới = "Mới" · sẽ cập nhật = "Sẽ cập nhật" · xung đột = "Xung đột — giữ nhập tay" · đã chỉnh sửa = "Đã sửa" |
 | Bias cặp suy ra `pair_bias` (đợt 5 — nhãn dẫn xuất, không persist) | `bullish` = "Nghiêng tăng" · `bearish` = "Nghiêng giảm" · `neutral` = "Trung lập" · `unclear` = "Không rõ" |
+| Nhãn dialog xem 1 tin (30/09/2026) | "Giải thích chỉ số" (tiêu đề khung) · "Giải thích" (nút) · "AI đang giải thích" (trạng thái đang chạy) · "Bấm nút để AI giải thích chỉ số này." (câu gợi ý trong khung) · cột dữ liệu sự kiện dùng lại nhãn "Kỳ trước"/"Dự báo"/"Thực tế"/"Thời gian"/"Nguồn" đã đăng ký |
 | Nhãn dialog AI 3 tab (đợt 5) | tab "Tổng quan" / "Chi tiết" / "Cặp forex" · nút "Nhận định tất cả" · nút "Nhận định chuyên sâu cặp này" · cột "Tài sản" / "Verdict lúc" · "Chưa có" (phạm vi chưa từng nhận định) |
 
 ### Hành vi dán mã nguồn trang ForexFactory (kênh cập nhật lịch + actual DUY NHẤT — 2 pha, xác nhận trước khi ghi; IMPLEMENTED — sửa đổi đợt 3+4 24/09/2026, ca "Nguồn dán FF" nghiệm thu 25/09/2026)
@@ -1762,7 +1789,7 @@ Ngữ cảnh: Lãi suất 4.35% (hold) · US 2Y 3.72% (−0.08; 3m −0.15; 6m �
           · US 10Y 3.91% (+0.02; 3m +0.10) · Spread 2Y10Y +0.19 · Real yield 1.55
           · Rate path 6 tháng: +0.25 (từ 4.10 → 4.35)
 [ Nhận định ]
-─ Kết quả: 3 thẻ chân trời (theo ai_horizons) + lập luận + dẫn chứng ─
+─ Kết quả: 3 thẻ chân trời (theo ai_horizons) + lập luận ─
 Lịch sử nhận định của phạm vi này (mới nhất trước)
 
 ─ Tab "Cặp forex" ────────────────────────────────────────────
@@ -1796,10 +1823,23 @@ Cặp: [ EUR/USD ▼ ]
   ngân sách suy luận trước khi trả lời." (hết ngân sách output), hoặc thông báo
   của nhà cung cấp — nên nhìn dòng lý do là biết hỏng ở khâu nào.
 
+**Không hiển thị dẫn chứng (Owner chốt 30/09/2026 — IMPLEMENTED):** dialog
+**không tab nào** hiện hàng dẫn chứng (`evidence_item_ids` của verdict). Dữ liệu
+vẫn nguyên: `ai_trend_verdicts.evidence_item_ids_json` vẫn được lưu theo contract
+§4.5 — đây là quyết định tầng trình bày. Đường "bấm một mục dẫn chứng → đóng
+dialog + nhảy tới dòng tin" **đã gỡ cùng** (không còn mục nào bấm được).
+
+**Cuộn thân tab (Owner báo 30/09/2026 — IMPLEMENTED):** dialog cố định
+800×600; thân của **cả hai tab "Chi tiết" và "Cặp forex"** nằm trong một vùng
+cuộn dọc (`QScrollArea`, cuộn khi cần, không thanh cuộn ngang) — nội dung dài
+(3 thẻ chân trời + lịch sử) không còn bị cắt. **Dòng chọn phạm vi/cặp và nút
+hành động nằm NGOÀI vùng cuộn** để luôn trong tầm nhìn.
+
 **Tab "Chi tiết"** (giữ khuôn 3 thẻ chân trời hiện hành):
 
-- 3 thẻ: hướng + ký hiệu màu semantic, confidence, lập luận tiếng Việt,
-  hàng dẫn chứng bấm được; lịch sử phạm vi (mới nhất trước).
+- 3 thẻ: hướng + ký hiệu màu semantic, confidence, lập luận tiếng Việt; lịch
+  sử phạm vi (mới nhất trước). **Không hiển thị dẫn chứng** (Owner chốt
+  30/09/2026 — xem mục "Cuộn thân tab" và quy tắc chung bên dưới).
 - **Dòng ngữ cảnh dữ kiện (đợt 5):** lãi suất điều hành + trend
   hike/cut/hold, 2Y/10Y + biến động trong cửa sổ, spread 2Y10Y, real yield —
   hiển thị để người dùng biết AI đã "nhìn" dữ kiện nào (nguồn:
@@ -1836,8 +1876,6 @@ Quy tắc chung (giữ nguyên từ thiết kế cũ):
   chuyên sâu cặp; batch áp từng phạm vi, không tổng hợp).
 - Lời gọi AI chạy trong worker nền (không block GUI); lỗi provider hiển thị
   bằng thông báo thân thiện từ `friendly_error()`.
-- Mỗi mục dẫn chứng bấm được → đóng dialog và nhảy tới dòng tin tương ứng
-  trong bảng.
 - Dòng cảnh báo advisory **luôn hiển thị** trong dialog, **ở mọi tab** (chữ
   thường trực, không chỉ trong tooltip).
 

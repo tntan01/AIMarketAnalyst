@@ -145,6 +145,7 @@ from core.news_models import (
 )
 from core.news_policy import NewsPolicy, load_news_policy
 from core.rate_trend import RatePath
+from core.event_explanation import build_explanation_prompt
 from core.trend_prompt_builder import (
     HorizonWindowSet,
     MarketContext,
@@ -1289,6 +1290,26 @@ class NewsController:
             event_count=outcome.event_count,
             item_count=outcome.item_count,
         )
+
+    def explain_event(self, event: CalendarEvent) -> str:
+        """One AI explanation of a calendar event — advisory, nothing is stored.
+
+        Điều phối lời gọi AI cho nút "Giải thích" ở dialog xem 1 tin (Owner yêu
+        cầu 30/09/2026): dựng prompt qua chủ sở hữu khung
+        (``core/event_explanation.build_explanation_prompt`` — ASCII, thuần), gọi
+        provider trong worker của màn, trả về nguyên văn câu trả lời tiếng Việt.
+        **Không ghi database**: đây không phải verdict (§9.2 — chỉ verdict mới
+        lưu), kết quả không vào bất kỳ quy trình nào.  Chưa cấu hình AI → raise
+        lỗi thân thiện để worker của màn báo lên khung (fail-closed).  Dùng cùng
+        ngân sách token của đường AI màn Tin tức (cùng lý do: model suy luận)."""
+        resolved = self._resolve_ai_service()
+        if resolved is None:
+            raise RuntimeError(NO_AI_CONFIG_TEXT)
+        service, _provider, _model = resolved
+        answer = service.analyze(  # type: ignore[attr-defined]
+            build_explanation_prompt(event), max_tokens=AI_TREND_MAX_TOKENS
+        )
+        return str(answer)
 
     def verdicts_for(self, scope_type: str, scope_value: str, limit: int) -> list[TrendVerdict]:
         """Verdict history of one scope, newest first (§8) — the news screen is

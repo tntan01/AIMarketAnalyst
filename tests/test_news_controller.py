@@ -1762,6 +1762,52 @@ class TestAnalyzeTrendRetry:
         assert result.error_message == NO_AI_CONFIG_TEXT
 
 
+class TestExplainEvent:
+    """``explain_event`` — AI giải thích chỉ số của một sự kiện FF (Owner yêu cầu
+    30/09/2026).  Tư vấn tham khảo: KHÔNG ghi database, không vào quy trình (§9.2)."""
+
+    def test_calls_the_ai_with_the_event_prompt_and_the_news_budget(self):
+        ai = FakeAIService("EUR chịu áp lực giảm khi số liệu xấu hơn dự báo.")
+        controller = _batch_controller(ai, FakeRepository())
+
+        answer = controller.explain_event(_batch_event(1))
+
+        assert answer == "EUR chịu áp lực giảm khi số liệu xấu hơn dự báo."
+        assert len(ai.calls) == 1
+        # Khung prompt do core/event_explanation sở hữu: đúng dữ kiện + chú trọng
+        # tác động tới đồng tiền của sự kiện.
+        assert "currency: USD" in ai.calls[0]
+        assert "FOMC Meeting" in ai.calls[0]
+        assert "affects USD" in ai.calls[0]
+        # Cùng ngân sách token của đường AI màn Tin tức (model suy luận).
+        assert ai.max_tokens_calls == [news_controller_module.AI_TREND_MAX_TOKENS]
+
+    def test_nothing_is_written_to_the_database(self):
+        ai = FakeAIService("Giải thích.")
+        repo = FakeRepository()
+        controller = _batch_controller(ai, repo)
+
+        controller.explain_event(_batch_event(1))
+
+        assert repo.add_verdict_calls == []
+        assert repo.record_run_calls == []
+        writes = [name for name, _args, _kwargs in repo.calls]
+        assert writes == []
+
+    def test_missing_config_raises_the_friendly_error(self):
+        controller = NewsController(
+            repo=FakeRepository(),
+            policy=_policy(),
+            rss_producer=FakeRssProducer(),
+            bond_yield_producer=FakeBondYieldProducer(),
+            ai_config_provider=lambda: None,
+            schedule_starter=FakeStarter(),
+        )
+
+        with pytest.raises(RuntimeError, match="Chưa cấu hình AI"):
+            controller.explain_event(_batch_event(1))
+
+
 class TestAnalyzeAllTrends:
     def test_all_eleven_ok_in_order_and_stored(self):
         repo = FakeRepository()

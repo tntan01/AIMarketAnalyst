@@ -69,16 +69,16 @@ modal toàn app — WindowModal, d.1624); phạm vi = cặp tiền ``SUPPORTED_S
 d.1642 và nút "Nhận định" không gọi AI (B4); lời gọi AI chạy trong worker nền
 (khuôn worker D10 của màn — không gọi ``analyze()`` đồng bộ trong callback,
 không processEvents); lỗi provider/parser → thông báo thân thiện; 3 thẻ chân
-trời nhãn đúng từ điển d.1570-1572, ký hiệu ▲/▼/— màu semantic; dẫn chứng bấm
-được → đóng dialog + ``_jump_to_evidence`` nhảy dòng bảng; lịch sử
+trời nhãn đúng từ điển d.1570-1572, ký hiệu ▲/▼/— màu semantic; **thân hai tab
+"Chi tiết" và "Cặp forex" nằm trong vùng cuộn** (dialog cố định 800×600, nút hành
+động ở ngoài vùng cuộn — Owner báo 30/09/2026); **tab "Chi tiết" KHÔNG hiện hàng
+dẫn chứng** ở MỌI tab (Owner chốt 30/09/2026 — dẫn chứng vẫn được lưu trong
+``ai_trend_verdicts``, chỉ không hiển thị; đường "bấm dẫn chứng để nhảy dòng"
+đã gỡ cùng); lịch sử
 ``verdicts_for`` mới nhất trước; cảnh báo advisory d.1638 THƯỜNG TRỰC.
 
 Khai báo đọc-hiểu (V2):
 
-* Cơ chế nhảy dòng theo dẫn chứng (d.1646-1647, chưa được tài liệu ghim — id
-  evidence là int CHUNG hai bảng, ``_evidence_ids`` của builder): ưu tiên khớp
-  ``item.id`` rồi ``event.id`` trong tập dòng đã đọc; chỉ nhảy khi dòng đang
-  hiển thị trên bảng (bị bộ lọc che thì chỉ đóng dialog — không tự đổi bộ lọc).
 * Limit lịch sử verdicts_for = 5 (``AI_HISTORY_LIMIT``) — hằng TRÌNH BÀY của
   dialog, không phải giá trị vận hành (B5: không thêm khóa policy).
 * Lỗi provider: adapter đã dịch qua ``friendly_error()`` khi raise → dialog
@@ -199,6 +199,7 @@ from PyQt6.QtWidgets import (
     QLineEdit,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QTabWidget,
     QTextEdit,
     QSizePolicy,
@@ -304,13 +305,15 @@ TOOLBAR_LABELS: tuple[str, ...] = (
     "Dán mã nguồn trang",
     "Nhập tin",
     "AI nhận định xu hướng",
+    "Tải lại",
 )
-# Icon của 3 nút thanh công cụ — khuôn nút hành động hệ thống (primary + color
+# Icon của các nút thanh công cụ — khuôn nút hành động hệ thống (primary + color
 # + icon_role "selection_text"), glyph phẳng từ ``ui/icons.py`` (style-guide §2).
 TOOLBAR_ICONS: dict[str, str] = {
     TOOLBAR_LABELS[0]: "clipboard",  # dán mã nguồn trang
     TOOLBAR_LABELS[1]: "edit",  # nhập tin
     TOOLBAR_LABELS[2]: "bot",  # AI nhận định xu hướng
+    TOOLBAR_LABELS[3]: "refresh",  # tải lại (cập nhật trạng thái mới nhất)
 }
 # Nút áp bộ lọc của card tìm kiếm (screen_design "Bố cục" d.1543-1545 — Owner
 # duyệt 26/09/2026: KHÔNG tự tìm khi chọn ô, chỉ tìm khi bấm nút; nút đọc lại
@@ -329,6 +332,10 @@ NO_VALUE = "—"
 
 # Nhãn dùng trong dialog chi tiết (đều đã có nguồn: nhãn cột hoặc câu chữ screen_design).
 PROVENANCE_LABELS: tuple[str, ...] = ("Thời gian", "Nguồn", "Giờ fetch", "Liên kết")
+# Cặp nhãn/giá trị của dialog xem 1 TIN SỰ KIỆN FF (Owner yêu cầu 30/09/2026:
+# bỏ "Giờ fetch"/"raw_json" — vô nghĩa với người dùng — thay bằng chính số liệu
+# của sự kiện).  Nhãn lấy từ COLUMN_LABELS đã đăng ký, không phát minh chuỗi.
+EVENT_DATA_LABELS: tuple[str, ...] = ("Thời gian", "Nguồn", "Kỳ trước", "Dự báo", "Thực tế")
 
 # ---------------------------------------------------------------------------
 # Từ điển lô L3.3 — form nhập/sửa tin (screen_design "Hành vi nhập/sửa tin"
@@ -345,6 +352,12 @@ DELETE_TEXT = "Xóa"  # screen_design d.1598 "Sửa/xóa"
 SAVE_TEXT = "Lưu"  # chuỗi có sẵn repo (settings_screen d.198)
 CANCEL_TEXT = "Hủy"  # chuỗi có sẵn repo (scanner_screen d.2351)
 CLOSE_TEXT = "Đóng"  # chuỗi có sẵn repo (journal_screen d.1885)
+# Khung giải thích chỉ số bằng AI trong dialog xem 1 tin sự kiện FF (Owner yêu
+# cầu 30/09/2026): nhãn nút + trạng thái đang chạy + câu gợi ý trong khung.
+EXPLAIN_HEADER_TEXT = "Giải thích chỉ số"  # chuỗi có sẵn repo (dashboard d.439)
+EXPLAIN_TEXT = "Giải thích"  # chuỗi có sẵn repo (journal_screen d.1235)
+AI_EXPLAINING_TEXT = "AI đang giải thích"  # nguyên văn yêu cầu Owner 30/09/2026
+EXPLAIN_HINT_TEXT = "Bấm nút để AI giải thích chỉ số này."
 
 # Nhãn trường form (nguyên văn screen_design d.1595-1596).
 FORM_FIELD_LABELS: dict[str, str] = {
@@ -380,7 +393,6 @@ AI_PROGRESS_TEXT = "Đang phân tích..."
 AI_ADVISORY_TEXT = "⚠ Nhận định của AI chỉ để tham khảo — không tham gia bất cứ quy trình nào"  # d.1638 (nguyên văn)
 AI_HISTORY_TEXT = "Lịch sử nhận định của phạm vi này (mới nhất trước)"  # d.1637 (nguyên văn)
 AI_RESULT_HEADER_TEXT = "─ Kết quả (3 thẻ chân trời, theo ai_horizons trong chính sách) ─"  # d.1632
-AI_EVIDENCE_TEXT = "Dẫn chứng"  # d.1633/1637 (từ vựng mockup)
 
 # --- đợt 5 (B4): dialog 3 tab — Tổng quan / Chi tiết / Cặp forex (screen_design
 # "thiết kế lại 3 tab" d.1704-1791).  Mọi nhãn mới có nguồn: tên tab theo mockup,
@@ -845,7 +857,7 @@ class NewsTableModel(QAbstractTableModel):
         super().__init__()
         self.rows: list[NewsRow] = []
         # Dòng "sắp tới gần nhất" (đánh dấu xanh in đậm — khuôn dashboard);
-        # giữ THAM CHIẾU tới dòng gốc để không phá nhận diện ở ``_jump_to_evidence``.
+        # giữ THAM CHIẾU tới dòng gốc để nhận diện đúng dòng khi cuộn/tô.
         self.nearest: NewsRow | None = None
 
     def rowCount(self, parent: QModelIndex = QModelIndex()) -> int:
@@ -1477,10 +1489,9 @@ class AiTrendDialog(QDialog):
     dòng bảng (d.1646-1647).  Cảnh báo advisory (d.1638) THƯỜNG TRỰC mọi tab.
     """
 
-    def __init__(self, controller, on_evidence, parent=None) -> None:
+    def __init__(self, controller, parent=None) -> None:
         super().__init__(parent)
         self._controller = controller
-        self._on_evidence = on_evidence
         self._preview = None
         self._overview_model = AiOverviewModel()
         self._cards: dict[str, dict[str, object]] = {}
@@ -1549,6 +1560,22 @@ class AiTrendDialog(QDialog):
         layout.addWidget(self._overview_table, 1)
         return widget
 
+    @staticmethod
+    def _scroll_body(content: QWidget) -> QScrollArea:
+        """Bọc thân cuộn được của một tab (khuôn QScrollArea của Dashboard/
+        Journal): dialog cố định 800×600 nên phần thân dài (3 thẻ chân trời +
+        lịch sử) phải **tự cuộn** thay vì bị cắt — trước đây không có thanh cuộn
+        nên nội dung dưới bị mất (defect Owner báo 30/09/2026).  Dòng chọn phạm
+        vi và nút hành động nằm NGOÀI vùng cuộn để luôn trong tầm nhìn."""
+        scroll = QScrollArea()
+        scroll.setObjectName("NewsAiScroll")
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setWidget(content)
+        return scroll
+
     def _build_detail_tab(self) -> QWidget:
         widget = QWidget()
         layout = QVBoxLayout(widget)
@@ -1571,36 +1598,43 @@ class AiTrendDialog(QDialog):
         self._count_label = QLabel("")
         self._count_label.setObjectName("NewsAiCount")
         self._count_label.setWordWrap(True)
-        layout.addWidget(self._count_label)
         self._coverage_label = QLabel("")
         self._coverage_label.setObjectName("NewsAiCoverage")
         self._coverage_label.setWordWrap(True)
-        layout.addWidget(self._coverage_label)
         self._context_label = QLabel("")
         self._context_label.setObjectName("NewsAiContext")
         self._context_label.setWordWrap(True)
-        layout.addWidget(self._context_label)
         self._status_label = QLabel("")
         self._status_label.setObjectName("NewsAiStatus")
         self._status_label.setWordWrap(True)
-        layout.addWidget(self._status_label)
-        self._analyze_button = action_button(AI_ANALYZE_TEXT, primary=True, color="success")
-        self._analyze_button.clicked.connect(self._on_analyze_clicked)
+        # Thân cuộn: đếm/cửa sổ, dòng ngữ cảnh, trạng thái, 3 thẻ kết quả, lịch sử.
+        body = QWidget()
+        body_layout = QVBoxLayout(body)
+        body_layout.setContentsMargins(0, 0, 0, 0)
+        body_layout.setSpacing(8)
+        body_layout.addWidget(self._count_label)
+        body_layout.addWidget(self._coverage_label)
+        body_layout.addWidget(self._context_label)
+        body_layout.addWidget(self._status_label)
         header = QLabel(AI_RESULT_HEADER_TEXT)
         header.setObjectName("CardDetail")
-        layout.addWidget(header)
+        body_layout.addWidget(header)
         for horizon in ("short", "mid", "long"):
             card = self._make_card(horizon)
-            layout.addWidget(card["frame"])
+            body_layout.addWidget(card["frame"])
             self._cards[horizon] = card
         history_header = QLabel(AI_HISTORY_TEXT)
         history_header.setObjectName("CardDetail")
-        layout.addWidget(history_header)
+        body_layout.addWidget(history_header)
         history_widget = QWidget()
         self._history_layout = QVBoxLayout(history_widget)
         self._history_layout.setContentsMargins(0, 0, 0, 0)
         self._history_layout.setSpacing(2)
-        layout.addWidget(history_widget, 1)
+        body_layout.addWidget(history_widget)
+        body_layout.addStretch(1)
+        layout.addWidget(self._scroll_body(body), 1)
+        self._analyze_button = action_button(AI_ANALYZE_TEXT, primary=True, color="success")
+        self._analyze_button.clicked.connect(self._on_analyze_clicked)
         layout.addWidget(self._analyze_button)
         return widget
 
@@ -1624,11 +1658,17 @@ class AiTrendDialog(QDialog):
         self._pair_status = QLabel("")
         self._pair_status.setObjectName("NewsAiPairStatus")
         self._pair_status.setWordWrap(True)
-        layout.addWidget(self._pair_status)
+        # Thân cuộn (cùng lý do tab "Chi tiết"): hai verdict thành phần + bias +
+        # ghi chú + 3 thẻ chuyên sâu + lịch sử dài hơn khung 800×600.
+        body = QWidget()
+        layout_body = QVBoxLayout(body)
+        layout_body.setContentsMargins(0, 0, 0, 0)
+        layout_body.setSpacing(8)
+        layout_body.addWidget(self._pair_status)
         for horizon in ("short", "mid", "long"):
             label = QLabel(HORIZON_TEXT.get(horizon, horizon))
             label.setObjectName("CardDetail")
-            layout.addWidget(label)
+            layout_body.addWidget(label)
             row = QHBoxLayout()
             base = QLabel("")
             quote = QLabel("")
@@ -1639,30 +1679,32 @@ class AiTrendDialog(QDialog):
             row.addWidget(base)
             row.addWidget(quote)
             row.addWidget(bias, 1)
-            layout.addLayout(row)
+            layout_body.addLayout(row)
             self._pair_rows[horizon] = {"base": base, "quote": quote, "bias": bias}
         note = QLabel(AI_PAIR_NOTE_TEXT)
         note.setObjectName("CardDetail")
         note.setWordWrap(True)
-        layout.addWidget(note)
+        layout_body.addWidget(note)
         header = QLabel(AI_RESULT_HEADER_TEXT)
         header.setObjectName("CardDetail")
-        layout.addWidget(header)
+        layout_body.addWidget(header)
         for horizon in ("short", "mid", "long"):
             card = self._make_card(horizon, prefix="Pair")
-            layout.addWidget(card["frame"])
+            layout_body.addWidget(card["frame"])
             self._pair_cards[horizon] = card
+        layout_body.addStretch(1)
+        layout.addWidget(self._scroll_body(body), 1)
         self._pair_deep_button = action_button(
             AI_PAIR_DEEP_TEXT, primary=True, color="success"
         )
         self._pair_deep_button.clicked.connect(self._on_pair_deep_clicked)
         layout.addWidget(self._pair_deep_button)
-        layout.addStretch(1)
         return widget
 
     def _make_card(self, horizon: str, prefix: str = "") -> dict[str, object]:
         """Một thẻ chân trời: header (hướng + ký hiệu màu semantic), confidence,
-        lập luận, hàng dẫn chứng bấm được.
+        lập luận.  Không có hàng dẫn chứng (Owner chốt 30/09/2026 — dẫn chứng vẫn
+        được lưu trong verdict, chỉ không hiển thị ở dialog).
 
         Màu semantic của hướng tô qua QPalette (không dùng `style=` HTML hay
         setStyleSheet — giữ bộ đếm nợ UI style của file mới bằng 0, khuôn
@@ -1692,11 +1734,6 @@ class AiTrendDialog(QDialog):
         rationale.setWordWrap(True)
         rationale.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         layout.addWidget(rationale)
-        evidence_row = QWidget()
-        ev_layout = QHBoxLayout(evidence_row)
-        ev_layout.setContentsMargins(0, 0, 0, 0)
-        ev_layout.setSpacing(6)
-        layout.addWidget(evidence_row)
         frame.setVisible(False)
         return {
             "frame": frame,
@@ -1704,7 +1741,6 @@ class AiTrendDialog(QDialog):
             "direction": direction,
             "conf": conf,
             "rationale": rationale,
-            "layout": ev_layout,
         }
 
     def _fill_detail_combo(self) -> None:
@@ -2149,28 +2185,7 @@ class AiTrendDialog(QDialog):
                 CONFIDENCE_TEXT.get(verdict.confidence.value, verdict.confidence.value)
             )
             card["rationale"].setText(verdict.rationale)
-            self._fill_evidence(card, verdict.evidence_item_ids)
             card["frame"].setVisible(True)
-
-    def _fill_evidence(self, card: dict[str, object], ids) -> None:
-        """Hàng dẫn chứng — mỗi id một nút bấm được (d.1646-1647)."""
-        self._clear_layout(card["layout"])
-        label = QLabel(AI_EVIDENCE_TEXT)
-        label.setObjectName("CardDetail")
-        card["layout"].addWidget(label)
-        for row_id in ids:
-            button = action_button(str(row_id))
-            button.clicked.connect(
-                lambda _checked=False, rid=int(row_id): self._pick_evidence(rid)
-            )
-            card["layout"].addWidget(button)
-        card["layout"].addStretch(1)
-
-    def _pick_evidence(self, row_id: int) -> None:
-        """Dẫn chứng bấm → đóng dialog rồi screen nhảy dòng (d.1646-1647)."""
-        self.accept()
-        if self._on_evidence is not None:
-            self._on_evidence(row_id)
 
     def _clear_cards(self, cards: dict[str, dict[str, object]]) -> None:
         for card in cards.values():
@@ -2179,7 +2194,6 @@ class AiTrendDialog(QDialog):
             card["direction"].clear()
             card["conf"].clear()
             card["rationale"].clear()
-            self._clear_layout(card["layout"])
 
     @staticmethod
     def _clear_layout(layout: QVBoxLayout | QHBoxLayout) -> None:
@@ -2701,6 +2715,9 @@ class NewsScreen(QWidget):
         # QStackedWidget — lượt nạp đầu thường xong khi màn còn ẩn, lúc đó cuộn
         # vô hiệu; cờ giữ yêu cầu lại cho tới khi màn thật sự hiện.
         self._scroll_pending = False
+        # Worker giải thích chỉ số của dialog xem 1 tin (Owner yêu cầu 30/09/2026).
+        self._explain_thread: QThread | None = None
+        self._explain_worker: NewsReadWorker | None = None
         self.setObjectName("FormScreen")
         self._build_ui()
         self.reload_rows()
@@ -3008,26 +3025,40 @@ class NewsScreen(QWidget):
         return table_card
 
     def _toolbar(self) -> QWidget:
-        """Dãy 3 nút thanh công cụ — bề ngang tự nhiên, căn trái (khuôn dãy nút
-        hệ thống: HBox + stretch cuối), đồng nhất style nút hành động
-        (primary + màu + icon)."""
+        """Thanh công cụ: 3 nút hành vi chính căn TRÁI, nút "Tải lại" căn PHẢI
+        (Owner chốt 30/09/2026).
+
+        Nhóm trái là một ``ResponsiveGrid`` ``stretch=False`` giữ bề ngang tự nhiên
+        của từng nút (không giãn theo cửa sổ) nhưng **biết xuống dòng khi bị bóp** —
+        4 nút không vừa một hàng ở cửa sổ tối thiểu 800px nên dãy HBox cứng sẽ
+        phá contract kích thước (đo thật: cần 832px > 752px bề ngang nội dung
+        shell).  Nút "Tải lại" đứng riêng ở mép phải, sau một khoảng giãn."""
         toolbar = QWidget()
         toolbar.setObjectName("NewsToolbarRow")
         row = QHBoxLayout(toolbar)
         row.setContentsMargins(0, 0, 0, 0)
         row.setSpacing(8)
-        for label in TOOLBAR_LABELS:
-            row.addWidget(self._toolbar_button(label))
+        left_group = ResponsiveGrid(
+            widgets=[self._toolbar_button(label) for label in TOOLBAR_LABELS[:-1]],
+            columns=len(TOOLBAR_LABELS) - 1,
+            compact_columns=1,
+            stretch=False,
+            fluid=True,
+        )
+        row.addWidget(left_group)
         row.addStretch(1)
+        row.addWidget(self._toolbar_button(TOOLBAR_LABELS[-1]))
         return toolbar
 
     def _toolbar_button(self, label: str) -> QPushButton:
-        """Nút thanh công cụ — đúng 3 nút nối hành vi (F4: [Dán | Nhập | AI]).
+        """Nút thanh công cụ — mỗi nút một hành vi (F4: [Dán | Nhập | AI | Tải lại]).
 
         Dùng đúng khuôn nút hành động của hệ thống (``action_button`` primary +
         màu + glyph + ``icon_role``/``icon_disabled_role`` = ``selection_text``)
         để đồng nhất với các màn khác; dãy nút căn trái nên mỗi nút giữ bề ngang
-        tự nhiên (vừa đủ chứa tiêu đề + icon)."""
+        tự nhiên (vừa đủ chứa tiêu đề + icon).  "Tải lại" đọc lại database theo
+        đúng bộ lọc đang áp (cập nhật trạng thái mới nhất của trang — Owner yêu
+        cầu 30/09/2026) — cùng đường với nút "Tìm kiếm", không đổi cửa sổ ngày."""
         button = action_button(
             label,
             primary=True,
@@ -3036,12 +3067,17 @@ class NewsScreen(QWidget):
             icon_role="selection_text",
             icon_disabled_role="selection_text",
         )
+        # Chính sách ngang ``Maximum``: nút giữ bề ngang tự nhiên trong ô lưới
+        # (khuôn nút "Tìm kiếm" — cùng lý do: ô lưới rộng không làm nút phình ra).
+        button.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
         if label == TOOLBAR_LABELS[0]:
             button.clicked.connect(self.open_paste_dialog)
         elif label == TOOLBAR_LABELS[1]:
             button.clicked.connect(lambda: self.open_note_dialog())
-        else:
+        elif label == TOOLBAR_LABELS[2]:
             button.clicked.connect(self.open_ai_dialog)
+        else:
+            button.clicked.connect(self.reload_rows)
         self.toolbar_buttons[label] = button
         return button
 
@@ -3088,6 +3124,7 @@ class NewsScreen(QWidget):
 
     def shutdown(self) -> None:
         """Dừng worker đọc nền (màn đóng / mở lượt đọc mới) — chờ có giới hạn."""
+        self._shutdown_explanation()
         thread = self._thread
         self._thread = None
         self._worker = None
@@ -3181,32 +3218,8 @@ class NewsScreen(QWidget):
         """Mở cửa sổ AI nhận định xu hướng — không modal toàn app (d.1624)."""
         if self.news_controller is None:
             return
-        dialog = AiTrendDialog(self.news_controller, self._jump_to_evidence, self)
+        dialog = AiTrendDialog(self.news_controller, self)
         dialog.exec()
-
-    def _jump_to_evidence(self, row_id: int) -> None:
-        """Nhảy tới dòng của một dẫn chứng (d.1646-1647) — V2: ưu tiên khớp
-        item rồi event trong tập dòng đã đọc; chỉ nhảy khi dòng đang hiển thị
-        (không tự đổi bộ lọc)."""
-        target: NewsRow | None = None
-        for row in self._rows:
-            if row.item is not None and row.item.id == row_id:
-                target = row
-                break
-        if target is None:
-            for row in self._rows:
-                if row.event is not None and row.event.id == row_id:
-                    target = row
-                    break
-        if target is None:
-            return
-        if not any(row is target for row in self.table_model.rows):
-            return
-        index = self.table_model.rows.index(target)
-        self.table.selectRow(index)
-        self.table.scrollTo(
-            self.table_model.index(index, 0), QAbstractItemView.ScrollHint.EnsureVisible
-        )
 
     # -- sửa/xóa/toggle theo dòng (D7 — trong dialog chi tiết dòng) ---------------
 
@@ -3455,7 +3468,13 @@ class NewsScreen(QWidget):
         self.row_detail_dialog(row).exec()
 
     def row_detail_dialog(self, row: NewsRow) -> QDialog:
-        """Dựng dialog chi tiết: nội dung + provenance (nguồn, giờ fetch, raw_json, liên kết)."""
+        """Dựng dialog xem 1 tin: nội dung + dữ liệu của dòng + (hàng sự kiện FF)
+        khung giải thích chỉ số bằng AI + nút "Đóng" của hệ thống.
+
+        Hàng SỰ KIỆN FF hiển thị chính số liệu của sự kiện (Kỳ trước/Dự báo/Thực
+        tế) thay cho "Giờ fetch"/"raw_json" — hai trường đó vô nghĩa với người
+        dùng (Owner yêu cầu 30/09/2026).  Hàng tin văn bản giữ nguyên provenance
+        cũ (không đụng — ngoài phạm vi yêu cầu)."""
         dialog = QDialog(self)
         dialog.setWindowTitle(DETAIL_TEXT)
         dialog.setObjectName("NewsDetailDialog")
@@ -3473,7 +3492,7 @@ class NewsScreen(QWidget):
         grid = QGridLayout()
         grid.setHorizontalSpacing(32)
         grid.setVerticalSpacing(8)
-        for index, (label, value, is_link) in enumerate(self._provenance_pairs(row)):
+        for index, (label, value, is_link) in enumerate(self._detail_pairs(row)):
             label_widget = QLabel(compile_rich_html(label))
             label_widget.setObjectName("CardDetail")
             label_widget.setFixedWidth(120)
@@ -3491,13 +3510,144 @@ class NewsScreen(QWidget):
         body.setObjectName("CardValue")
         body.setWordWrap(True)
         body.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        root.addWidget(body, 1)
+        # Hàng sự kiện: phần "nội dung" chỉ một dòng (tên sự kiện) nên nhường chỗ
+        # co giãn cho khung giải thích bên dưới.
+        root.addWidget(body, 0 if row.event is not None else 1)
+
+        if row.event is not None:
+            root.addWidget(self._explanation_block(dialog, row), 1)
 
         # Điều khiển sửa/xóa/toggle theo dòng (D7 — trong dialog chi tiết dòng).
         actions = self._row_actions(dialog, row)
         if actions is not None:
             root.addWidget(actions)
+
+        # Nút "Đóng" theo khuôn nút hệ thống (Owner yêu cầu 30/09/2026).
+        close_row = QWidget()
+        close_layout = QHBoxLayout(close_row)
+        close_layout.setContentsMargins(0, 0, 0, 0)
+        close_layout.setSpacing(8)
+        close_button = action_button(
+            CLOSE_TEXT, icon="x", icon_role="text", icon_disabled_role="text"
+        )
+        close_button.clicked.connect(dialog.accept)
+        close_layout.addWidget(close_button)
+        close_layout.addStretch(1)
+        root.addWidget(close_row)
         return dialog
+
+    def _detail_pairs(self, row: NewsRow) -> list[tuple[str, str, bool]]:
+        """Cặp nhãn/giá trị của dialog xem 1 tin — theo LOẠI dòng.
+
+        Hàng sự kiện FF: Thời gian, Nguồn rồi tới số liệu của chính sự kiện
+        (Kỳ trước, Dự báo, Thực tế — Owner yêu cầu 30/09/2026).  Hàng tin văn bản
+        giữ nguyên provenance (nguồn, giờ fetch, raw_json, liên kết)."""
+        if row.event is None:
+            return self._provenance_pairs(row)
+        event = row.event
+        return [
+            (EVENT_DATA_LABELS[0], _display_time(row.timestamp_utc), False),
+            (EVENT_DATA_LABELS[1], SOURCE_TEXT.get(row.source, row.source or NO_VALUE), False),
+            (EVENT_DATA_LABELS[2], event.previous or NO_VALUE, False),
+            (EVENT_DATA_LABELS[3], event.forecast or NO_VALUE, False),
+            (EVENT_DATA_LABELS[4], event.actual or NO_VALUE, False),
+        ]
+
+    def _explanation_block(self, dialog: QDialog, row: NewsRow) -> QWidget:
+        """Khung giải thích chỉ số + nút gọi AI (chỉ hàng sự kiện FF).
+
+        Bấm nút → nút đổi trạng thái "AI đang giải thích" và lời gọi chạy trong
+        worker nền (``NewsReadWorker`` — khuôn D10, không block GUI); xong → nội
+        dung giải thích vào khung.  Kết quả CHỈ hiển thị cho người dùng tham
+        khảo: không lưu database, không vào bất kỳ quy trình nào (§9.2)."""
+        container = QWidget()
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
+        header = QLabel(EXPLAIN_HEADER_TEXT)
+        header.setObjectName("CardDetail")
+        layout.addWidget(header)
+        frame = QTextEdit()
+        frame.setObjectName("ReadonlyText")
+        frame.setReadOnly(True)
+        frame.setPlainText(EXPLAIN_HINT_TEXT)
+        layout.addWidget(frame, 1)
+        button = action_button(
+            EXPLAIN_TEXT,
+            primary=True,
+            color="info",
+            icon="bot",
+            icon_role="selection_text",
+            icon_disabled_role="selection_text",
+        )
+        button.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
+        button.clicked.connect(
+            lambda _checked=False: self._start_explanation(dialog, row, frame, button)
+        )
+        layout.addWidget(button)
+        return container
+
+    def _start_explanation(
+        self, dialog: QDialog, row: NewsRow, frame: QTextEdit, button: QPushButton
+    ) -> None:
+        """Chạy lời gọi AI giải thích trong worker nền (không block GUI)."""
+        controller = self.news_controller
+        event = row.event
+        if controller is None or event is None or self._explain_worker is not None:
+            return
+        button.setEnabled(False)
+        button.setText(AI_EXPLAINING_TEXT)
+        thread = QThread(dialog)
+        worker = NewsReadWorker(lambda: controller.explain_event(event))
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.succeeded.connect(
+            lambda text: self._on_explanation(frame, button, str(text))
+        )
+        worker.failed.connect(
+            lambda message: self._on_explanation_failed(frame, button, str(message))
+        )
+        worker.finished.connect(thread.quit)
+        worker.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(self._forget_explanation)
+        dialog.finished.connect(self._shutdown_explanation)
+        self._explain_thread = thread
+        self._explain_worker = worker
+        thread.start()
+
+    def _on_explanation(self, frame: QTextEdit, button: QPushButton, text: str) -> None:
+        """Đổ nội dung giải thích vào khung và trả nút về trạng thái bấm được."""
+        frame.setPlainText(text)
+        button.setText(EXPLAIN_TEXT)
+        button.setEnabled(True)
+
+    def _on_explanation_failed(
+        self, frame: QTextEdit, button: QPushButton, message: str
+    ) -> None:
+        """Lỗi provider/chưa cấu hình AI → câu thân thiện vào khung, nút bấm lại được."""
+        frame.setPlainText(message)
+        button.setText(EXPLAIN_TEXT)
+        button.setEnabled(True)
+
+    def _forget_explanation(self) -> None:
+        self._explain_thread = None
+        self._explain_worker = None
+
+    def _shutdown_explanation(self) -> None:
+        """Dialog xem 1 tin đóng → dừng worker giải thích (không để thread sống ngoài)."""
+        thread = self._explain_thread
+        self._explain_thread = None
+        self._explain_worker = None
+        if thread is None:
+            return
+        try:
+            if thread.isRunning():
+                thread.quit()
+                thread.wait(2000)
+        except RuntimeError:
+            # QThread đã bị xoá (deleteLater) — không còn gì để dừng.
+            pass
 
     def _provenance_pairs(self, row: NewsRow) -> list[tuple[str, str, bool]]:
         """Cặp nhãn/giá trị provenance của một dòng — chỉ đọc, không suy diễn."""

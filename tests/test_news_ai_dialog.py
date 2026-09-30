@@ -23,7 +23,8 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
 
-from PyQt6.QtWidgets import QApplication, QLabel, QPushButton
+from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import QApplication, QLabel, QPushButton, QScrollArea
 
 from config.constants import SUPPORTED_SYMBOLS
 from controllers.news_controller import (
@@ -639,8 +640,8 @@ def _result(*verdicts: TrendVerdict, inserted: int = 3) -> TrendAnalysisResult:
     return TrendAnalysisResult(ok=True, verdicts=tuple(verdicts), inserted=inserted)
 
 
-def _dialog(controller: FakeAiController, on_evidence=None) -> news.AiTrendDialog:
-    dialog = news.AiTrendDialog(controller, on_evidence)
+def _dialog(controller: FakeAiController) -> news.AiTrendDialog:
+    dialog = news.AiTrendDialog(controller)
     dialog.show()
     _app().processEvents()
     _DIALOGS.append(dialog)
@@ -971,32 +972,77 @@ class TestAiDialogHistory:
 
 
 class TestAiDialogEvidence:
-    @pytest.mark.parametrize("evidence_id", [11, 12])
-    def test_evidence_click_closes_dialog_and_selects_the_row(self, tmp_path, evidence_id):
+    def test_no_tab_shows_an_evidence_row(self):
+        """Owner chốt 30/09/2026: dialog KHÔNG hiển thị hàng dẫn chứng ở bất kỳ
+        tab nào (dẫn chứng vẫn được lưu trong `ai_trend_verdicts` theo contract
+        §4.5 — quyết định chỉ ở tầng trình bày; đường "bấm dẫn chứng để nhảy
+        dòng" đã gỡ cùng)."""
         controller = FakeAiController(
             _preview(),
-            result=_result(_verdict(VerdictHorizon.SHORT, ids=(evidence_id,)), inserted=1),
+            result=_result(_verdict(VerdictHorizon.SHORT, ids=(11,)), inserted=1),
             items=[EVIDENCE_ITEM, HIDDEN_ITEM],
         )
-        screen = _screen(controller)
-        dialog = _dialog(controller, on_evidence=screen._jump_to_evidence)
-        _wait_until(lambda: screen.table_model.rowCount() == 2)
+        dialog = _dialog(controller)
 
         dialog._analyze_button.click()
         assert _wait_until(lambda: "▲" in _header_text(dialog, "short"))
-        evidence_button = next(
-            button
-            for button in dialog._cards["short"]["frame"].findChildren(QPushButton)
-            if button.text() == str(evidence_id)
-        )
-        evidence_button.click()
-        _app().processEvents()
+        dialog._pair_deep_button.click()
+        assert _wait_until(lambda: not dialog._pair_cards["short"]["frame"].isHidden())
 
-        assert dialog.result() == 1  # đóng dialog (d.1646)
-        selected = screen.table.selectionModel().selectedRows()
-        assert len(selected) == 1
-        row = screen.table_model.rows[selected[0].row()]
-        assert row.item is not None and row.item.id == evidence_id  # nhảy đúng dòng dẫn chứng
+        for cards in (dialog._cards, dialog._pair_cards):
+            for horizon in ("short", "mid", "long"):
+                card = cards[horizon]
+                assert "layout" not in card  # thẻ không còn hàng dẫn chứng
+                assert not [
+                    button
+                    for button in card["frame"].findChildren(QPushButton)
+                    if button.text() == "11"
+                ]
+        for tab in (dialog._detail_tab, dialog._pair_tab):
+            labels = [label.text() for label in tab.findChildren(QLabel)]
+            assert "Dẫn chứng" not in labels
+
+
+class TestAiDialogScroll:
+    """Owner báo 30/09/2026: dialog cố định 800×600 mà thân tab dài hơn khung thì
+    bị cắt, không có thanh cuộn để xem phần còn lại — cả tab "Chi tiết" và "Cặp
+    forex" phải cuộn được, còn nút hành động luôn nằm ngoài vùng cuộn."""
+
+    def test_both_tabs_scroll_their_body(self):
+        dialog = _dialog(FakeAiController(_preview()))
+
+        for tab, button in (
+            (dialog._detail_tab, dialog._analyze_button),
+            (dialog._pair_tab, dialog._pair_deep_button),
+        ):
+            scroll = tab.findChild(QScrollArea, "NewsAiScroll")
+            assert scroll is not None, "tab thiếu vùng cuộn"
+            assert scroll.widgetResizable() is True
+            assert (
+                scroll.verticalScrollBarPolicy()
+                == Qt.ScrollBarPolicy.ScrollBarAsNeeded
+            )
+            assert (
+                scroll.horizontalScrollBarPolicy()
+                == Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+            )
+            # Nút hành động nằm NGOÀI vùng cuộn ⇒ luôn trong tầm nhìn.
+            assert not scroll.widget().isAncestorOf(button)
+
+    def test_scrolled_body_holds_the_results_and_history(self):
+        controller = FakeAiController(
+            _preview(), result=_result(_verdict(VerdictHorizon.SHORT), inserted=1)
+        )
+        dialog = _dialog(controller)
+
+        dialog._analyze_button.click()
+        assert _wait_until(lambda: "▲" in _header_text(dialog, "short"))
+
+        scroll = dialog._detail_tab.findChild(QScrollArea, "NewsAiScroll")
+        body = scroll.widget()
+        for horizon in ("short", "mid", "long"):
+            assert body.isAncestorOf(dialog._cards[horizon]["frame"])
+        assert body.isAncestorOf(dialog._history_layout.parent())
 
 
 class TestAiPair:

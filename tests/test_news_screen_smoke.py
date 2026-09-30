@@ -32,7 +32,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import pytest
 
 from PyQt6.QtCore import QDate, Qt
-from PyQt6.QtWidgets import QApplication, QLabel, QPushButton
+from PyQt6.QtWidgets import QApplication, QDialog, QLabel, QPushButton, QTextEdit
 
 from core.news_models import (
     CalendarEvent,
@@ -129,10 +129,21 @@ class FakeNewsController:
         self.items = [HEADLINE, EXCLUDED_NOTE] if items is None else items
         self.event_calls: list[tuple[str, str]] = []
         self.item_calls: list[tuple[str, str, bool]] = []
+        # Giải thích chỉ số (Owner yêu cầu 30/09/2026): đếm lời gọi + trả câu đã
+        # dựng, hoặc raise để kiểm nhánh lỗi (fail-closed).
+        self.explain_calls: list[CalendarEvent] = []
+        self.explain_answer = "EUR chịu áp lực giảm khi số liệu xấu hơn dự báo."
+        self.explain_error: Exception | None = None
 
     def events_in_range(self, from_utc, to_utc, currencies=None, include_non_impact=True):
         self.event_calls.append((from_utc, to_utc))
         return list(self.events)
+
+    def explain_event(self, event: CalendarEvent) -> str:
+        self.explain_calls.append(event)
+        if self.explain_error is not None:
+            raise self.explain_error
+        return self.explain_answer
 
     def items_in_range(self, from_utc, to_utc=None, kinds=None, currencies=None, exclude_flagged=True):
         self.item_calls.append((from_utc, to_utc, exclude_flagged))
@@ -261,6 +272,7 @@ class TestDisplayDictionary:
             "Dán mã nguồn trang",
             "Nhập tin",
             "AI nhận định xu hướng",
+            "Tải lại",
         )
 
 
@@ -510,6 +522,29 @@ class TestScreenLayout:
             assert button.isEnabled() is True
             assert button.receivers(button.clicked) >= 1
 
+    def test_reload_button_reads_the_window_again(self):
+        # Owner yêu cầu 30/09/2026: nút "Tải lại" cập nhật trạng thái mới nhất của
+        # trang — đọc lại database theo đúng cửa sổ/bộ lọc đang áp (cùng đường với
+        # nút "Tìm kiếm", không đổi khoảng ngày).
+        controller = FakeNewsController()
+        screen = _screen(controller)
+        reads_before = len(controller.event_calls)
+        from PyQt6.QtCore import QDate
+
+        assert (screen.date_from_input.date(), screen.date_to_input.date()) == (
+            QDate.currentDate(),
+            QDate.currentDate(),
+        )
+
+        screen.toolbar_buttons["Tải lại"].click()
+
+        assert _wait_until(lambda: len(controller.event_calls) > reads_before)
+        # Không đổi cửa sổ ngày — chỉ đọc lại.
+        assert (screen.date_from_input.date(), screen.date_to_input.date()) == (
+            QDate.currentDate(),
+            QDate.currentDate(),
+        )
+
     def test_toolbar_buttons_use_the_system_action_style_with_icons(self):
         screen = _screen()
 
@@ -739,14 +774,141 @@ class TestRowDetailDialog:
         for label in news.PROVENANCE_LABELS:
             assert label in joined, label
 
-    def test_event_detail_shows_raw_json(self):
+    def test_event_detail_shows_the_event_figures_instead_of_raw_json(self):
+        # Owner yêu cầu 30/09/2026: với tin FF, dialog hiển thị chính số liệu của
+        # sự kiện (kỳ trước/dự báo/thực tế); "giờ fetch"/"raw_json" bị bỏ vì vô
+        # nghĩa với người dùng.
         screen = _screen()
         dialog = screen.row_detail_dialog(build_rows([EVENT], [])[0])
 
         joined = " ".join(label.text() for label in dialog.findChildren(QLabel))
-        assert "raw_json" in joined
         assert "FOMC Meeting" in joined
         assert "Forex Factory" in joined
+        for label in news.EVENT_DATA_LABELS:
+            assert label in joined, label
+        assert "5.25%" in joined  # kỳ trước
+        assert "5.50%" in joined  # dự báo + thực tế
+        assert "raw_json" not in joined
+        assert "Giờ fetch" not in joined
+
+    def test_item_detail_keeps_the_provenance_grid(self):
+        # Hàng tin văn bản KHÔNG đụng tới (ngoài phạm vi yêu cầu).
+        screen = _screen()
+        dialog = screen.row_detail_dialog(build_rows([], [HEADLINE])[0])
+
+        joined = " ".join(label.text() for label in dialog.findChildren(QLabel))
+        for label in news.PROVENANCE_LABELS:
+            assert label in joined, label
+        assert not any(label in joined for label in news.EVENT_DATA_LABELS[2:])
+
+    def test_detail_dialog_has_the_system_close_button(self):
+        screen = _screen()
+        dialog = screen.row_detail_dialog(build_rows([EVENT], [])[0])
+
+        close = next(
+            button
+            for button in dialog.findChildren(QPushButton)
+            if button.text() == news.CLOSE_TEXT
+        )
+        assert close.objectName() == "SecondaryButton"  # khuôn nút chung
+
+        close.click()
+
+        assert dialog.result() == int(QDialog.DialogCode.Accepted)
+
+    def test_event_detail_has_the_explanation_frame_and_button(self):
+        screen = _screen()
+        dialog = screen.row_detail_dialog(build_rows([EVENT], [])[0])
+
+        frame = dialog.findChild(QTextEdit, "ReadonlyText")
+        assert frame is not None and frame.isReadOnly()
+        assert frame.toPlainText() == news.EXPLAIN_HINT_TEXT
+        assert news.EXPLAIN_HEADER_TEXT in [
+            label.text() for label in dialog.findChildren(QLabel)
+        ]
+        button = next(
+            button
+            for button in dialog.findChildren(QPushButton)
+            if button.text() == news.EXPLAIN_TEXT
+        )
+        assert button.objectName() == "PrimaryButton"  # khuôn nút AI của màn
+
+    def test_explanation_button_calls_the_ai_and_fills_the_frame(self):
+        controller = FakeNewsController()
+        screen = _screen(controller)
+        dialog = screen.row_detail_dialog(build_rows([EVENT], [])[0])
+        frame = dialog.findChild(QTextEdit, "ReadonlyText")
+        button = next(
+            button
+            for button in dialog.findChildren(QPushButton)
+            if button.text() == news.EXPLAIN_TEXT
+        )
+
+        button.click()
+
+        assert _wait_until(lambda: controller.explain_calls == [EVENT])
+        assert _wait_until(lambda: frame.toPlainText() == controller.explain_answer)
+        # Nút trở lại trạng thái bấm được với nhãn gốc.
+        assert _wait_until(lambda: button.text() == news.EXPLAIN_TEXT)
+        assert button.isEnabled() is True
+
+    def test_explanation_button_shows_the_running_state(self):
+        # Yêu cầu Owner: khi bấm, nút đổi trạng thái thành "AI đang giải thích"
+        # trong lúc chờ kết quả (lời gọi chạy worker nền, GUI không chặn).
+        import threading
+
+        gate = threading.Event()
+        controller = FakeNewsController()
+
+        def blocking_explain(event):
+            gate.wait(timeout=5)
+            return controller.explain_answer
+
+        controller.explain_event = blocking_explain  # type: ignore[method-assign]
+        screen = _screen(controller)
+        dialog = screen.row_detail_dialog(build_rows([EVENT], [])[0])
+        button = next(
+            button
+            for button in dialog.findChildren(QPushButton)
+            if button.text() == news.EXPLAIN_TEXT
+        )
+
+        button.click()
+
+        assert _wait_until(lambda: button.text() == news.AI_EXPLAINING_TEXT)
+        assert button.isEnabled() is False
+
+        gate.set()
+
+        assert _wait_until(lambda: button.text() == news.EXPLAIN_TEXT)
+        assert button.isEnabled() is True
+
+    def test_explanation_failure_shows_the_friendly_message(self):
+        controller = FakeNewsController()
+        controller.explain_error = RuntimeError("Chưa cấu hình AI Provider hoặc API key trong Settings.")
+        screen = _screen(controller)
+        dialog = screen.row_detail_dialog(build_rows([EVENT], [])[0])
+        frame = dialog.findChild(QTextEdit, "ReadonlyText")
+        button = next(
+            button
+            for button in dialog.findChildren(QPushButton)
+            if button.text() == news.EXPLAIN_TEXT
+        )
+
+        button.click()
+
+        assert _wait_until(lambda: "Chưa cấu hình AI" in frame.toPlainText())
+        assert _wait_until(lambda: button.isEnabled() is True)
+
+    def test_item_detail_has_no_explanation_block(self):
+        # Khung giải thích chỉ dành cho tin SỰ KIỆN FF (Owner yêu cầu 30/09/2026).
+        screen = _screen()
+        dialog = screen.row_detail_dialog(build_rows([], [HEADLINE])[0])
+
+        assert dialog.findChild(QTextEdit, "ReadonlyText") is None
+        assert news.EXPLAIN_TEXT not in [
+            button.text() for button in dialog.findChildren(QPushButton)
+        ]
 
 
 # ---- 7. màn không vỡ layout 800px + đăng ký điều hướng ------------------------
