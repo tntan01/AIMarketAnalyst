@@ -1785,7 +1785,11 @@ Cặp: [ EUR/USD ▼ ]
   D1): chạy **tuần tự 11** phạm vi trong worker nền; trong lúc chạy disable
   nút + hiện progress "n/11" từng phạm vi; **một phạm vi lỗi hoặc "Không đủ
   dữ liệu" không dừng lô** — phạm vi kế vẫn chạy; cuối lượt tổng kết
-  ok/insufficient/lỗi (contract §9.1 bước 7).
+  ok/insufficient/lỗi (contract §9.1 bước 7). **Dòng thứ hai (Owner yêu cầu
+  30/09/2026 — IMPLEMENTED):** khi có phạm vi lỗi, tổng kết thêm **lý do lỗi**
+  — gom theo lý do, mỗi nhóm kèm danh sách phạm vi (vd `Lý do lỗi: AI hết giới
+  hạn token… (EUR, USD)`), lý do lấy nguyên văn thông báo thân thiện từ
+  provider/parser; không có phạm vi lỗi thì tổng kết giữ nguyên một dòng.
 
 **Tab "Chi tiết"** (giữ khuôn 3 thẻ chân trời hiện hành):
 

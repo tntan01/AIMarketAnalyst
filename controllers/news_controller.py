@@ -243,6 +243,17 @@ class UserNoteResult:
 NO_AI_CONFIG_TEXT = "Chưa cấu hình AI Provider hoặc API key trong Settings."
 PARSE_FAIL_TEXT = "AI không trả về JSON hợp lệ."
 
+# Ngân sách token output của MỘT lời gọi nhận định xu hướng (đường AI của màn
+# Tin tức).  Model suy luận (vd ``ds/deepseek-flash`` qua provider "OpenAI
+# Compatible") tiêu phần lớn ngân sách cho ``reasoning_content`` rồi mới trả
+# JSON: đo thật 30/09/2026 — EUR cần 5.248 token output (4.562 reasoning), USD
+# (prompt 29.017 ký tự) cần 5.931.  Mặc định 1800 của ``AIService.analyze`` làm
+# phản hồi bị cắt GIỮA lúc suy luận (``finish_reason=length``) nên không bao giờ
+# có JSON ⇒ parser từ chối, retry cũng hỏng, cả lô báo lỗi.  Giá trị dưới để dư
+# cho ca nặng nhất (USD); adapter DeepSeek có sàn 4000 riêng nhưng adapter
+# OpenAI-Compatible thì không, và scanner truyền 4000 cho prompt ngắn hơn.
+AI_TREND_MAX_TOKENS = 8000
+
 # Assets priced in USD (contract §9.3 khoản 4): their scope reads the USD rate
 # and USD bond-yield context (C3).  The full 11-asset scope list is a batch B4
 # concern (derived from SUPPORTED_SYMBOLS); here only the USD-priced trio named
@@ -1420,8 +1431,12 @@ class NewsController:
         )
 
     def _analyze_answer(self, service: object, prompt: TrendPrompt) -> TrendParseOutcome:
-        """One analyze+parse round; the caller owns the retry decision."""
-        raw = service.analyze(prompt.text)  # type: ignore[attr-defined]
+        """One analyze+parse round; the caller owns the retry decision.
+
+        Ngân sách token truyền tường minh (``AI_TREND_MAX_TOKENS``) — mặc định
+        1800 của ``AIService.analyze`` không đủ cho model suy luận, xem chú thích
+        hằng số."""
+        raw = service.analyze(prompt.text, max_tokens=AI_TREND_MAX_TOKENS)  # type: ignore[attr-defined]
         return parse_trend_verdict(
             raw,
             horizons=tuple(self._policy.ai_horizons),

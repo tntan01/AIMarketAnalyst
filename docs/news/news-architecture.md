@@ -606,7 +606,15 @@ chuỗi hiển thị — vi phạm lớp `services/` (mục 3).
    `insufficient_data`. Context là **ngữ cảnh lập luận, không được dẫn chứng
    vào `evidence_item_ids`** — hợp đồng parser giữ nguyên trạng (chỉ id sự
    kiện/tin được dẫn chứng).
-4. Gọi `AIService.analyze()` trong worker nền (không block GUI).
+4. Gọi `AIService.analyze()` trong worker nền (không block GUI) — **kèm ngân
+   sách token tường minh** (`news_controller.AI_TREND_MAX_TOKENS`, Owner chốt
+   30/09/2026, **không** là khóa chính sách): model suy luận (reasoning) tiêu
+   phần lớn ngân sách output cho phần suy luận rồi mới trả JSON, nên ngân sách
+   mặc định của `AIService` (1.800) làm phản hồi bị cắt **giữa lúc suy luận**
+   (`finish_reason=length`) ⇒ không bao giờ có JSON ⇒ parser từ chối, retry cũng
+   hỏng, cả lô báo lỗi. Đo thật 30/09/2026: ca nặng nhất (prompt 29.017 ký tự)
+   cần ~5.9k token output ⇒ hằng số đặt dư (8.000). Đổi ngân sách = sửa hằng số
+   này (một điểm thay đổi duy nhất của đường AI màn Tin tức).
 5. `core/trend_verdict_parser.py` (thuần) parse JSON 3 horizon
    (`short`/`mid`/`long` theo định nghĩa `ai_horizons`), mỗi horizon:
    `direction`, `confidence`, `rationale` tiếng Việt, `evidence_item_ids`.

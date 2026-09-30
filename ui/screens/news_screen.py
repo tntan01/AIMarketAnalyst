@@ -391,6 +391,11 @@ AI_TAB_PAIR_TEXT = "Cặp forex"  # mockup d.1716
 AI_BATCH_TEXT = "Nhận định tất cả"  # mockup d.1720
 AI_BATCH_PROGRESS_TEXT = "Đang nhận định {done}/{total} · {scope}"  # d.1720 "n/11"
 AI_BATCH_SUMMARY_TEXT = "Xong: {ok} đủ · {insufficient} thiếu dữ liệu · {error} lỗi"  # d.1755-1756
+# Dòng thứ hai của tổng kết batch: LÝ DO của các phạm vi lỗi (Owner yêu cầu
+# 30/09/2026 — "9 lỗi" mà không nói vì sao thì phải điều tra lại).  Lý do lấy
+# nguyên văn thông báo thân thiện do controller/provider trả về.
+AI_BATCH_REASON_TEXT = "Lý do lỗi: {detail}"
+AI_BATCH_NO_REASON_TEXT = "không rõ lý do"
 AI_PAIR_LABEL = "Cặp"  # mockup d.1737
 PAIR_BIAS_TEXT: dict[str, str] = {  # contract §9.3 khoản 2 (nhãn bias)
     "bullish": "Nghiêng tăng",
@@ -1062,6 +1067,33 @@ def _ai_signed(value: object) -> str:
     if value is None:
         return NO_VALUE
     return f"{float(value):+.2f}"
+
+
+def batch_error_detail(payload: object) -> str:
+    """Lý do lỗi của các phạm vi trong lượt batch "Nhận định tất cả" (thuần).
+
+    Gom các phạm vi lỗi **theo lý do** (mỗi lý do một nhóm, kèm danh sách phạm
+    vi) để dòng tổng kết nói được VÌ SAO chứ không chỉ đếm — nhiều phạm vi lỗi
+    cùng một nguyên nhân (vd model suy luận bị cắt vì ngân sách token) thì hiện
+    đúng một lần.  Phạm vi ``ok``/``insufficient`` không phải lỗi nên không vào
+    đây.  Lý do lấy nguyên văn ``error_message`` do controller/provider trả về;
+    thiếu chuỗi → nhãn "không rõ lý do" (không bịa).  Không có phạm vi lỗi →
+    chuỗi rỗng (dòng tổng kết giữ nguyên một dòng).
+    """
+    grouped: dict[str, list[str]] = {}
+    for entry in getattr(payload, "results", ()) or ():
+        result = getattr(entry, "result", None)
+        if result is None or getattr(result, "ok", False):
+            continue
+        if getattr(result, "insufficient", False):
+            continue
+        reason = str(getattr(result, "error_message", "") or "").strip()
+        grouped.setdefault(reason or AI_BATCH_NO_REASON_TEXT, []).append(
+            str(getattr(entry, "scope", ""))
+        )
+    return " · ".join(
+        f"{reason} ({', '.join(scopes)})" for reason, scopes in grouped.items()
+    )
 
 
 def _iso_to_qdatetime(value: str) -> QDateTime | None:
@@ -2075,11 +2107,13 @@ class AiTrendDialog(QDialog):
         )
 
     def _on_batch_succeeded(self, payload) -> None:
-        self._batch_status.setText(
-            AI_BATCH_SUMMARY_TEXT.format(
-                ok=payload.ok, insufficient=payload.insufficient, error=payload.error
-            )
+        summary = AI_BATCH_SUMMARY_TEXT.format(
+            ok=payload.ok, insufficient=payload.insufficient, error=payload.error
         )
+        detail = batch_error_detail(payload)
+        if detail:
+            summary = f"{summary}\n{AI_BATCH_REASON_TEXT.format(detail=detail)}"
+        self._batch_status.setText(summary)
         self._reload_overview()
 
     def _on_batch_failed(self, message: str) -> None:

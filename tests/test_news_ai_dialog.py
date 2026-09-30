@@ -96,7 +96,7 @@ class FakeAI:
         self.calls: list[str] = []
         self.raise_error: Exception | None = None
 
-    def analyze(self, prompt: str) -> str:
+    def analyze(self, prompt: str, max_tokens: int = 1800) -> str:
         self.calls.append(prompt)
         if self.raise_error is not None:
             raise self.raise_error
@@ -376,6 +376,25 @@ def _batch_result(ok: int = 11, insufficient: int = 0, error: int = 0) -> BatchT
         for scope in _derived_scopes()
     )
     return BatchTrendResult(results=results, ok=ok, insufficient=insufficient, error=error)
+
+
+def _batch_result_with_reasons(reasons: dict[str, str]) -> BatchTrendResult:
+    """Batch CÓ phạm vi lỗi thật kèm lý do — để kiểm dòng "Lý do lỗi"."""
+    results = []
+    for scope in _derived_scopes():
+        reason = reasons.get(scope)
+        result = (
+            TrendAnalysisResult(ok=True)
+            if reason is None
+            else TrendAnalysisResult(ok=False, error_message=reason)
+        )
+        results.append(BatchScopeResult(scope=scope, result=result))
+    return BatchTrendResult(
+        results=tuple(results),
+        ok=len(results) - len(reasons),
+        insufficient=0,
+        error=len(reasons),
+    )
 
 
 def _rate_context(currency: str = "USD", rate: float = 5.5) -> CurrencyRateTrend:
@@ -778,6 +797,39 @@ class TestAiOverview:
             ok=9, insufficient=1, error=1
         )
         assert len(controller.history_calls) > reads_before  # lưới nạp lại
+
+    def test_batch_summary_shows_the_reason_of_failed_scopes(self):
+        # Owner yêu cầu 30/09/2026: tổng kết batch phải nói VÌ SAO lỗi, không chỉ
+        # đếm — nhiều phạm vi cùng một lý do thì gom thành một nhóm.
+        reason = "AI hết giới hạn token trước khi tạo được nội dung."
+        controller = FakeAiController(
+            _preview(),
+            batch_result=_batch_result_with_reasons({"EUR": reason, "USD": reason}),
+        )
+        dialog = _dialog(controller)
+
+        dialog._batch_button.click()
+        assert _wait_until(lambda: len(controller.batch_calls) == 1)
+        assert _wait_until(lambda: dialog._batch_button.isEnabled())
+
+        text = dialog._batch_status.text()
+        assert text.startswith(
+            news.AI_BATCH_SUMMARY_TEXT.format(ok=9, insufficient=0, error=2)
+        )
+        assert news.AI_BATCH_REASON_TEXT.format(detail=reason) in text
+        assert "EUR" in text and "USD" in text  # nhóm lý do kèm phạm vi
+
+    def test_batch_summary_has_no_reason_line_when_nothing_failed(self):
+        controller = FakeAiController(_preview(), batch_result=_batch_result())
+        dialog = _dialog(controller)
+
+        dialog._batch_button.click()
+        assert _wait_until(lambda: len(controller.batch_calls) == 1)
+        assert _wait_until(lambda: dialog._batch_button.isEnabled())
+
+        assert dialog._batch_status.text() == news.AI_BATCH_SUMMARY_TEXT.format(
+            ok=11, insufficient=0, error=0
+        )
 
 
 class TestAiDialogAnalysis:

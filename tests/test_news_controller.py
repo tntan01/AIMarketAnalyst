@@ -1502,9 +1502,11 @@ class FakeAIService:
         self.payload = payload
         self.error_after = error_after
         self.calls: list[str] = []
+        self.max_tokens_calls: list[int] = []
 
-    def analyze(self, prompt: str) -> str:
+    def analyze(self, prompt: str, max_tokens: int = 1800) -> str:
         self.calls.append(prompt)
+        self.max_tokens_calls.append(max_tokens)
         if self.error_after is not None and len(self.calls) == self.error_after:
             raise RuntimeError("AI boom")
         return self.payload
@@ -1595,6 +1597,22 @@ class TestAnalyzeAllTrends:
         assert seen == list(controller.AI_ASSET_SCOPES)  # callback đúng 11 lần, đúng thứ tự
         assert len(ai.calls) == 11
         assert sum(len(call) for call in repo.add_verdict_calls) == 33  # 11 × 3
+
+    def test_ai_call_carries_an_explicit_token_budget(self):
+        # Defect 30/09/2026: để mặc định 1800 của ``AIService.analyze`` thì model
+        # suy luận bị cắt GIỮA lúc reasoning (``finish_reason=length``) nên không
+        # bao giờ trả JSON ⇒ parser từ chối, retry cũng hỏng ⇒ cả lô báo lỗi.
+        # Đường Tin tức phải truyền ngân sách tường minh (đo thật: ca nặng nhất
+        # cần ~5.9k token output).
+        repo = FakeRepository()
+        repo.events = [_batch_event(1), _batch_event(2), _batch_event(3)]
+        ai = FakeAIService(_batch_verdict_json([1, 2, 3]))
+        controller = _batch_controller(ai, repo)
+
+        controller.analyze_all_trends()
+
+        assert ai.max_tokens_calls == [news_controller_module.AI_TREND_MAX_TOKENS] * 11
+        assert news_controller_module.AI_TREND_MAX_TOKENS > 1800  # > mặc định AIService
 
     def test_one_ai_error_does_not_stop_the_batch(self):
         repo = FakeRepository()
