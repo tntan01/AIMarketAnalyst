@@ -847,11 +847,12 @@ class TestFilterCardLayout:
         assert grid.column_count() == grid._fitted_columns()
 
     def test_cells_flow_in_row_major_order_for_the_fitted_columns(self):
-        # Owner quyết 26/09/2026: dòng 1 = Loại tin/Đồng tiền/Tác động/Nguồn;
-        # dòng 2 = Trạng thái/Khoảng ngày/nút "Tìm kiếm" — lưới đầy 4×2 đủ 7 ô,
-        # nút là ô cuối thay _action_cell. Fluid (vòng 7)
+        # Owner quyết 26/09/2026, bổ sung 30/09/2026 (nhóm nút tuần): dòng 1 =
+        # Loại tin/Đồng tiền/Tác động/Nguồn; dòng 2 = Trạng thái/Khoảng ngày/nhóm
+        # nút tuần/nút "Tìm kiếm" — lưới đầy 4×2 đủ 8 ô, nút là ô cuối thay
+        # _action_cell. Fluid (vòng 7)
         # lấy SỐ CỘT LỚN NHẤT vừa bề ngang trong [4..1], nên số cột thật phụ
-        # thuộc font môi trường — chỉ ghim BẤT BIẾN: 7 ô xếp theo dòng (hết
+        # thuộc font môi trường — chỉ ghim BẤT BIẾN: 8 ô xếp theo dòng (hết
         # một dòng mới xuống dòng kế — bố cục chảy, không ô nào mất vị trí),
         # nút "Tìm kiếm" là ô chót cùng.
         controller = FakeNewsController()
@@ -884,7 +885,7 @@ class TestFilterCardLayout:
         cells = [
             screen.kind_combo, screen.currency_combo, screen.impact_combo,
             screen.source_combo, screen.status_combo, screen.date_from_input,
-            screen.search_button,
+            screen.week_buttons[news.WEEK_BUTTON_LABELS[1]], screen.search_button,
         ]
         for order, widget in enumerate(cells):
             row, col = position_of(widget)[:2]

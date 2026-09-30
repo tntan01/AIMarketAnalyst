@@ -31,7 +31,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import QDate, Qt
 from PyQt6.QtWidgets import QApplication, QLabel, QPushButton
 
 from core.news_models import (
@@ -247,7 +247,6 @@ class TestDisplayDictionary:
             "Kỳ trước",
             "Dự báo",
             "Thực tế",
-            "Trạng thái",
             "Chi tiết",
         )
         assert news.FILTER_LABELS == (
@@ -318,10 +317,9 @@ class TestTableModel:
         assert cell(5) == "5.25%"
         assert cell(6) == "5.50%"
         assert cell(7) == "5.50%"
-        assert cell(8) == "Đã có số liệu"
-        assert cell(9) == ""  # cột "Chi tiết" thay chữ bằng icon
+        assert cell(8) == ""  # cột "Chi tiết" thay chữ bằng icon
         assert model.data(
-            model.index(0, 9), Qt.ItemDataRole.DecorationRole
+            model.index(0, 8), Qt.ItemDataRole.DecorationRole
         ) is not None
 
     def test_item_row_shows_type_icon_and_values(self):
@@ -337,9 +335,9 @@ class TestTableModel:
         assert cell(5) == news.NO_VALUE  # tin văn bản không có "kỳ trước"
         assert cell(6) == news.NO_VALUE  # tin văn bản không có "dự báo"
         assert cell(7) == news.NO_VALUE  # tin văn bản không có "thực tế"
-        assert cell(8) == news.NO_VALUE  # không có trạng thái sự kiện, không bị loại trừ
+        assert cell(8) == ""  # cột "Chi tiết" là icon
 
-    def test_excluded_item_shows_the_registered_flag_label(self):
+    def test_excluded_item_row_values(self):
         model = self._model()
 
         def cell(row: int, column: int) -> str:
@@ -348,7 +346,6 @@ class TestTableModel:
         assert cell(2, 1) == "Nhập tay"
         assert cell(2, 2) == "JPY"
         assert cell(2, 3) == news.ITEM_ICON
-        assert cell(2, 8) == news.EXCLUDED_TEXT
 
     def test_impact_rows_carry_a_semantic_colour(self):
         model = self._model()
@@ -367,9 +364,6 @@ class TestTableModel:
         # Dòng không rõ mức tác động — không tô nền dòng.
         none_bg = model.data(model.index(2, 1), Qt.ItemDataRole.BackgroundRole)
         assert none_bg is None
-        # Cờ loại trừ vẫn mang màu semantic của nó.
-        excluded_fg = model.data(model.index(2, 8), Qt.ItemDataRole.ForegroundRole)
-        assert excluded_fg is not None and excluded_fg.isValid()
 
 
 # ---- 3. bộ lọc ----------------------------------------------------------------
@@ -395,6 +389,73 @@ class TestFilters:
 
 
 # ---- 4. khung màn: nhãn, bộ lọc, thanh công cụ, khoảng ngày --------------------
+
+
+class TestWeekButtons:
+    """Nhóm nút tuần (Owner yêu cầu 30/09/2026) — khuôn "Lọc nhanh" của Journal."""
+
+    def test_buttons_use_the_shared_action_button_style(self):
+        screen = _screen()
+
+        assert tuple(screen.week_buttons) == news.WEEK_BUTTON_LABELS
+        for label, button in screen.week_buttons.items():
+            assert button.text() == label
+            # Khuôn nút hành động chung của hệ thống — cùng objectName với nút
+            # "Hủy"/"Làm mới"/"Quay lại" các màn khác; KHÔNG tự đặt style riêng.
+            assert button.objectName() == "SecondaryButton"
+            assert button.isCheckable() is True
+            # (Chiều cao 24px — cùng khuôn nút "Tìm kiếm" — do QSS quyết định và
+            # chỉ đo được khi theme đã nạp; module test này chạy không QSS nên đo
+            # ở đây vô nghĩa: đã kiểm bằng render thật, không ghim số ở đây.)
+
+    def test_week_button_sets_the_week_range_and_reloads(self, monkeypatch):
+        # now = 30/09/2026 (Thứ 4) 12:00 UTC → 19:00 giờ VN; tuần này = 28/09 → 04/10.
+        monkeypatch.setattr(news, "_now_utc", lambda: datetime(2026, 9, 30, 12, 0, tzinfo=UTC))
+        controller = FakeNewsController()
+        screen = _screen(controller)
+        reads_before = len(controller.event_calls)
+
+        screen.week_buttons["Tuần trước"].click()
+
+        assert _range(screen) == ("21/09/2026", "27/09/2026")
+        # Nút tuần áp ngay (khác các ô lọc — đổi ô lọc phải bấm "Tìm kiếm").
+        assert _wait_until(lambda: len(controller.event_calls) > reads_before)
+
+        screen.week_buttons["Tuần sau"].click()
+
+        assert _range(screen) == ("05/10/2026", "11/10/2026")
+
+    def test_checked_state_follows_the_applied_range(self, monkeypatch):
+        monkeypatch.setattr(news, "_now_utc", lambda: datetime(2026, 9, 30, 12, 0, tzinfo=UTC))
+        screen = _screen()
+
+        # Mặc định "hôm nay → hôm nay" không trùng tuần nào → cả ba bỏ chọn.
+        assert _checked(screen) == [False, False, False]
+
+        screen.week_buttons["Tuần này"].click()
+
+        assert _range(screen) == ("28/09/2026", "04/10/2026")
+        assert _checked(screen) == [False, True, False]
+
+        screen.week_buttons["Tuần sau"].click()
+
+        assert _checked(screen) == [False, False, True]
+
+        # Sửa một ô ngày nhưng CHƯA bấm "Tìm kiếm": nút vẫn phản ánh khoảng ĐANG ÁP.
+        screen.date_from_input.setDate(QDate(2026, 1, 1))
+
+        assert _checked(screen) == [False, False, True]
+
+
+def _range(screen: NewsScreen) -> tuple[str, str]:
+    return (
+        screen.date_from_input.date().toString("dd/MM/yyyy"),
+        screen.date_to_input.date().toString("dd/MM/yyyy"),
+    )
+
+
+def _checked(screen: NewsScreen) -> list[bool]:
+    return [button.isChecked() for button in screen.week_buttons.values()]
 
 
 class TestScreenLayout:
@@ -492,9 +553,19 @@ class TestNearestUpcoming:
         screen = _screen()
         rows = screen.table_model.rows
 
-        assert [row.section_text is not None for row in rows] == [False, True, False, False]
-        assert rows[1].section_text == news.NEAREST_SECTION_TEXT
+        # Khuôn vùng của Dashboard cho phần sắp tới: dòng ngăn cách "SẮP TỚI GẦN
+        # NHẤT" ngay trên tin sắp tới gần nhất, rồi "SẮP TỚI" trên các tin sắp
+        # tới còn lại (vùng rỗng thì không chèn).
+        assert [row.section_text for row in rows] == [
+            None,
+            news.NEAREST_SECTION_TEXT,
+            None,
+            news.FUTURE_SECTION_TEXT,
+            None,
+        ]
         assert rows[1].row_type == news.SECTION_ROW
+        assert rows[1].section_role == news.SECTION_ROLE
+        assert rows[3].section_role == news.FUTURE_ROLE
 
         nearest = rows[2]
         assert nearest is screen.table_model.nearest
@@ -506,8 +577,32 @@ class TestNearestUpcoming:
         assert fg is not None and fg.isValid()
         assert font is not None and font.bold()
 
+        # Hai dòng ngăn cách mang màu theo vùng của chúng (dashboard: "sắp tới gần
+        # nhất" xanh, "sắp tới" cam) — không dùng chung một màu.
+        section_fg = [
+            screen.table_model.data(
+                screen.table_model.index(index, 0), Qt.ItemDataRole.ForegroundRole
+            )
+            for index in (1, 3)
+        ]
+        assert all(color is not None and color.isValid() for color in section_fg)
+        assert section_fg[0] != section_fg[1]
+
         # Dòng ngăn cách trải toàn bề ngang bảng (khuôn span dashboard).
         assert screen.table.columnSpan(1, 0) == screen.table_model.columnCount()
+        assert screen.table.columnSpan(3, 0) == screen.table_model.columnCount()
+
+    def test_nearest_without_later_rows_gets_no_future_separator(self, monkeypatch):
+        # Chỉ còn đúng MỘT tin sắp tới → không có vùng "SẮP TỚI" (khuôn dashboard:
+        # vùng rỗng thì không vẽ dòng ngăn cách).
+        monkeypatch.setattr(news, "_now_utc", lambda: datetime(2026, 9, 21, 0, 0, tzinfo=UTC))
+        screen = _screen(FakeNewsController(events=[EVENT], items=[HEADLINE]))
+
+        assert [row.section_text for row in screen.table_model.rows] == [
+            None,
+            news.NEAREST_SECTION_TEXT,
+            None,
+        ]
 
     def test_open_scrolls_nearest_to_the_top(self, monkeypatch):
         monkeypatch.setattr(news, "_now_utc", lambda: datetime(2026, 9, 30, 12, 0, tzinfo=UTC))
@@ -518,8 +613,58 @@ class TestNearestUpcoming:
 
         nearest = screen.table_model.nearest
         assert nearest is not None and nearest.title == "U13"
-        assert screen._initial_scroll_done is True
+        assert screen._scroll_pending is False  # yêu cầu cuộn đã được tiêu
         assert _wait_until(lambda: screen.table.verticalScrollBar().value() > 0)
+
+    def test_showing_the_screen_scrolls_the_nearest_zone_to_the_top(self, monkeypatch):
+        # Khuôn app thật (main_window._build_screens): màn dựng MỘT LẦN lúc khởi
+        # động và nằm trong QStackedWidget — lượt nạp đầu xong khi màn còn ẩn, nên
+        # yêu cầu cuộn phải treo lại tới khi màn được hiện, lúc đó thanh cuộn mới
+        # thật sự kéo dòng ngăn cách "SẮP TỚI GẦN NHẤT" lên đầu khung nhìn (dòng
+        # tin sắp tới gần nhất nằm ngay dưới nó).
+        monkeypatch.setattr(news, "_now_utc", lambda: datetime(2026, 9, 30, 12, 0, tzinfo=UTC))
+        events = [
+            _event(f"2026-09-30T{hour:02d}:{minute:02d}:00Z", f"E{hour:02d}{minute:02d}")
+            for hour in range(24)
+            for minute in (0, 15, 30, 45)
+        ]
+        controller = FakeNewsController(events=events, items=[])
+        screen = NewsScreen(None, app=SimpleNamespace(news_controller=controller))
+        _SCREENS.append(screen)
+        assert _wait_until(lambda: bool(controller.event_calls))
+        _app().processEvents()
+
+        # Màn còn ẩn: chưa cuộn được (view chưa bày) — yêu cầu vẫn treo.
+        assert screen.table.verticalScrollBar().value() == 0
+        assert screen._scroll_pending is True
+
+        screen.resize(752, 500)
+        screen.show()
+        assert _wait_until(lambda: screen.table.verticalScrollBar().value() > 0)
+
+        rows = screen.table_model.rows
+        nearest = screen.table_model.nearest
+        assert nearest is not None and nearest.title == "E1200"
+        at = next(i for i, row in enumerate(rows) if row is nearest)
+        assert rows[at - 1].section_text == news.NEAREST_SECTION_TEXT
+        # Dòng đầu khung nhìn là dòng ngăn cách, dòng tin nằm ngay dưới.
+        assert screen.table.rowAt(0) == at - 1
+        assert screen.table.rowViewportPosition(at) == screen.table.rowHeight(at - 1)
+
+    def test_no_upcoming_row_keeps_the_time_order_without_scrolling(self, monkeypatch):
+        # Mọi dòng đều đã qua (now = 30/09 23:00 UTC) → không có "tin sắp tới gần
+        # nhất": bảng giữ nguyên thứ tự thời gian, không tô đậm, không chèn dòng
+        # ngăn cách và không cuộn (screen_design mục "Tin sắp tới gần nhất lên
+        # trên cùng").
+        monkeypatch.setattr(news, "_now_utc", lambda: datetime(2026, 9, 30, 23, 0, tzinfo=UTC))
+        past = [_event(f"2026-09-30T{h:02d}:00:00Z", f"P{h}") for h in range(1, 20)]
+        screen = _screen(FakeNewsController(events=past, items=[]))
+
+        assert screen.table_model.nearest is None
+        assert [row.title for row in screen.table_model.rows] == [
+            f"P{h}" for h in range(1, 20)
+        ]
+        assert screen.table.verticalScrollBar().value() == 0
 
 
 # ---- 5. trạng thái tải và rỗng -------------------------------------------------

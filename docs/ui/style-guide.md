@@ -38,6 +38,12 @@ thái tương tác theo theme.
   còn invalid + disabled phải hiển thị như disabled.
 - Bảng, biểu đồ Qt, Matplotlib và WebEngine lấy màu từ `ThemePalette` hoặc
   `chart_palette()`, không duy trì palette riêng.
+- **Bảng không vẽ khung "ô hiện hành"** (`outline: 0` cho `QTableWidget#EconTable`
+  / `QTableView#EconTable` trong `base.qss` — mọi bảng dùng chung `objectName`
+  này qua `layout_system.configure_table`): trạng thái **focus** của bảng biểu
+  diễn bằng **dòng đang chọn** (`::item:selected` + nền theo semantic của dòng),
+  không bằng đường bao quanh một ô — bỏ khung đen xuất hiện khi người dùng bấm
+  chọn một dòng (khuôn `QAbstractItemView#DataTable` của danh sách ở Settings).
 - Rich text phải đi qua `set_rich_html()`, `compile_rich_html()` hoặc template
   dùng chung; không đưa HTML có style tùy ý trực tiếp vào widget.
 - Icon trên nút/thẻ phải là glyph phẳng từ `ui/icons.py` (`flat_icon`,

@@ -1546,7 +1546,7 @@ tiền/tài sản** (11 phạm vi — đợt 5, 28/09/2026) hoặc chuyên sâu 
 [ Tin tức                                                      ]
 
 [ Loại tin [Tất cả ▼] | Đồng tiền [Tất cả ▼] | Tác động [Tất cả ▼] | Nguồn [Tất cả ▼] ]
-[ Trạng thái [Tất cả ▼] | Khoảng ngày [dd/MM/yyyy] → [dd/MM/yyyy] | [ Tìm kiếm ] ]
+[ Trạng thái [Tất cả ▼] | Khoảng ngày [dd/MM/yyyy] → [dd/MM/yyyy] | [Tuần trước] [Tuần này] [Tuần sau] | [ Tìm kiếm ] ]
 
 [ Bảng tin ]
   Thời gian | Loại | Nguồn | Đồng tiền | Tiêu đề/Nội dung | Tác động | Thực tế | Trạng thái | Chi tiết
@@ -1559,6 +1559,38 @@ tiền/tài sản** (11 phạm vi — đợt 5, 28/09/2026) hoặc chuyên sâu 
   `scheduled`/`released`/`stale` (sự kiện) và cờ `excluded` (tin văn bản) bằng
   badge theo semantic palette của style guide. Nhãn tiếng Việt theo **Từ điển
   hiển thị** bên dưới.
+- **Trạng thái mặc định khi mở màn (Owner chốt 30/09/2026 — IMPLEMENTED):**
+  khoảng ngày của bộ lọc = **ngày hiện tại** ở **cả hai ô** (ngày bắt đầu và
+  ngày kết thúc, theo múi giờ hiển thị — mục "Múi giờ hiển thị"); màn nạp ngay
+  một lượt đọc theo đúng cửa sổ đó ("mở màn vẫn tự nạp 1 lượt mặc định" ở mục
+  nút "Tìm kiếm" bên dưới là cùng hành vi này).
+- **Tin sắp tới gần nhất lên trên cùng (Owner chốt 30/09/2026 —
+  IMPLEMENTED):** trong các dòng đang hiển thị, **dòng sắp tới gần nhất** —
+  dòng **đầu tiên** theo thứ tự thời gian có mốc thời gian **≥ hiện tại** (so
+  theo UTC, không phụ thuộc múi giờ hiển thị) — được **in đậm**, tô chữ + nền
+  theo màu semantic `success`. **Phần tin sắp tới hiển thị theo khuôn vùng của
+  Dashboard** (Owner yêu cầu 30/09/2026): dòng ngăn cách
+  `─── SẮP TỚI GẦN NHẤT ───` chèn **ngay trên** dòng sắp tới gần nhất, rồi dòng
+  ngăn cách `─── SẮP TỚI ───` chèn ngay trên **tin sắp tới kế tiếp** cho các
+  dòng sắp tới còn lại — đúng hai vùng sắp tới của Dashboard (màu theo vùng:
+  `success` cho "sắp tới gần nhất", `warning` cho "sắp tới"; font subtitle;
+  trải toàn bề ngang bảng). Vùng rỗng thì **không vẽ** dòng ngăn cách (không
+  còn tin sắp tới nào khác → chỉ có một dòng ngăn cách). Vùng `ĐÃ QUA` của
+  Dashboard **không dùng** ở màn này: các dòng đã qua vẫn nằm trong danh sách
+  theo thứ tự thời gian, không có dòng ngăn cách.
+  Lượt nạp xong khi màn **đang hiện** (mở màn, bấm "Tìm kiếm", sau khi ghi dữ
+  liệu) **tự cuộn để dòng ngăn cách `─── SẮP TỚI GẦN NHẤT ───` nằm ở dòng đầu
+  tiên của bảng** (Owner chốt 30/09/2026) — dòng tin sắp tới gần nhất nằm ngay
+  dưới nó, nên cả hai cùng hiện ở đầu khung nhìn (cuộn thẳng tới dòng tin thì
+  dòng ngăn cách bị đẩy ra ngoài tầm nhìn). Lượt nạp xong khi màn **còn ẩn**
+  (màn được dựng một lần lúc khởi động app và nằm trong `QStackedWidget` — lượt
+  nạp đầu thường rơi vào trường hợp này) giữ yêu cầu cuộn lại, và cú cuộn chạy
+  ngay khi người dùng mở màn. **Thứ tự dòng không đổi** — vẫn theo thời gian
+  tăng dần (mục "Bảng tin" ở trên, không sắp lại dữ liệu); cuộn chỉ kéo khung
+  nhìn tới vùng sắp tới gần nhất, nên khi cửa sổ lọc còn **quá ít dòng phía
+  sau** dòng đó (không đủ lấp đầy khung nhìn) thì thanh cuộn dừng ở mức xa nhất
+  có thể. Cửa sổ lọc **không có dòng nào** từ hiện tại trở đi → không in đậm,
+  không chèn dòng ngăn cách, không cuộn (bảng giữ nguyên thứ tự thời gian).
 - **Múi giờ hiển thị:** mọi cột thời gian trên màn (bảng tin, bảng xem trước
   dán mã nguồn, dialog chi tiết) hiển thị theo **múi giờ người dùng đã chọn**
   trong Settings — khóa `display.timezone`, 3 lựa chọn `Asia/Ho_Chi_Minh` /
@@ -1567,7 +1599,8 @@ tiền/tài sản** (11 phạm vi — đợt 5, 28/09/2026) hoặc chuyên sâu 
   bày đổi múi giờ khi hiển thị, không đổi giá trị lưu trữ.
 - **Bộ lọc (card tìm kiếm — thiết kế lại 26/09/2026, Owner duyệt):** chia
   **2 dòng cố định** (Owner quyết 26/09/2026) — dòng 1: Loại tin, Đồng tiền,
-  Tác động, Nguồn; dòng 2: Trạng thái, Khoảng ngày, nút "Tìm
+  Tác động, Nguồn; dòng 2: Trạng thái, Khoảng ngày, nhóm nút tuần (mục dưới),
+  nút "Tìm
   kiếm" (ô cuối lưới, phần tử bình thường của dải lọc). **Thẳng
   cột** (Owner yêu cầu 26/09/2026): cột nhãn **đồng nhất bề rộng** mọi ô (bằng
   nhãn rộng nhất), chữ nhãn **căn trái** (Owner quyết 26/09/2026) — ô nhập của
@@ -1590,11 +1623,25 @@ tiền/tài sản** (11 phạm vi — đợt 5, 28/09/2026) hoặc chuyên sâu 
   hành động của hệ thống như "Bóc tách"/"Nhận định"): **chỉ tìm khi bấm nút** —
   chọn ô lọc/đổi ngày KHÔNG tự áp (Owner quyết 26/09/2026). Bấm nút → đọc lại
   database theo cửa sổ ngày mới rồi áp các bộ lọc; mở màn vẫn tự nạp 1 lượt mặc
-  định (khoảng ngày mặc định giữ nguyên). Khi giá trị các ô lọc **lệch lần áp
+  định (khoảng ngày mặc định = **ngày hiện tại** — mục "Trạng thái mặc định khi
+  mở màn" ở trên). Khi giá trị các ô lọc **lệch lần áp
   gần nhất** (đổi ô mà chưa bấm nút), nút được **nhấn bằng property QSS
   `filterDirty`** (viền màu cảnh báo — chỉ đổi màu, không đổi kích thước) cho
   tới lần bấm kế tiếp: chỉ báo "bộ lọc đã đổi, chưa áp" (Owner duyệt
   26/09/2026).
+- **Nhóm nút tuần "Tuần trước / Tuần này / Tuần sau" (Owner yêu cầu 30/09/2026 —
+  IMPLEMENTED):** 3 nút nằm trong **một ô lưới riêng của dòng 2, ngay TRƯỚC nút
+  "Tìm kiếm"** (mục "Bố cục"), **một chạm để xem dữ liệu của tuần tương ứng**:
+  đặt khoảng ngày về **Thứ 2 → Chủ nhật** của tuần đó (theo múi giờ hiển thị —
+  cùng quy ước tuần của Dashboard, mục "Múi giờ hiển thị") rồi **đọc lại
+  database ngay** — khác các ô lọc: đổi ô lọc KHÔNG tự áp, phải bấm "Tìm kiếm".
+  Trạng thái chọn **suy từ khoảng ngày đang áp** (không giữ cờ riêng): khoảng
+  ngày trùng tuần nào thì nút đó được chọn; khoảng ngày mặc định "hôm nay → hôm
+  nay" hay khoảng ngày người dùng tự chọn mà không trùng tuần nào → **cả ba nút
+  bỏ chọn** (nút không nói sai điều bảng đang hiển thị). Giao diện dùng **khuôn
+  nút hành động chung của hệ thống** — nút phụ (`action_button`, objectName
+  `SecondaryButton`, cùng khuôn "Hủy"/"Làm mới"/"Quay lại" ở các màn khác, cao
+  24px như nút "Tìm kiếm" cùng hàng), **không tự đặt style riêng**.
 - **Chi tiết dòng:** dialog xem đầy đủ nội dung/provenance (nguồn, giờ fetch,
   `raw_json` nếu có); với tin văn bản có URL thì kèm liên kết ngoài.
 

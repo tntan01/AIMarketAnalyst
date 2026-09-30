@@ -362,6 +362,14 @@ QTableView#EconTable::item {
   border: none;
 }
 
+/* Bảng không vẽ khung "ô hiện hành" khi bảng đang giữ focus (khuôn
+   QAbstractItemView#DataTable ở hai tệp overlay): ô hiện hành chỉ khác ở
+   nền/chữ, không có đường bao. */
+QTableWidget#EconTable,
+QTableView#EconTable {
+  outline: 0;
+}
+
 QHeaderView::section {
   border: 0;
   font-weight: 700;

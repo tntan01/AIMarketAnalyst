@@ -60,6 +60,19 @@ def test_base_defines_shared_component_contracts() -> None:
     assert required <= set(rules)
 
 
+def test_tables_do_not_draw_a_current_cell_outline() -> None:
+    """Bảng không vẽ khung "ô hiện hành" khi giữ focus.
+
+    Defect thực tế: chọn một dòng trên bảng tin thì ô vừa bấm hiện đường bao đen;
+    bảng dùng chung ``objectName`` ``EconTable`` (``layout_system.configure_table``)
+    nên luật nằm ở ``base.qss``, khuôn ``QAbstractItemView#DataTable`` của Settings.
+    Ô hiện hành chỉ khác ở nền/chữ — không có khung.
+    """
+    rules = _rules(BASE)
+    for selector in ("QTableWidget#EconTable", "QTableView#EconTable"):
+        assert rules[selector]["outline"] == "0"
+
+
 def test_theme_overlays_have_matching_component_contracts() -> None:
     required = {
         "QFrame#InfoCard",

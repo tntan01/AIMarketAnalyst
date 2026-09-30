@@ -169,7 +169,7 @@ Khai báo đọc-hiểu (V2):
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from datetime import UTC, datetime, time as clock_time, tzinfo
+from datetime import UTC, date, datetime, time as clock_time, timedelta, tzinfo
 from zoneinfo import ZoneInfo
 
 from PyQt6.QtCore import (
@@ -271,13 +271,6 @@ EVENT_TEXT = "Sự kiện"
 EVENT_ICON = "●"
 ITEM_ICON = "▤"
 
-# Vai trò màu semantic cho badge (screen_design: "badge theo semantic palette").
-STATUS_ROLE: dict[str, str] = {
-    "scheduled": "text_muted",
-    "released": "success",
-    "stale": "warning",
-}
-EXCLUDED_ROLE = "danger"
 IMPACT_ROLE: dict[str, str] = {
     "high": "danger",
     "medium": "warning",
@@ -297,7 +290,6 @@ COLUMN_LABELS: tuple[str, ...] = (
     "Kỳ trước",
     "Dự báo",
     "Thực tế",
-    "Trạng thái",
     "Chi tiết",
 )
 FILTER_LABELS: tuple[str, ...] = (
@@ -324,6 +316,11 @@ TOOLBAR_ICONS: dict[str, str] = {
 # duyệt 26/09/2026: KHÔNG tự tìm khi chọn ô, chỉ tìm khi bấm nút; nút đọc lại
 # DB theo cửa sổ ngày mới).
 SEARCH_BUTTON_TEXT = "Tìm kiếm"
+# Nút chọn nhanh tuần (Owner yêu cầu 30/09/2026) — đặt cạnh nút "Tìm kiếm" trong
+# card tìm kiếm, dùng đúng khuôn nút hành động chung của hệ thống
+# (``action_button`` → objectName ``SecondaryButton``): một chạm đặt khoảng ngày
+# về tuần tương ứng rồi đọc lại dữ liệu.
+WEEK_BUTTON_LABELS: tuple[str, ...] = ("Tuần trước", "Tuần này", "Tuần sau")
 DATE_RANGE_ARROW_TEXT = "→"  # nối 2 ô ngày trong cụm "Khoảng ngày"
 LOADING_TEXT = "Đang tải..."
 DETAIL_TEXT = "Chi tiết"
@@ -628,7 +625,13 @@ def _button_cell(field: QWidget) -> QWidget:
 EVENT_ROW = "event"
 ITEM_ROW = "item"
 SECTION_ROW = "section"  # dòng ngăn cách nhóm (khuôn zone header của dashboard)
-NEAREST_SECTION_TEXT = "─── SẮP TỚI GẦN NHẤT ───"  # nguyên văn dashboard
+# Nguyên văn 2 nhãn vùng của dashboard (dashboard_screen._render_zone_header):
+# "SẮP TỚI GẦN NHẤT" = đúng dòng sắp tới gần nhất; "SẮP TỚI" = các dòng sắp tới
+# còn lại.
+NEAREST_SECTION_TEXT = "─── SẮP TỚI GẦN NHẤT ───"
+FUTURE_SECTION_TEXT = "─── SẮP TỚI ───"
+SECTION_ROLE = "success"  # vai trò màu của vùng "sắp tới gần nhất" (dashboard)
+FUTURE_ROLE = "warning"  # vai trò màu của vùng "sắp tới" (dashboard)
 
 # Tên object (ASCII) cho combo lọc — dùng cho QSS/kiểm thử.
 _COMBO_NAMES: dict[str, str] = {
@@ -667,10 +670,14 @@ class NewsRow:
     event: CalendarEvent | None = None
     item: NewsItem | None = None
     section_text: str | None = None
+    section_role: str | None = None
 
     @classmethod
-    def section(cls, text: str) -> "NewsRow":
-        """Dòng ngăn cách nhóm (khuôn zone header dashboard) — không phải tin."""
+    def section(cls, text: str, role: str = SECTION_ROLE) -> "NewsRow":
+        """Dòng ngăn cách nhóm (khuôn zone header dashboard) — không phải tin.
+
+        ``role`` là vai trò màu semantic của vùng (dashboard: "sắp tới gần nhất"
+        = ``success``, "sắp tới" = ``warning``)."""
         return cls(
             row_type=SECTION_ROW,
             timestamp_utc="",
@@ -684,6 +691,7 @@ class NewsRow:
             status=None,
             excluded=False,
             section_text=text,
+            section_role=role,
         )
 
     @property
@@ -800,14 +808,13 @@ def _row_matches(
 # cuộn ngang khi cửa sổ hẹp — không bóp cột tới mức chữ bị cắt.
 _COLUMN_WIDTHS: dict[str, int] = {
     "timestamp_utc": 130,
-    "kind": 55,
-    "source": 160,
-    "currencies": 90,
-    "previous": 100,
-    "forecast": 100,
-    "actual": 80,
-    "status": 110,
-    "detail": 80,
+    "kind": 48,
+    "source": 150,
+    "currencies": 80,
+    "previous": 90,
+    "forecast": 90,
+    "actual": 85,
+    "detail": 44,
 }
 _STRETCH_COLUMN = "title"
 
@@ -820,8 +827,7 @@ _COLUMNS: tuple[tuple[str, str], ...] = (
     ("previous", COLUMN_LABELS[5]),
     ("forecast", COLUMN_LABELS[6]),
     ("actual", COLUMN_LABELS[7]),
-    ("status", COLUMN_LABELS[8]),
-    ("detail", COLUMN_LABELS[9]),
+    ("detail", COLUMN_LABELS[8]),
 )
 
 
@@ -853,7 +859,7 @@ class NewsTableModel(QAbstractTableModel):
         if role == Qt.ItemDataRole.TextAlignmentRole:
             if row.section_text is not None:
                 return Qt.AlignmentFlag.AlignCenter
-            if key in {"timestamp_utc", "kind", "source", "currencies", "previous", "forecast", "actual", "status", "detail"}:
+            if key in {"timestamp_utc", "kind", "source", "currencies", "previous", "forecast", "actual", "detail"}:
                 return Qt.AlignmentFlag.AlignCenter
             return Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft
         if role == Qt.ItemDataRole.FontRole:
@@ -917,12 +923,6 @@ class NewsTableModel(QAbstractTableModel):
             return row.forecast or NO_VALUE
         if key == "actual":
             return row.actual or NO_VALUE
-        if key == "status":
-            if row.excluded:
-                return EXCLUDED_TEXT
-            if row.status is None:
-                return NO_VALUE
-            return STATUS_TEXT.get(row.status, row.status)
         if key == "detail":
             # Cột "Chi tiết" thay chữ bằng ICON (DecorationRole) — xem ``_decoration``.
             return ""
@@ -936,26 +936,23 @@ class NewsTableModel(QAbstractTableModel):
         return flat_icon("eye", DETAIL_ROLE)
 
     def _foreground(self, row: NewsRow, key: str) -> QColor | None:
-        if row.section_text is not None or row is self.nearest:
+        if row.section_text is not None:
+            return semantic_qcolor(row.section_role or SECTION_ROLE)
+        if row is self.nearest:
             return semantic_qcolor("success")
         role = self._row_impact_role(row)
         if role is not None:
             return semantic_qcolor(role)
         if key == "detail":
             return semantic_qcolor(DETAIL_ROLE)
-        if key == "status":
-            if row.excluded:
-                return semantic_qcolor(EXCLUDED_ROLE)
-            role = STATUS_ROLE.get(row.status or "")
-            return semantic_qcolor(role) if role else None
         return None
 
     def _background(self, row: NewsRow, key: str) -> QColor | None:
-        """Nền dòng: xanh cho dòng ngăn cách/ sắp tới gần nhất (khuôn dashboard),
-        còn lại tô theo mức tác động (danger/warning, alpha 25); mức thấp/không
-        rõ để nguyên nền mặc định."""
+        """Nền dòng: màu vùng cho dòng ngăn cách, xanh cho dòng sắp tới gần nhất
+        (khuôn dashboard), còn lại tô theo mức tác động (danger/warning, alpha 25);
+        mức thấp/không rõ để nguyên nền mặc định."""
         if row.section_text is not None:
-            return semantic_qcolor("success", alpha=24)
+            return semantic_qcolor(row.section_role or SECTION_ROLE, alpha=24)
         if row is self.nearest:
             return semantic_qcolor("success", alpha=28)
         role = self._row_impact_role(row)
@@ -987,10 +984,6 @@ class NewsTableModel(QAbstractTableModel):
     def _tooltip(self, row: NewsRow, key: str) -> str | None:
         if key == "title":
             return row.title
-        if key == "status":
-            if row.excluded:
-                return EXCLUDED_TEXT
-            return STATUS_TEXT.get(row.status or "")
         if key == "detail":
             return DETAIL_TEXT
         return None
@@ -2669,8 +2662,11 @@ class NewsScreen(QWidget):
         # Snapshot giá trị 7 control lọc tại lần áp gần nhất (vòng 6 — chốt mỗi
         # ``reload_rows``); ``None`` = chưa từng nạp được (app giả) → tắt dirty.
         self._applied_snapshot: tuple | None = None
-        # Lượt mở màn đầu tiên: kéo tin sắp tới gần nhất lên đầu (yêu cầu 3).
-        self._initial_scroll_done = False
+        # Lượt nạp đang chờ được cuộn "tin sắp tới gần nhất" lên đầu khung nhìn
+        # (yêu cầu 3).  Màn được dựng MỘT LẦN lúc khởi động app và nằm trong
+        # QStackedWidget — lượt nạp đầu thường xong khi màn còn ẩn, lúc đó cuộn
+        # vô hiệu; cờ giữ yêu cầu lại cho tới khi màn thật sự hiện.
+        self._scroll_pending = False
         self.setObjectName("FormScreen")
         self._build_ui()
         self.reload_rows()
@@ -2777,6 +2773,26 @@ class NewsScreen(QWidget):
         self.search_button.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
         self.search_button.clicked.connect(lambda: self.reload_rows())
 
+        # Nút chọn nhanh tuần (Owner yêu cầu 30/09/2026) — nhóm một-chạm đặt
+        # khoảng ngày về tuần tương ứng rồi đọc lại dữ liệu, đặt ngay TRƯỚC nút
+        # "Tìm kiếm" trong dải lọc.  Giao diện theo khuôn nút chung của hệ thống:
+        # ``action_button`` (objectName ``SecondaryButton`` — cùng khuôn nút "Hủy"
+        # /"Làm mới"/"Quay lại" của các màn khác), KHÔNG dùng biến thể
+        # ``quickFilter`` của thanh "Lọc nhanh" Journal vì biến thể đó cao 28px,
+        # lệch với các control 24px cùng hàng (style-guide §3: action button
+        # render đúng 24px).  Ba nút là một nhóm loại trừ nhau; trạng thái chọn
+        # SUY TỪ khoảng ngày đang áp (``_sync_week_buttons``) chứ không giữ cờ
+        # riêng — khoảng ngày không trùng tuần nào thì cả ba bỏ chọn.
+        self.week_buttons: dict[str, QPushButton] = {}
+        for label in WEEK_BUTTON_LABELS:
+            button = action_button(label)
+            button.setCheckable(True)
+            button.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+            button.clicked.connect(
+                lambda _checked=False, name=label: self.show_week(name)
+            )
+            self.week_buttons[label] = button
+
         # Dirty state (vòng 6 — Owner duyệt 26/09/2026): đổi 1 trong 7 control
         # lọc (5 combo + 2 ngày) mà chưa bấm "Tìm kiếm" → nhấn nút qua property
         # QSS ``filterDirty``; snapshot chốt lại mỗi lần ``reload_rows``.
@@ -2793,8 +2809,9 @@ class NewsScreen(QWidget):
 
         # Lưới fluid (khuôn ui/responsive_row.py, opt-in — Owner quyết
         # 26/09/2026: tối đa 2 dòng — dòng 1: Loại tin/Đồng tiền/Tác động/
-        # Nguồn; dòng 2: Trạng thái/Khoảng ngày/nút "Tìm kiếm" — 7 ô, nút là ô
-        # cuối lưới). Mỗi ô tự định cỡ theo NỘI DUNG
+        # Nguồn; dòng 2: Trạng thái/Khoảng ngày/nút tuần/nút "Tìm kiếm" — 8 ô,
+        # nút "Tìm kiếm" là ô cuối lưới, nhóm nút tuần nằm ngay trước nó). Mỗi ô
+        # tự định cỡ theo NỘI DUNG
         # THẬT của nó (Owner 26/09/2026 — không dùng chung sàn); cột nhãn
         # đồng nhất ``label_width`` mọi ô ⇒ ô nhập của các dòng cùng cột lưới
         # bắt đầu tại cùng tọa độ (thẳng cột — Owner yêu cầu 26/09/2026).
@@ -2810,6 +2827,7 @@ class NewsScreen(QWidget):
                 _filter_cell(FILTER_LABELS[3], self.source_combo, label_width=label_width),
                 _filter_cell(FILTER_LABELS[4], self.status_combo, label_width=label_width),
                 date_field,
+                self._week_button_cell(),
                 _button_cell(self.search_button),
             ],
             columns=4,
@@ -2817,6 +2835,58 @@ class NewsScreen(QWidget):
             stretch=False,
             fluid=True,
         )
+
+    def _week_button_cell(self) -> QWidget:
+        """Ô lưới của nhóm nút tuần — 3 nút đứng sát nhau, phần bề ngang dư dồn về
+        sau (khuôn ``_button_cell``: nút bám trái ô, không bám mép phải cửa sổ)."""
+        widget = QWidget()
+        layout = QHBoxLayout(widget)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
+        for label in WEEK_BUTTON_LABELS:
+            layout.addWidget(self.week_buttons[label])
+        layout.addStretch(1)
+        return widget
+
+    def show_week(self, label: str) -> None:
+        """Nút tuần: đặt khoảng ngày về tuần của ``label`` rồi đọc lại dữ liệu.
+
+        Nút tuần là hành động xem dữ liệu tường minh (khác các ô lọc — đổi ô lọc
+        KHÔNG tự áp, phải bấm "Tìm kiếm"), nên áp ngay: đặt 2 ô ngày rồi gọi
+        ``reload_rows`` (đọc lại DB theo cửa sổ mới + chốt snapshot dirty)."""
+        start, end = self._week_bounds(label)
+        self.date_from_input.setDate(QDate(start.year, start.month, start.day))
+        self.date_to_input.setDate(QDate(end.year, end.month, end.day))
+        self.reload_rows()
+
+    def _sync_week_buttons(self) -> None:
+        """Bật/tắt nhóm nút tuần theo ĐÚNG khoảng ngày đang áp.
+
+        Trạng thái chọn suy từ dữ liệu (2 ô ngày) chứ không giữ cờ riêng: khoảng
+        ngày trùng tuần nào thì nút tuần đó được chọn, không trùng tuần nào (vd
+        mặc định "hôm nay → hôm nay", hay khoảng ngày người dùng tự chọn) thì cả
+        ba nút bỏ chọn — nút không nói sai điều bảng đang hiển thị."""
+        current = (
+            self.date_from_input.date().toPyDate(),
+            self.date_to_input.date().toPyDate(),
+        )
+        for label, button in self.week_buttons.items():
+            button.setChecked(self._week_bounds(label) == current)
+
+    @staticmethod
+    def _week_bounds(label: str) -> tuple[date, date]:
+        """Biên tuần (Thứ 2 → Chủ nhật) của ``label`` theo múi giờ hiển thị.
+
+        Cùng quy ước tuần với Dashboard (``dashboard_screen``: tuần bắt đầu Thứ 2,
+        tính theo ``settings.display.timezone``) — một khái niệm một định nghĩa
+        (D6); "hôm nay" lấy từ seam ``_now_utc`` như phần còn lại của màn."""
+        today = _now_utc().astimezone(_display_timezone()).date()
+        monday = today - timedelta(days=today.weekday())
+        if label == WEEK_BUTTON_LABELS[0]:
+            monday -= timedelta(days=7)
+        elif label == WEEK_BUTTON_LABELS[2]:
+            monday += timedelta(days=7)
+        return monday, monday + timedelta(days=6)
 
     def _current_filter_values(self) -> tuple:
         """Giá trị 7 control lọc (5 combo + 2 ngày) — vật liệu so snapshot dirty
@@ -2948,11 +3018,18 @@ class NewsScreen(QWidget):
         if self.news_controller is None:
             self._rows = []
             self._apply_rows([])
+            self._scroll_pending = False
             return
+        # Mỗi lượt nạp là một cửa sổ dữ liệu mới ⇒ "tin sắp tới gần nhất" của
+        # cửa sổ đó phải lên đầu khung nhìn (mục "Tin sắp tới gần nhất lên trên
+        # cùng"); cờ được tiêu khi cú cuộn thật sự chạy được.
+        self._scroll_pending = True
         # Chốt snapshot dirty-state tại thời điểm áp bộ lọc (vòng 6) rồi tắt
         # nhấn nút ngay — không chờ worker trả kết quả.
         self._applied_snapshot = self._current_filter_values()
         self._update_filter_dirty()
+        # Nhóm nút tuần phản ánh khoảng ngày VỪA ÁP (không phải giá trị đang gõ).
+        self._sync_week_buttons()
         self.shutdown()  # dừng lượt đọc còn dở (nếu có) trước khi mở lượt mới
         self._set_status(LOADING_TEXT)
         thread = QThread(self)
@@ -3205,13 +3282,32 @@ class NewsScreen(QWidget):
         )
         self._sync_currency_options(rows)
         nearest = self._nearest_upcoming(visible)
-        display = list(visible)
-        if nearest is not None:
-            at = next(i for i, row in enumerate(visible) if row is nearest)
-            display = visible[:at] + [NewsRow.section(NEAREST_SECTION_TEXT)] + visible[at:]
-        self.table_model.set_rows(display, nearest=nearest)
+        self.table_model.set_rows(self._zone_rows(visible, nearest), nearest=nearest)
         self._apply_section_spans()
         self.status_message.setVisible(False)
+
+    @staticmethod
+    def _zone_rows(rows: list[NewsRow], nearest: NewsRow | None) -> list[NewsRow]:
+        """Chèn dòng ngăn cách vùng quanh phần tin sắp tới (khuôn Dashboard —
+        ``dashboard_screen._render_zone_header``).
+
+        Dashboard chia mục tin thành 3 vùng có dòng ngăn cách: ``ĐÃ QUA`` /
+        ``SẮP TỚI GẦN NHẤT`` (đúng MỘT dòng) / ``SẮP TỚI`` (các dòng sắp tới còn
+        lại), vùng rỗng thì không vẽ.  Bảng tin giữ nguyên thứ tự thời gian nên
+        chỉ phần sắp tới cần dòng ngăn cách: một dòng ngay trên tin sắp tới gần
+        nhất, một dòng ngay trên tin sắp tới kế tiếp (không còn tin sắp tới nào
+        khác thì không chèn).  Không có tin sắp tới gần nhất → bảng giữ nguyên
+        thứ tự thời gian, không dòng ngăn cách nào."""
+        if nearest is None:
+            return list(rows)
+        at = next((i for i, row in enumerate(rows) if row is nearest), None)
+        if at is None:
+            return list(rows)
+        display = rows[:at] + [NewsRow.section(NEAREST_SECTION_TEXT, SECTION_ROLE), nearest]
+        if at + 1 < len(rows):
+            display.append(NewsRow.section(FUTURE_SECTION_TEXT, FUTURE_ROLE))
+        display.extend(rows[at + 1 :])
+        return display
 
     @staticmethod
     def _nearest_upcoming(rows: list[NewsRow]) -> NewsRow | None:
@@ -3254,22 +3350,53 @@ class NewsScreen(QWidget):
     def _on_rows_loaded(self, payload: object) -> None:
         self._rows = list(payload) if isinstance(payload, list) else []
         self._apply_rows(self._rows)
-        if not self._initial_scroll_done:
-            self._initial_scroll_done = True
-            # Hoãn 1 vòng event-loop để view tính xong range thanh cuộn sau
-            # model reset rồi mới kéo (khuôn QTimer của dashboard).
-            QTimer.singleShot(0, self._scroll_to_nearest)
+        self._request_scroll_to_nearest()
+
+    def showEvent(self, event) -> None:  # noqa: N802 — tên API của Qt
+        """Màn được hiện (điều hướng tới) → chạy cú cuộn còn treo.
+
+        Khuôn app thật: màn dựng một lần lúc khởi động và nằm trong
+        ``QStackedWidget``, nên lượt nạp đầu (kèm yêu cầu cuộn) xong khi màn còn
+        ẩn — cuộn lúc đó vô hiệu vì view chưa được bày."""
+        super().showEvent(event)
+        self._request_scroll_to_nearest()
+
+    def _request_scroll_to_nearest(self) -> None:
+        """Hoãn cú cuộn "tin sắp tới gần nhất lên đầu" tới khi chạy được.
+
+        Chỉ cuộn khi còn yêu cầu treo (``_scroll_pending``) VÀ màn đang hiện:
+        cuộn trên view chưa bày là vô hiệu.  Hoãn 1 vòng event-loop để view tính
+        xong range thanh cuộn sau model reset rồi mới kéo (khuôn QTimer của
+        dashboard)."""
+        if not self._scroll_pending or not self.isVisible():
+            return
+        QTimer.singleShot(0, self._scroll_to_nearest)
 
     def _scroll_to_nearest(self) -> None:
-        """Đưa tin sắp tới gần nhất lên đầu bảng (mặc định khi mở màn — yêu cầu 3)."""
+        """Đưa dòng ngăn cách "SẮP TỚI GẦN NHẤT" lên đầu khung nhìn (mặc định của
+        bảng — Owner chốt 30/09/2026).
+
+        Đích cuộn là **dòng ngăn cách** của vùng, không phải dòng tin: dòng tin
+        sắp tới gần nhất nằm ngay dưới nó nên cả hai cùng hiện ở đầu khung nhìn
+        (cuộn thẳng tới dòng tin thì dòng ngăn cách bị đẩy ra ngoài tầm nhìn).
+        Cửa sổ không có dòng nào từ hiện tại trở đi thì không cuộn (bảng giữ
+        nguyên thứ tự thời gian)."""
+        if not self.isVisible():
+            # Màn bị ẩn trước khi timer bắn (điều hướng nhanh): cuộn lúc này vô
+            # hiệu — giữ yêu cầu lại cho lần màn được hiện kế tiếp.
+            return
+        self._scroll_pending = False
+        rows = self.table_model.rows
         nearest = self.table_model.nearest
         if nearest is None:
             return
-        at = next(
-            (i for i, row in enumerate(self.table_model.rows) if row is nearest), None
-        )
+        at = next((i for i, row in enumerate(rows) if row is nearest), None)
         if at is None:
             return
+        # Dòng ngăn cách vùng "sắp tới gần nhất" nằm ngay trên dòng tin đó
+        # (``_zone_rows`` chèn cùng lượt) — có thì lấy nó làm đích cuộn.
+        if at > 0 and rows[at - 1].section_text == NEAREST_SECTION_TEXT:
+            at -= 1
         self.table.scrollTo(
             self.table_model.index(at, 0), QAbstractItemView.ScrollHint.PositionAtTop
         )
