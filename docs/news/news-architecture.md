@@ -702,19 +702,23 @@ hiệu khác (S1/S6); ranh giới §9.2 chỉ áp cho `ai_trend_verdicts`.
    một chân trời thiếu dữ kiện thay vì tưởng AI kém; đặc tả hiển thị tại
    `screen_design.md` mục News Screen.
 
-### 9.4. Giải thích chỉ số bằng AI (30/09/2026 — Owner yêu cầu; KHÔNG lưu)
+### 9.4. Giải thích chỉ số + Phân tích bài viết bằng AI (30/09/2026 — Owner yêu cầu; KHÔNG lưu)
 
-Lời gọi AI **thứ hai** của miền Tin tức (cạnh luồng verdict §9.1), phục vụ nút
-"Giải thích" ở dialog xem 1 tin sự kiện FF: AI giải thích một chỉ số kinh tế và
-**đặc biệt chú ý tác động của sự kiện tới đồng tiền của nó**.
+Hai lời gọi AI **tư vấn** của miền Tin tức (cạnh luồng verdict §9.1), phục vụ
+dialog xem 1 tin: nút "Giải thích" cho hàng SỰ KIỆN FF (AI giải thích một chỉ số
+kinh tế và **đặc biệt chú ý tác động của sự kiện tới đồng tiền của nó**) và nút
+"Phân tích" cho hàng TIN VĂN BẢN (AI phân tích **ngắn gọn** bài viết: bài nói gì,
+liên quan đồng tiền nào và có thể tác động ra sao, cần theo dõi gì tiếp).
 
-- **Chủ sở hữu khung prompt:** `core/event_explanation.py` (hàm thuần, ASCII —
-  khuôn `trend_prompt_builder`); khung in đúng dữ kiện của sự kiện (đồng tiền,
-  chỉ số, mức tác động, mốc giờ, kỳ trước/dự báo/thực tế), cấm bịa số liệu và
-  cấm khuyến nghị mua/bán.
-- **Điều phối:** `news_controller.explain_event` (worker nền của màn, cùng ngân
-  sách token `AI_TREND_MAX_TOKENS` — cùng lý do: model suy luận); chưa cấu hình
-  AI → lỗi thân thiện (fail-closed, B4).
+- **Chủ sở hữu khung prompt:** `core/event_explanation.py` và
+  `core/article_analysis.py` (hàm thuần, ASCII — khuôn `trend_prompt_builder`);
+  mỗi khung in đúng dữ kiện của đối tượng (sự kiện: đồng tiền/chỉ số/mức tác
+  động/mốc giờ/kỳ trước-dự báo-thực tế; tin: giờ đăng/nguồn/loại/tiêu đề/đồng
+  tiền/nội dung), cấm bịa số liệu và cấm khuyến nghị mua/bán.
+- **Điều phối:** `news_controller.explain_event` và
+  `news_controller.analyze_article` (worker nền của màn, cùng ngân sách token
+  `AI_TREND_MAX_TOKENS` — cùng lý do: model suy luận); chưa cấu hình AI → lỗi
+  thân thiện (fail-closed, B4).
 - **KHÔNG lưu database và không sinh verdict:** kết quả chỉ hiển thị cho người
   dùng tham khảo — nằm ngoài `ai_trend_verdicts` và ngoài mọi quy trình (ranh
   giới cứng §9.2 giữ nguyên: scoring, gate, guard thực thi, alert không đọc).

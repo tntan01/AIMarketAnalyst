@@ -1655,8 +1655,11 @@ tiền/tài sản** (11 phạm vi — đợt 5, 28/09/2026) hoặc chuyên sâu 
   832px > 752px bề ngang nội dung shell).
 
 - **Chi tiết dòng (dialog mở từ nút xem ở cột "Chi tiết" — Owner yêu cầu
-  30/09/2026):** dialog có **nút "Đóng"** theo khuôn nút hệ thống (nút phụ kèm
-  icon `x`, khuôn `action_button` như các dialog khác của app).
+  30/09/2026):** kích thước **800×600** (Owner chốt 30/09/2026; trước là
+  640×420). **Hàng nút ở đáy:** nút **"Giải thích"** (chỉ hàng sự kiện FF) nằm
+  bên **TRÁI**, nút **"Đóng"** nằm bên **PHẢI** (hai mép đối diện, cùng một
+  hàng — Owner chốt 30/09/2026); "Đóng" theo khuôn nút hệ thống (nút phụ kèm icon
+  `x`, khuôn `action_button` như các dialog khác của app).
   - **Tin SỰ KIỆN FF:** hiển thị chính **số liệu của sự kiện** — Thời gian,
     Nguồn, **Kỳ trước, Dự báo, Thực tế** (giá trị thiếu = "—") — **không** hiện
     "giờ fetch"/`raw_json` (provenance kỹ thuật, vô nghĩa với người dùng).
@@ -1668,8 +1671,24 @@ tiền/tài sản** (11 phạm vi — đợt 5, 28/09/2026) hoặc chuyên sâu 
     quả chỉ để tham khảo — không lưu database, không vào bất kỳ quy trình nào**
     (§9.2); AI phải chú trọng **tác động của sự kiện tới đồng tiền của nó**,
     dùng đúng số liệu in trong khung, không bịa và không khuyến nghị mua/bán.
-  - **Tin văn bản:** giữ nguyên provenance (nguồn, giờ fetch, `raw_json` nếu có;
-    tin có URL kèm liên kết ngoài).
+  - **Tin văn bản (Owner chốt 30/09/2026):** dialog **chỉ còn Thời gian, Nguồn,
+    Liên kết** + khối "Phân tích bài viết" — bỏ "Giờ fetch"/`raw_json` (thông tin
+    kỹ thuật, vô nghĩa với người dùng) và bỏ nhãn nội dung (trùng tiêu đề).
+    Bố cục: các hàng **căn TRÁI** (nhãn sát lề, giá trị ngay sau), hàng **không
+    giãn** chiều cao — mọi khoảng dư dồn hết vào ô "Phân tích bài viết", không để
+    khoảng trống thừa.
+    Kèm **khối "Phân tích bài viết"** + nút **"Phân tích"** (Owner yêu cầu
+    30/09/2026): bấm nút → nút đổi trạng thái **"AI đang phân tích"** (khoá nút)
+    và lời gọi chạy trong worker nền → AI phân tích **ngắn gọn** nội dung bài
+    viết (bài nói gì; liên quan đồng tiền nào và có thể tác động ra sao; cần
+    theo dõi gì tiếp) vào khung; lỗi → câu thân thiện. Cùng quy tắc với khối
+    "Giải thích chỉ số": **chỉ để tham khảo — không lưu database, không vào bất
+    kỳ quy trình nào** (§9.2), AI chỉ dùng nội dung in trong khung, không bịa và
+    không khuyến nghị mua/bán.
+    **Liên kết (Owner yêu cầu 30/09/2026):** tin TỰ ĐỘNG (RSS — Google News /
+    FXStreet / Investing) có URL rất dài nên hiển thị **nút "Xem"** ở hàng "Liên
+    kết"; bấm nút mở link bằng trình duyệt mặc định (không in URL ra dialog). Tin
+    **NHẬP TAY** giữ liên kết văn bản như trước.
 
 ### Từ điển hiển thị tiếng Việt (S5, D6 — Owner duyệt 21/09/2026)
 
@@ -1689,7 +1708,7 @@ thị):
 | `horizon` (verdict AI) | `short` = "Ngắn hạn" · `mid` = "Trung hạn" · `long` = "Dài hạn" |
 | Trạng thái dòng bảng xem trước (đợt 4 — nhãn dẫn xuất, không persist) | mới = "Mới" · sẽ cập nhật = "Sẽ cập nhật" · xung đột = "Xung đột — giữ nhập tay" · đã chỉnh sửa = "Đã sửa" |
 | Bias cặp suy ra `pair_bias` (đợt 5 — nhãn dẫn xuất, không persist) | `bullish` = "Nghiêng tăng" · `bearish` = "Nghiêng giảm" · `neutral` = "Trung lập" · `unclear` = "Không rõ" |
-| Nhãn dialog xem 1 tin (30/09/2026) | "Giải thích chỉ số" (tiêu đề khung) · "Giải thích" (nút) · "AI đang giải thích" (trạng thái đang chạy) · "Bấm nút để AI giải thích chỉ số này." (câu gợi ý trong khung) · cột dữ liệu sự kiện dùng lại nhãn "Kỳ trước"/"Dự báo"/"Thực tế"/"Thời gian"/"Nguồn" đã đăng ký |
+| Nhãn dialog xem 1 tin (30/09/2026) | "Giải thích chỉ số" (tiêu đề khung) · "Giải thích" (nút) · "AI đang giải thích" (trạng thái đang chạy) · "Bấm nút để AI giải thích chỉ số này." (câu gợi ý trong khung) · cột dữ liệu sự kiện dùng lại nhãn "Kỳ trước"/"Dự báo"/"Thực tế"/"Thời gian"/"Nguồn" đã đăng ký · nút "Xem" (mở liên kết của tin tự động) · "Phân tích bài viết" (tiêu đề khối) · "Phân tích" (nút) · "AI đang phân tích" (trạng thái đang chạy) · "Bấm nút để AI phân tích bài viết này." (câu gợi ý) |
 | Nhãn dialog AI 3 tab (đợt 5) | tab "Tổng quan" / "Chi tiết" / "Cặp forex" · nút "Nhận định tất cả" · nút "Nhận định chuyên sâu cặp này" · cột "Tài sản" / "Verdict lúc" · "Chưa có" (phạm vi chưa từng nhận định) |
 
 ### Hành vi dán mã nguồn trang ForexFactory (kênh cập nhật lịch + actual DUY NHẤT — 2 pha, xác nhận trước khi ghi; IMPLEMENTED — sửa đổi đợt 3+4 24/09/2026, ca "Nguồn dán FF" nghiệm thu 25/09/2026)
@@ -1732,8 +1751,10 @@ người dùng xác nhận trước khi ghi):
 - Nút **Nhập tin** mở form `user_note`; trường bắt buộc: giờ đăng, loại tin,
   nội dung, đồng tiền; trường tùy chọn: mức tác động (`impact_hint`), URL.
   Thiếu trường bắt buộc → báo lỗi ngay trên form, không ghi DB.
-- Sửa/xóa chỉ khả dụng với tin `source=user`; tin tự động chỉ có toggle
-  **Loại trừ** (`excluded`) — không có nút xóa (giữ provenance theo contract).
+- Sửa/xóa chỉ khả dụng với tin `source=user`; tin tự động **không có nút sửa
+  nào** ở màn này (giữ provenance theo contract). **Toggle "Loại trừ" đã GỠ**
+  (Owner chốt 30/09/2026) — cờ `excluded` vẫn là dữ liệu của miền (bộ lọc Trạng
+  thái vẫn có mục "Đã loại trừ"), chỉ không còn đường sửa từ giao diện.
 - **Xuất/nhập file CSV-JSON: BÃI BỎ** (contract §10 đợt 3, 24/09/2026) — các
   nút "Xuất file" / "Nhập file" bị gỡ; sao lưu thuộc về tệp `news.db`, bù dữ
   liệu ngày cũ bằng dán mã nguồn trang của ngày đó.

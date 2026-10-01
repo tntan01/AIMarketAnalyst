@@ -20,6 +20,7 @@ vào `tmp_path` — không ghi gì vào repo.
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import os
 import sys
 import threading
@@ -134,6 +135,10 @@ class FakeNewsController:
         self.explain_calls: list[CalendarEvent] = []
         self.explain_answer = "EUR chịu áp lực giảm khi số liệu xấu hơn dự báo."
         self.explain_error: Exception | None = None
+        # "Phân tích bài viết" (Owner yêu cầu 30/09/2026): như trên, cho tin văn bản.
+        self.analyze_calls: list[NewsItem] = []
+        self.analyze_answer = "Bài viết cho thấy Fed kiên nhẫn; USD có thể giảm nhẹ."
+        self.analyze_error: Exception | None = None
 
     def events_in_range(self, from_utc, to_utc, currencies=None, include_non_impact=True):
         self.event_calls.append((from_utc, to_utc))
@@ -144,6 +149,12 @@ class FakeNewsController:
         if self.explain_error is not None:
             raise self.explain_error
         return self.explain_answer
+
+    def analyze_article(self, item: NewsItem) -> str:
+        self.analyze_calls.append(item)
+        if self.analyze_error is not None:
+            raise self.analyze_error
+        return self.analyze_answer
 
     def items_in_range(self, from_utc, to_utc=None, kinds=None, currencies=None, exclude_flagged=True):
         self.item_calls.append((from_utc, to_utc, exclude_flagged))
@@ -466,6 +477,15 @@ def _range(screen: NewsScreen) -> tuple[str, str]:
     )
 
 
+def _link_button(dialog: QDialog) -> QPushButton:
+    """Nút mở liên kết ("Xem") của dialog xem 1 tin."""
+    return next(
+        button
+        for button in dialog.findChildren(QPushButton)
+        if button.text() == news.LINK_OPEN_TEXT
+    )
+
+
 def _checked(screen: NewsScreen) -> list[bool]:
     return [button.isChecked() for button in screen.week_buttons.values()]
 
@@ -756,7 +776,10 @@ class TestLoadingAndEmptyState:
 
 
 class TestRowDetailDialog:
-    def test_item_detail_shows_provenance_content_and_link(self):
+    def test_item_detail_keeps_only_time_source_and_link(self):
+        # Owner chốt 30/09/2026: dialog tin văn bản CHỈ còn Thời gian, Nguồn, Liên
+        # kết + ô "Phân tích bài viết" — bỏ "Giờ fetch", bỏ nhãn nội dung (trùng
+        # tiêu đề), URL dài thay bằng nút "Xem".
         # Múi giờ hiển thị cố định (Asia/Ho_Chi_Minh) — hiển thị theo múi giờ
         # người dùng (Owner 25/09/2026), không phụ thuộc settings máy chạy test.
         news._configure_display_timezone("Asia/Ho_Chi_Minh")
@@ -767,12 +790,66 @@ class TestRowDetailDialog:
         texts = [label.text() for label in dialog.findChildren(QLabel)]
         joined = " ".join(texts)
         assert dialog.windowTitle() == news.DETAIL_TEXT
-        assert "Powell said the committee can wait." in joined
-        assert "Google News" in joined
-        assert "21/09/2026 16:00" in joined  # giờ fetch (Asia/Ho_Chi_Minh)
-        assert "https://example.com/fed" in joined
+        assert news.PROVENANCE_LABELS == ("Thời gian", "Nguồn", "Liên kết")
         for label in news.PROVENANCE_LABELS:
-            assert label in joined, label
+            assert label in joined, label  # nhãn là rich text đã biên dịch
+        assert "21/09/2026 15:00" in joined  # giờ đăng (Asia/Ho_Chi_Minh)
+        assert "Google News" in joined
+        assert "Giờ fetch" not in joined
+        assert "21/09/2026 16:00" not in joined  # giờ fetch — đã bỏ
+        assert "Powell said the committee can wait." not in joined  # nhãn nội dung — đã bỏ
+        # Tin tự động: URL dài KHÔNG in ra nữa — thay bằng nút "Xem" (Owner yêu
+        # cầu 30/09/2026); URL chỉ nằm trong hành vi của nút.
+        assert "https://example.com/fed" not in joined
+        assert _link_button(dialog).text() == news.LINK_OPEN_TEXT
+        assert news.ANALYZE_HEADER_TEXT in texts  # ô phân tích bài viết
+
+    def test_item_rows_hug_the_left_edge_without_dead_space(self):
+        # Owner yêu cầu 30/09/2026: Thời gian/Nguồn/Liên kết CĂN TRÁI và không để
+        # khoảng trống thừa — các hàng nằm sát lề trái và sát nhau trên đỉnh dialog,
+        # mọi khoảng dư dồn vào ô "Phân tích bài viết".
+        screen = _screen()
+        dialog = screen.row_detail_dialog(build_rows([], [HEADLINE])[0])
+        dialog.show()
+        _app().processEvents()
+
+        labels = [label for label in dialog.findChildren(QLabel) if "Thời gian" in label.text()]
+        assert labels, "thiếu hàng Thời gian"
+        assert labels[0].x() < 40  # sát lề trái, không bị đẩy vào giữa
+
+        row_y = labels[0].y()
+        analyze_header = next(
+            label for label in dialog.findChildren(QLabel)
+            if label.text() == news.ANALYZE_HEADER_TEXT
+        )
+        # 3 hàng + tiêu đề ô phân tích nằm gọn phía trên (không giãn hàng ra giữa).
+        assert analyze_header.y() - row_y < 200
+
+    def test_link_button_opens_the_url(self, monkeypatch):
+        opened: list[str] = []
+        monkeypatch.setattr(
+            news.QDesktopServices,
+            "openUrl",
+            lambda url: opened.append(url.toString()),
+        )
+        screen = _screen()
+        dialog = screen.row_detail_dialog(build_rows([], [HEADLINE])[0])
+
+        _link_button(dialog).click()
+
+        assert opened == [HEADLINE.url]
+
+    def test_manual_note_keeps_the_text_link(self):
+        # Tin NHẬP TAY giữ nguyên liên kết văn bản (ngoài phạm vi yêu cầu).
+        note = dataclasses.replace(EXCLUDED_NOTE, url="https://example.com/ghi-chu")
+        screen = _screen()
+        dialog = screen.row_detail_dialog(build_rows([], [note])[0])
+
+        joined = " ".join(label.text() for label in dialog.findChildren(QLabel))
+        assert "https://example.com/ghi-chu" in joined
+        assert news.LINK_OPEN_TEXT not in [
+            button.text() for button in dialog.findChildren(QPushButton)
+        ]
 
     def test_event_detail_shows_the_event_figures_instead_of_raw_json(self):
         # Owner yêu cầu 30/09/2026: với tin FF, dialog hiển thị chính số liệu của
@@ -800,6 +877,37 @@ class TestRowDetailDialog:
         for label in news.PROVENANCE_LABELS:
             assert label in joined, label
         assert not any(label in joined for label in news.EVENT_DATA_LABELS[2:])
+
+    def test_detail_dialog_is_800_by_600(self):
+        # Kích thước Owner chốt 30/09/2026 (trước là 640x420).
+        screen = _screen()
+        dialog = screen.row_detail_dialog(build_rows([EVENT], [])[0])
+
+        assert (dialog.width(), dialog.height()) == (800, 600)
+
+    def test_footer_puts_explain_left_and_close_right(self):
+        # Owner chốt 30/09/2026: "Giải thích" bên TRÁI, "Đóng" bên PHẢI — cùng
+        # một hàng nút ở đáy dialog.
+        screen = _screen()
+        dialog = screen.row_detail_dialog(build_rows([EVENT], [])[0])
+        dialog.show()
+        _app().processEvents()
+
+        explain = next(
+            button
+            for button in dialog.findChildren(QPushButton)
+            if button.text() == news.EXPLAIN_TEXT
+        )
+        close = next(
+            button
+            for button in dialog.findChildren(QPushButton)
+            if button.text() == news.CLOSE_TEXT
+        )
+
+        assert explain.parent() is close.parent()  # cùng một hàng nút
+        assert explain.parent().objectName() == "NewsDetailFooter"
+        assert explain.x() < close.x()  # Giải thích ở bên trái
+        assert explain.y() == close.y()  # cùng dòng
 
     def test_detail_dialog_has_the_system_close_button(self):
         screen = _screen()
@@ -900,15 +1008,81 @@ class TestRowDetailDialog:
         assert _wait_until(lambda: "Chưa cấu hình AI" in frame.toPlainText())
         assert _wait_until(lambda: button.isEnabled() is True)
 
-    def test_item_detail_has_no_explanation_block(self):
-        # Khung giải thích chỉ dành cho tin SỰ KIỆN FF (Owner yêu cầu 30/09/2026).
+    def test_item_detail_has_the_analysis_block_not_the_explanation_one(self):
+        # Hàng TIN VĂN BẢN có khối "Phân tích bài viết"; hàng SỰ KIỆN FF mới có
+        # "Giải thích chỉ số" (Owner yêu cầu 30/09/2026).
         screen = _screen()
         dialog = screen.row_detail_dialog(build_rows([], [HEADLINE])[0])
 
-        assert dialog.findChild(QTextEdit, "ReadonlyText") is None
-        assert news.EXPLAIN_TEXT not in [
-            button.text() for button in dialog.findChildren(QPushButton)
-        ]
+        frame = dialog.findChild(QTextEdit, "ReadonlyText")
+        assert frame is not None and frame.toPlainText() == news.ANALYZE_HINT_TEXT
+        labels = [label.text() for label in dialog.findChildren(QLabel)]
+        assert news.ANALYZE_HEADER_TEXT in labels
+        assert news.EXPLAIN_HEADER_TEXT not in labels
+        buttons = [button.text() for button in dialog.findChildren(QPushButton)]
+        assert news.ANALYZE_TEXT in buttons
+        assert news.EXPLAIN_TEXT not in buttons
+
+    def test_analyze_button_calls_the_ai_and_fills_the_frame(self):
+        controller = FakeNewsController()
+        screen = _screen(controller)
+        dialog = screen.row_detail_dialog(build_rows([], [HEADLINE])[0])
+        frame = dialog.findChild(QTextEdit, "ReadonlyText")
+        button = next(
+            button
+            for button in dialog.findChildren(QPushButton)
+            if button.text() == news.ANALYZE_TEXT
+        )
+
+        button.click()
+
+        assert _wait_until(lambda: controller.analyze_calls == [HEADLINE])
+        assert _wait_until(lambda: frame.toPlainText() == controller.analyze_answer)
+        assert _wait_until(lambda: button.text() == news.ANALYZE_TEXT)
+        assert button.isEnabled() is True
+
+    def test_analyze_button_shows_the_running_state(self):
+        import threading
+
+        gate = threading.Event()
+        controller = FakeNewsController()
+
+        def blocking_analyze(item):
+            gate.wait(timeout=5)
+            return controller.analyze_answer
+
+        controller.analyze_article = blocking_analyze  # type: ignore[method-assign]
+        screen = _screen(controller)
+        dialog = screen.row_detail_dialog(build_rows([], [HEADLINE])[0])
+        button = next(
+            button
+            for button in dialog.findChildren(QPushButton)
+            if button.text() == news.ANALYZE_TEXT
+        )
+
+        button.click()
+
+        assert _wait_until(lambda: button.text() == news.AI_ANALYZING_TEXT)
+        assert button.isEnabled() is False
+
+        gate.set()
+
+        assert _wait_until(lambda: button.text() == news.ANALYZE_TEXT)
+
+    def test_analyze_failure_shows_the_friendly_message(self):
+        controller = FakeNewsController()
+        controller.analyze_error = RuntimeError("Chưa cấu hình AI Provider hoặc API key trong Settings.")
+        screen = _screen(controller)
+        dialog = screen.row_detail_dialog(build_rows([], [HEADLINE])[0])
+        frame = dialog.findChild(QTextEdit, "ReadonlyText")
+
+        next(
+            button
+            for button in dialog.findChildren(QPushButton)
+            if button.text() == news.ANALYZE_TEXT
+        ).click()
+
+        assert _wait_until(lambda: "Chưa cấu hình AI" in frame.toPlainText())
 
 
 # ---- 7. màn không vỡ layout 800px + đăng ký điều hướng ------------------------

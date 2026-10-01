@@ -133,7 +133,6 @@ class FakeNewsController:
         self.item_calls: list[tuple] = []
         self.add_calls: list[dict] = []
         self.update_calls: list[tuple] = []
-        self.exclude_calls: list[tuple] = []
         self.delete_calls: list[int] = []
         self.note_result = UserNoteResult(errors=())
         # F4 — đường dán mã nguồn 2 pha (khuôn chữ ký F3/QĐ-F9).
@@ -154,10 +153,6 @@ class FakeNewsController:
     def items_in_range(self, from_utc, to_utc=None, kinds=None, currencies=None, exclude_flagged=True):
         self.item_calls.append((from_utc, to_utc, exclude_flagged))
         return list(self.items)
-
-    def set_excluded(self, item_id, excluded):
-        self.exclude_calls.append((item_id, bool(excluded)))
-        return 1
 
     def delete_user_note(self, item_id):
         self.delete_calls.append(item_id)
@@ -514,25 +509,30 @@ class TestUpdateUserNoteContract:
 
 
 class TestRowActions:
-    def test_user_row_has_toggle_edit_and_delete(self):
+    def test_user_row_has_edit_and_delete(self):
+        # Nút toggle "Loại trừ" đã GỠ (Owner chốt 30/09/2026) — hàng điều khiển
+        # của tin nhập tay chỉ còn Sửa/Xóa.
         screen = _screen()
         row = _row_for(screen, news.ITEM_ROW, USER_ITEM.title)
         dialog = screen.row_detail_dialog(row)
 
         labels = {button.text() for button in dialog.findChildren(QPushButton)}
-        assert news.EXCLUDE_TEXT in labels
         assert news.EDIT_TEXT in labels
         assert news.DELETE_TEXT in labels
+        assert "Loại trừ" not in labels
 
-    def test_automatic_row_has_toggle_but_no_edit_or_delete(self):
+    def test_automatic_row_has_no_row_actions(self):
+        # Tin tự động không còn đường sửa nào ở màn này (chỉ còn nút AI "Phân tích"
+        # + "Đóng").
         screen = _screen()
         row = _row_for(screen, news.ITEM_ROW, AUTO_ITEM.title)
         dialog = screen.row_detail_dialog(row)
 
         labels = {button.text() for button in dialog.findChildren(QPushButton)}
-        assert news.EXCLUDE_TEXT in labels
         assert news.EDIT_TEXT not in labels
         assert news.DELETE_TEXT not in labels
+        assert "Loại trừ" not in labels
+        assert news.ANALYZE_TEXT in labels  # khối "Phân tích bài viết" của tin văn bản
 
     def test_event_row_has_no_row_actions(self):
         screen = _screen()
@@ -540,29 +540,10 @@ class TestRowActions:
         dialog = screen.row_detail_dialog(row)
 
         labels = {button.text() for button in dialog.findChildren(QPushButton)}
-        assert news.EXCLUDE_TEXT not in labels
         assert news.EDIT_TEXT not in labels
         assert news.DELETE_TEXT not in labels
-
-    def test_toggle_excluded_calls_controller_and_reloads(self):
-        controller = FakeNewsController()
-        screen = _screen(controller)
-        reads_before = len(controller.item_calls)
-        row = _row_for(screen, news.ITEM_ROW, USER_ITEM.title)
-        dialog = screen.row_detail_dialog(row)
-        toggle = next(
-            button
-            for button in dialog.findChildren(QPushButton)
-            if button.text() == news.EXCLUDE_TEXT
-        )
-        assert toggle.isCheckable() is True
-        assert toggle.isChecked() is True  # USER_ITEM.excluded = True
-
-        toggle.click()
-        _app().processEvents()
-
-        assert controller.exclude_calls == [(USER_ITEM.id, False)]
-        assert _wait_until(lambda: len(controller.item_calls) > reads_before)
+        assert "Loại trừ" not in labels
+        assert news.EXPLAIN_TEXT in labels  # khối "Giải thích chỉ số" của sự kiện
 
     def test_delete_confirmation_requires_the_confirm_button(self):
         screen = _screen()

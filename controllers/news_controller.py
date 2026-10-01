@@ -145,6 +145,7 @@ from core.news_models import (
 )
 from core.news_policy import NewsPolicy, load_news_policy
 from core.rate_trend import RatePath
+from core.article_analysis import build_analysis_prompt
 from core.event_explanation import build_explanation_prompt
 from core.trend_prompt_builder import (
     HorizonWindowSet,
@@ -1308,6 +1309,25 @@ class NewsController:
         service, _provider, _model = resolved
         answer = service.analyze(  # type: ignore[attr-defined]
             build_explanation_prompt(event), max_tokens=AI_TREND_MAX_TOKENS
+        )
+        return str(answer)
+
+    def analyze_article(self, item: NewsItem) -> str:
+        """One AI analysis of a text news item — advisory, nothing is stored.
+
+        Điều phối lời gọi AI cho nút "Phân tích" ở dialog xem 1 tin (Owner yêu cầu
+        30/09/2026): dựng prompt qua chủ sở hữu khung
+        (``core/article_analysis.build_analysis_prompt`` — ASCII, thuần), gọi
+        provider trong worker của màn, trả về nguyên văn câu trả lời tiếng Việt.
+        **Không ghi database** (không phải verdict — §9.2), không vào bất kỳ quy
+        trình nào.  Chưa cấu hình AI → raise lỗi thân thiện (worker của màn báo
+        lên khung).  Cùng ngân sách token của đường AI màn Tin tức."""
+        resolved = self._resolve_ai_service()
+        if resolved is None:
+            raise RuntimeError(NO_AI_CONFIG_TEXT)
+        service, _provider, _model = resolved
+        answer = service.analyze(  # type: ignore[attr-defined]
+            build_analysis_prompt(item), max_tokens=AI_TREND_MAX_TOKENS
         )
         return str(answer)
 

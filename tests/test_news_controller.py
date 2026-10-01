@@ -1808,6 +1808,62 @@ class TestExplainEvent:
             controller.explain_event(_batch_event(1))
 
 
+class TestAnalyzeArticle:
+    """``analyze_article`` — AI phân tích một bài viết (Owner yêu cầu 30/09/2026).
+
+    Tư vấn tham khảo: KHÔNG ghi database, không sinh verdict (§9.2)."""
+
+    def _item(self) -> NewsItem:
+        return NewsItem(
+            kind=NewsItemKind.HEADLINE,
+            source=NewsItemSource.GOOGLE_NEWS_RSS,
+            title="Fed signals patience",
+            content="Powell said the committee can wait.",
+            url="https://example.com/fed",
+            published_utc="2026-09-21T08:00:00Z",
+            currencies=["USD"],
+            dedupe_key="item-1",
+            fetched_at="2026-09-21T09:00:00Z",
+            id=7,
+        )
+
+    def test_calls_the_ai_with_the_article_prompt_and_the_news_budget(self):
+        ai = FakeAIService("Fed kiên nhẫn; USD có thể giảm nhẹ.")
+        controller = _batch_controller(ai, FakeRepository())
+
+        answer = controller.analyze_article(self._item())
+
+        assert answer == "Fed kiên nhẫn; USD có thể giảm nhẹ."
+        assert len(ai.calls) == 1
+        assert "headline: Fed signals patience" in ai.calls[0]
+        assert "how it could move them" in ai.calls[0]
+        assert ai.max_tokens_calls == [news_controller_module.AI_TREND_MAX_TOKENS]
+
+    def test_nothing_is_written_to_the_database(self):
+        ai = FakeAIService("Phân tích.")
+        repo = FakeRepository()
+        controller = _batch_controller(ai, repo)
+
+        controller.analyze_article(self._item())
+
+        assert repo.add_verdict_calls == []
+        assert repo.record_run_calls == []
+        assert [name for name, _args, _kwargs in repo.calls] == []
+
+    def test_missing_config_raises_the_friendly_error(self):
+        controller = NewsController(
+            repo=FakeRepository(),
+            policy=_policy(),
+            rss_producer=FakeRssProducer(),
+            bond_yield_producer=FakeBondYieldProducer(),
+            ai_config_provider=lambda: None,
+            schedule_starter=FakeStarter(),
+        )
+
+        with pytest.raises(RuntimeError, match="Chưa cấu hình AI"):
+            controller.analyze_article(self._item())
+
+
 class TestAnalyzeAllTrends:
     def test_all_eleven_ok_in_order_and_stored(self):
         repo = FakeRepository()
