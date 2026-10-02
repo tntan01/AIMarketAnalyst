@@ -268,9 +268,9 @@ SOURCE_TEXT: dict[str, str] = {
 # Nhãn loại dòng sự kiện — bullet bộ lọc screen_design d.1551 + contract §2.
 EVENT_TEXT = "Sự kiện"
 
-# Glyph icon mức tác động của cột "Loại" — lấy NGUYÊN khuôn dashboard
+# Glyph icon mức tác động của cột "Loại" — khuôn dashboard cũ
 # (``NewsTypeIcon``: "●" cho sự kiện, "▤" cho tin văn bản; màu theo ``impact``
-# qua semantic palette — dashboard_screen._render_news_rows + ui/styles/base.qss).
+# qua semantic palette — ui/styles/base.qss).
 EVENT_ICON = "●"
 ITEM_ICON = "▤"
 

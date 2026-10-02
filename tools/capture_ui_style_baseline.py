@@ -212,7 +212,7 @@ def _patch_external_activity(stack: ExitStack) -> None:
         patch.object(DashboardScreen, "_refresh_market_overview", lambda self: None)
     )
     stack.enter_context(
-        patch.object(DashboardScreen, "refresh_news_section", lambda self: None)
+        patch.object(DashboardScreen, "_maybe_auto_briefing", lambda self: None)
     )
     stack.enter_context(
         patch.object(DashboardScreen, "refresh_status", lambda self: None)

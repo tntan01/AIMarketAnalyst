@@ -13,12 +13,11 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import re
 import sys
-from datetime import datetime, timedelta, timezone
 
 import pytest
 from PyQt6.QtCore import QEvent
 from PyQt6.QtGui import QIcon
-from PyQt6.QtWidgets import QApplication, QLabel, QPushButton, QTabBar
+from PyQt6.QtWidgets import QApplication, QLabel, QPushButton
 
 app = QApplication.instance()
 if app is None:
@@ -67,13 +66,13 @@ def test_no_emoji_on_buttons():
         )
 
 
-def test_no_emoji_on_news_tabs():
+def test_no_emoji_on_briefing_panel():
     screen = _make_screen()
-    tabs = screen.findChildren(QTabBar)
-    assert tabs, "Dashboard phải có news tab bar"
-    for bar in tabs:
-        for i in range(bar.count()):
-            assert not EMOJI_RE.search(bar.tabText(i)), f"Tab '{bar.tabText(i)}' còn emoji"
+    assert screen.briefing_section is not None, "Dashboard phải có panel bản tin AI"
+    for label in screen.briefing_section.findChildren(QLabel):
+        assert not EMOJI_RE.search(label.text()), (
+            f"Label '{label.text()}' còn emoji — phải dùng icon phẳng (ui/icons.py)"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -141,15 +140,21 @@ def test_status_icons_retint_on_theme_switch():
 
 def test_top_level_buttons_have_flat_icons():
     screen = _make_screen()
-    assert not screen.news_refresh_button.icon().isNull()
-    assert not screen.news_scroll_btn.icon().isNull()
-    assert screen.news_refresh_button.iconSize().width() == 16
+    assert not screen.briefing_button.icon().isNull()
+    assert screen.briefing_button.iconSize().width() == 16
 
     primary = {b.text(): b for b in screen.findChildren(QPushButton) if b.objectName() == "PrimaryButton"}
-    for label in ("Thử lại", "Giải thích chỉ số", "Xem tin sắp tới", "Làm mới"):
+    for label in ("Thử lại", "Giải thích chỉ số", "Tạo bản tin"):
         assert label in primary, f"Thiếu nút chính '{label}'"
         assert not primary[label].icon().isNull(), f"Nút '{label}' thiếu icon phẳng"
         assert primary[label].iconSize().width() == 16
+
+    secondary = {
+        b.text(): b for b in screen.findChildren(QPushButton)
+        if b.objectName() == "SecondaryButton"
+    }
+    assert "Xem tin tức đầy đủ" in secondary, "Thiếu nút phụ 'Xem tin tức đầy đủ'"
+    assert not secondary["Xem tin tức đầy đủ"].icon().isNull()
 
 
 def test_action_button_backward_compat():
@@ -160,41 +165,10 @@ def test_action_button_backward_compat():
 
 
 # ---------------------------------------------------------------------------
-# News table — nút icon-only
+# Panel "Bản tin AI hôm nay" — empty state dùng glyph phẳng, không emoji
 # ---------------------------------------------------------------------------
 
-def test_news_icon_button_is_flat_icon_only():
-    screen = _make_screen()
-    now = datetime.now(timezone.utc)
-    rows = [
-        {
-            "type": "headline",
-            "title": "Tin kiểm tra",
-            "url": "http://example.com",
-            "source": "Test",
-            "display_time": now + timedelta(hours=5),
-            "impact": "low",
-        }
-    ]
-    screen._render_news_rows(rows, timezone.utc, now, "this_week")
-
-    icon_buttons = []
-    for r in range(screen.news_table.rowCount()):
-        widget = screen.news_table.cellWidget(r, 7)
-        if isinstance(widget, QPushButton) and widget.objectName() == "NewsIconButton":
-            icon_buttons.append(widget)
-    assert len(icon_buttons) == 1
-    btn = icon_buttons[0]
-    assert btn.text() == "", "NewsIconButton phải icon-only"
-    assert not btn.icon().isNull()
-    assert btn.property("linkTone") in ("past", "nearest", "future")
-
-
-# ---------------------------------------------------------------------------
-# Dialog "Chi tiết tin tức" / "Chi tiết sự kiện" — rich text dùng glyph phẳng
-# ---------------------------------------------------------------------------
-
-#_ranges emoji như tests/test_phase2_flat_icons.py — dialog không còn emoji.
+#_ranges emoji như tests/test_phase2_flat_icons.py — panel không còn emoji.
 _DIALOG_EMOJI_RANGES = (
     (0x1F000, 0x1FAFF),
     (0x2600, 0x27BF),
@@ -203,9 +177,9 @@ _DIALOG_EMOJI_RANGES = (
 )
 
 
-def _dialog_emoji_hits(source: str) -> list[str]:
+def _emoji_hits(source: str) -> list[str]:
     # Bỏ qua dòng prompt AI chứa "###" (heading markdown gửi cho LLM, không
-    # phải icon hiển thị trên dialog).
+    # phải icon hiển thị trên UI).
     lines = [line for line in source.splitlines() if "###" not in line]
     return sorted(
         ch
@@ -215,21 +189,22 @@ def _dialog_emoji_hits(source: str) -> list[str]:
     )
 
 
-def test_event_and_headline_dialog_sources_are_emoji_free():
+def test_briefing_methods_are_emoji_free_and_use_rich_states():
     import inspect
 
     from ui.screens import dashboard_screen as mod
 
     for method in (
-        mod.DashboardScreen._show_headline_detail,
-        mod.DashboardScreen._show_event_detail,
-        mod.DashboardScreen._request_ai_impact,
+        mod.DashboardScreen._build_briefing_section,
+        mod.DashboardScreen._start_briefing,
+        mod.DashboardScreen._on_briefing_finished,
+        mod.DashboardScreen._show_briefing_empty,
     ):
         source = inspect.getsource(method)
-        hits = _dialog_emoji_hits(source)
+        hits = _emoji_hits(source)
         assert not hits, f"{method.__name__} còn emoji: {hits}"
-        # Rich icon phải đi qua helper glyph phẳng (data-URI <img>).
-        assert (
-            "_rich_dialog_icon(" in source
-            or 'icon="alert-triangle"' in source
-        ), f"{method.__name__} phải dùng flat rich icon"
+
+    empty_source = inspect.getsource(mod.DashboardScreen._show_briefing_empty)
+    assert "empty_state_html" in empty_source, (
+        "_show_briefing_empty phải render empty state qua rich text glyph phẳng"
+    )

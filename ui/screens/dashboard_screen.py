@@ -2,52 +2,36 @@ from __future__ import annotations
 
 from config.constants import SUPPORTED_SYMBOLS
 from datetime import datetime, timedelta, timezone
-from PyQt6.QtCore import Qt, QTimer, QSize, QThread, pyqtSignal, QEvent, QObject
-from PyQt6.QtGui import QColor, QTextCursor
+from zoneinfo import ZoneInfo
+
+from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal, QEvent, QObject
 from PyQt6.QtWidgets import (
     QApplication,
     QDialog,
     QFrame,
-    QGridLayout,
-    QHeaderView,
     QHBoxLayout,
     QLabel,
     QPushButton,
-    QStyle,
     QScrollArea,
     QSizePolicy,
-    QTableWidget,
-    QTableWidgetItem,
     QTextEdit,
     QVBoxLayout,
     QWidget,
-    QTabBar,
 )
 from ui.screens.shared import action_button
 from services.data_provider import ConnectionStatus
 from services.market_data_service import fetch_market_overview
-from services.mt5_service import MT5ConnectionStatus, MT5Service
+from services.mt5_service import MT5Service
 from services.settings_service import SettingsService
-from ui.icons import flat_data_uri, flat_icon, flat_icon_fixed, flat_pixmap
+from ui.icons import flat_pixmap
 from ui.responsive_row import ResponsiveGrid
-from ui.layout_system import LayoutTokens, configure_table
 from ui.rich_text import compile_rich_html, empty_state_html, set_rich_html
-from ui.theme.fonts import QSS_TITLE, get_body_font, get_number_font, get_subtitle_font
+from ui.theme.fonts import QSS_TITLE
 from ui.theme_manager import (
     current_palette,
     is_light_theme,
-    semantic_qcolor,
     set_dynamic_property,
 )
-
-
-def _rich_dialog_icon(name: str, role: str = "text", *, size: int = 12) -> str:
-    """Glyph phẳng nhúng `<img>` vào rich text (dialog tin tức/sự kiện).
-
-    Màu resolve từ palette theo `role` tại thời điểm build — dialog được tạo
-    lại mỗi lần mở nên đổi theme không để lại tint cũ."""
-    uri = flat_data_uri(name, role, size=size)
-    return f"<img src='{uri}' width='{size}' height='{size}'/>"
 
 
 class MarketWorker(QThread):
@@ -56,52 +40,219 @@ class MarketWorker(QThread):
     def run(self):
         self.finished.emit(fetch_market_overview())
 
-class NewsWorker(QThread):
-    """Fetch news headlines + economic calendar for the given date window."""
+
+_BRIEFING_IDLE_HINT = (
+    "Bản tin AI tổng hợp DXY, VIX, lợi suất trái phiếu Mỹ và sự kiện ảnh "
+    "hưởng lớn sắp tới thành kịch bản phiên. Bấm \"Tạo bản tin\" để bắt đầu."
+)
+
+
+def _display_timezone(settings_service) -> ZoneInfo:
+    """Timezone hiển thị từ settings, fallback Asia/Ho_Chi_Minh."""
+    try:
+        tz_str = settings_service.load().display.timezone
+    except Exception:
+        tz_str = "Asia/Ho_Chi_Minh"
+    try:
+        return ZoneInfo(tz_str)
+    except Exception:
+        return ZoneInfo("Asia/Ho_Chi_Minh")
+
+
+def _fetch_upcoming_red_events(*, limit: int = 4, hours_ahead: int = 72) -> list[dict]:
+    """Sự kiện impact cao trong ``hours_ahead`` giờ tới (Forex Factory)."""
+    from services.calendar_helpers import _is_high_impact, parse_event_time
+    from services.forex_factory_client import ForexFactoryClient
+
+    now = datetime.now(timezone.utc)
+    try:
+        result = ForexFactoryClient().calendar_events_window(
+            [], now, now + timedelta(hours=hours_ahead)
+        )
+    except Exception:
+        return []
+    events = result.get("events", []) if isinstance(result, dict) else []
+    if not isinstance(events, list):
+        return []
+    upcoming: list[tuple[datetime, dict]] = []
+    for ev in events:
+        if not isinstance(ev, dict):
+            continue
+        if not _is_high_impact(str(ev.get("impact", ""))):
+            continue
+        dt = parse_event_time(str(ev.get("time_utc", "")))
+        if dt is None or dt < now:
+            continue
+        upcoming.append((dt, {**ev, "display_time": dt}))
+    upcoming.sort(key=lambda pair: pair[0])
+    return [ev for _dt, ev in upcoming[:limit]]
+
+
+def _build_briefing_prompt(overview: dict, events: list[dict], tz: ZoneInfo | None = None) -> str:
+    def fmt(tag: str) -> str:
+        pair = overview.get(tag)
+        if isinstance(pair, (tuple, list)) and len(pair) == 2:
+            close, change_pct = float(pair[0]), float(pair[1])
+            arrow = "tăng" if change_pct > 0 else "giảm" if change_pct < 0 else "đi ngang"
+            return f"{close:.2f} ({arrow} {abs(change_pct):.1f}%)"
+        return "không có dữ liệu"
+
+    tz_label = str(getattr(tz, "key", "")) or "UTC"
+    now = datetime.now(tz) if tz is not None else datetime.now(timezone.utc)
+
+    def fmt_event_time(when: datetime) -> str:
+        if when.tzinfo is None:
+            when = when.replace(tzinfo=timezone.utc)
+        if tz is not None:
+            when = when.astimezone(tz)
+        return when.strftime("%d/%m %H:%M")
+
+    lines: list[str] = [
+        "Bạn là chuyên gia phân tích thị trường của ứng dụng giao dịch. Soạn \"Bản tin hôm nay\" NGẮN GỌN (khoảng 350 từ) bằng tiếng Việt cho trader Forex/Vàng/BTC, dựa CHỈ trên dữ liệu thực tế dưới đây:",
+        f"- Thời điểm tạo bản tin: {now.strftime('%d/%m/%Y %H:%M')} (giờ {tz_label})",
+        f"- DXY: {fmt('DXY')}",
+        f"- VIX: {fmt('VIX')}",
+        f"- US10Y: {fmt('US10Y')}",
+        f"- US2Y: {fmt('US2Y')}",
+    ]
+    if events:
+        lines.append(f"- Sự kiện ảnh hưởng lớn sắp tới (giờ {tz_label}):")
+        for ev in events:
+            when = ev.get("display_time")
+            when_str = fmt_event_time(when) if isinstance(when, datetime) else "không rõ giờ"
+            item = f"  - {str(ev.get('currency', ''))} {str(ev.get('event', ''))} lúc {when_str}"
+            if ev.get("forecast"):
+                item += f", dự báo {ev['forecast']}"
+            if ev.get("previous"):
+                item += f", kỳ trước {ev['previous']}"
+            lines.append(item)
+    else:
+        lines.append("- Sự kiện ảnh hưởng lớn trong 72 giờ tới: không có.")
+    lines.extend(
+        [
+            "",
+            "Trả lời bằng markdown, đúng cấu trúc sau:",
+            "### Bối cảnh thị trường",
+            "(2-3 câu: USD mạnh/yếu, tâm lý risk-on/off, mức biến động)",
+            "",
+            "### Điểm đáng chú ý hôm nay",
+            "(2-3 gạch đầu dòng: cặp tiền/tài sản đáng theo dõi, hướng thiên về, lý do bám vào dữ liệu trên)",
+            "",
+            "### Rủi ro cần né",
+            "(1-2 gạch đầu dòng: sự kiện đỏ kèm giờ cụ thể, cảnh báo thanh khoản nếu VIX bất thường)",
+            "",
+            "### Chốt nhanh",
+            "(một câu hành động cho phiên hôm nay)",
+            "",
+            "QUAN TRỌNG: không bịa số liệu, không liệt kê lại input, đi thẳng vào phân tích.",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def _briefing_cache_key(overview: dict, events: list[dict]) -> str:
+    """Khóa cache bản tin: ngày + snapshot vĩ mô + danh sách sự kiện đỏ."""
+    day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    macro = ",".join(
+        f"{tag}:{float(overview[tag][0]):.2f}"
+        for tag in ("DXY", "VIX", "US10Y", "US2Y")
+        if tag in overview
+    )
+    ev = "|".join(
+        f"{str(item.get('time_utc', ''))}:{str(item.get('currency', ''))}:{str(item.get('event', ''))}"
+        for item in events
+    )
+    return f"{day}|{macro}|{ev}"
+
+
+# Ngân sách token cho bản tin. Model suy luận (DeepSeek-R1 line) đốt phần lớn
+# ngân sách vào ``reasoning_content`` TRƯỚC khi viết câu trả lời (~350 từ) —
+# SSE parser cố ý bỏ qua delta reasoning nên ngân sách quá thấp (vd 1200)
+# khiến stream về rỗng (finish_reason=length, chưa kịp content). 4000 đủ dứt
+# điểm (đo thật: reasoning ~5.5k ký tự + content ~1.5k ký tự → stop). Lần
+# fallback nâng ngân sách — khuôn retry news controller §9.1 (tối đa 2 lần gọi).
+_BRIEFING_MAX_TOKENS = 4000
+_BRIEFING_FALLBACK_MAX_TOKENS = 8000
+
+
+class BriefingWorker(QThread):
+    """Soạn bản tin AI hằng ngày: fetch dữ liệu rồi stream phản hồi.
+
+    Dữ liệu vào: ``fetch_market_overview`` (service đã cache 30 phút) và
+    sự kiện impact cao từ Forex Factory. ``tz`` là múi giờ hiển thị từ
+    Settings — giờ sự kiện trong prompt được quy đổi sang múi giờ này.
+    Phản hồi stream qua ``chunk_ready`` để UI render dần; kết quả cuối
+    (markdown) trả qua ``finished`` kèm ``cache_key`` để phiên sau không
+    gọi lại AI khi dữ liệu chưa đổi.
+
+    Stream về rỗng (model suy luận nuốt hết ngân sách vào reasoning) →
+    gọi lại MỘT lần đường non-stream với ngân sách cao hơn — đường này có
+    typed error (``AIOutputBudgetError``) và fallback reasoning_content
+    cho gateway trả lời nguyên trong reasoning.
+    """
+
+    status = pyqtSignal(str)
+    events_ready = pyqtSignal(list)
+    chunk_ready = pyqtSignal(str)
     finished = pyqtSignal(dict)
     error = pyqtSignal(str)
 
-    def __init__(self, currencies=None, from_date=None, to_date=None):
+    def __init__(self, ai_config, market_values: dict | None = None, tz: ZoneInfo | None = None):
         super().__init__()
-        self.currencies = currencies or []
-        self.from_date = from_date
-        self.to_date = to_date
+        self.ai_config = ai_config
+        self.market_values = dict(market_values or {})
+        self.tz = tz
+        self.stop_flag = False
 
     def run(self):
         try:
-            from services.news_service import NewsService
-            svc = NewsService()
-            result = svc.fetch_news_window(
-                from_date=self.from_date,
-                to_date=self.to_date,
-                currencies=self.currencies,
+            from services.ai_service import AIService, AIOutputBudgetError
+
+            self.status.emit("Đang tải chỉ số thị trường...")
+            overview = self.market_values or fetch_market_overview()
+
+            self.status.emit("Đang tải sự kiện ảnh hưởng lớn...")
+            events = _fetch_upcoming_red_events()
+            self.events_ready.emit(events)
+
+            prompt = _build_briefing_prompt(overview, events, tz=self.tz)
+            ai = AIService(self.ai_config)
+
+            self.status.emit("AI đang soạn bản tin...")
+            parts: list[str] = []
+            for chunk in ai.analyze_stream(prompt, max_tokens=_BRIEFING_MAX_TOKENS):
+                if self.stop_flag:
+                    return
+                parts.append(chunk)
+                self.chunk_ready.emit(chunk)
+            text = "".join(parts).strip()
+
+            if not text:
+                self.status.emit("AI đang soạn lại với ngân sách lớn hơn...")
+                try:
+                    text = ai.analyze(
+                        prompt, max_tokens=_BRIEFING_FALLBACK_MAX_TOKENS
+                    ).strip()
+                except AIOutputBudgetError as exc:
+                    self.error.emit(f"{exc} Thử lại hoặc đổi model ít suy luận hơn.")
+                    return
+                if text:
+                    self.chunk_ready.emit(text)
+
+            if not text:
+                self.error.emit("AI trả về phản hồi rỗng.")
+                return
+            self.finished.emit(
+                {
+                    "text": text,
+                    "overview": overview,
+                    "events": events,
+                    "cache_key": _briefing_cache_key(overview, events),
+                }
             )
-            self.finished.emit(result)
-        except Exception as e:
-            self.error.emit(str(e))
-
-
-class ActualLookupWorker(QThread):
-    result_ready = pyqtSignal(str)
-
-    def __init__(self, currency: str, event_name: str, ev_time_str: str, news_service, forecast: str = "", previous: str = ""):
-        super().__init__()
-        self.currency = currency
-        self.event_name = event_name
-        self.ev_time_str = ev_time_str
-        self.news_service = news_service
-        self.forecast = forecast
-        self.previous = previous
-
-    def run(self):
-        result = self.news_service.lookup_actual_single(
-            self.currency,
-            self.event_name,
-            self.ev_time_str,
-            self.forecast,
-            self.previous,
-        )
-        self.result_ready.emit(result)
+        except Exception as exc:
+            if not self.stop_flag:
+                self.error.emit(str(exc))
 
 
 class _ElidedLabel(QLabel):
@@ -141,42 +292,6 @@ STATUS_CARD_FLAT_ICONS = {
 
 # State của thẻ → semantic role tint glyph.
 _STATE_ICON_ROLES = {"ok": "success", "warning": "warning", "danger": "danger"}
-
-# Zone của tin → semantic role tint icon link (khớp nhóm màu linkTone QSS).
-_LINK_TONE_ROLES = {
-    "past": "subtle",
-    "nearest": "success",
-    "future": "warning",
-    "danger": "danger",
-    "warning": "warning",
-}
-
-
-class LinkToneHoverFilter(QObject):
-    """Hover tint cho nút icon-only NewsIconButton.
-
-    QSS `color:` không tint được QIcon và QPushButton không request QIcon
-    mode Active khi hover, nên filter tự swap sang bản lighter/darker của màu
-    role (resolve từ palette, không hardcode).
-    """
-
-    def __init__(self, button, icon_name, role, parent=None):
-        super().__init__(parent)
-        self.button = button
-        self.icon_name = icon_name
-        self.role = role
-
-    def eventFilter(self, obj, event):
-        if event.type() == QEvent.Type.HoverEnter:
-            self.button.setIcon(self._hover_icon())
-        elif event.type() == QEvent.Type.HoverLeave:
-            self.button.setIcon(flat_icon(self.icon_name, self.role))
-        return super().eventFilter(obj, event)
-
-    def _hover_icon(self):
-        color = semantic_qcolor(self.role, palette=current_palette())
-        adjusted = color.darker(118) if is_light_theme() else color.lighter(118)
-        return flat_icon_fixed(self.icon_name, adjusted.name())
 
 
 class StatusCardEventFilter(QObject):
@@ -239,10 +354,12 @@ class DashboardScreen(QWidget):
         self.settings_service = app.settings_service if app else SettingsService()
         self.status_cards: dict[str, tuple[QFrame, QLabel, QLabel]] = {}
         self._light = self._is_light_theme()
-        self._news_tab = "this_week"
-        self._news_data: dict = {}
         self._ai_last_snapshot: str = ""
         self._ai_cached_response: str = ""
+        self._market_values: dict = {}
+        self._briefing_text: str = ""
+        self._briefing_cache_key: str = ""
+        self._briefing_worker: QThread | None = None
         self.setObjectName("DashboardScreen")
         self._build_ui()
         self.refresh_status()
@@ -251,7 +368,8 @@ class DashboardScreen(QWidget):
         self._light = self._is_light_theme()
         self._retint_status_icons()
         self._refresh_market_overview()
-        self.refresh_news_section()
+        if not self._briefing_text and getattr(self, "briefing_text", None) is not None:
+            self._show_briefing_empty(_BRIEFING_IDLE_HINT)
 
     def _is_light_theme(self) -> bool:
         return is_light_theme(self.settings_service)
@@ -288,8 +406,8 @@ class DashboardScreen(QWidget):
         root.addWidget(self.mt5_warning)
         self.market_overview = self._build_market_overview()
         root.addWidget(self.market_overview)
-        self.news_section = self._build_news_section()
-        root.addWidget(self.news_section)
+        self.briefing_section = self._build_briefing_section()
+        root.addWidget(self.briefing_section)
 
         scroll = QScrollArea()
         scroll.setObjectName("DashboardScroll")
@@ -449,1073 +567,216 @@ class DashboardScreen(QWidget):
         layout.addStretch(1)
         return panel
 
-    def _build_news_section(self) -> QFrame:
+    # ------------------------------------------------------------------
+    # AI Daily Briefing
+    # ------------------------------------------------------------------
+    def _build_briefing_section(self) -> QFrame:
         panel = QFrame()
         panel.setObjectName("PanelCard")
+        panel.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(16, 14, 16, 14)
         layout.setSpacing(10)
 
         # Header row
         header_layout = QHBoxLayout()
-        title = QLabel("Tin tức & Sự kiện")
+        title = QLabel("Bản tin AI hôm nay")
         title.setObjectName("PanelTitle")
         header_layout.addWidget(title)
 
-        self.news_date_range = QLabel("")
-        self.news_date_range.setObjectName("CardDetail")
-        header_layout.addWidget(self.news_date_range)
+        self.briefing_date_label = QLabel("")
+        self.briefing_date_label.setObjectName("CardDetail")
+        header_layout.addWidget(self.briefing_date_label)
         header_layout.addStretch()
 
-        self.news_source_label = QLabel("")
-        self.news_source_label.setObjectName("CardDetail")
-        header_layout.addWidget(self.news_source_label)
+        self.briefing_status_label = QLabel("")
+        self.briefing_status_label.setObjectName("CardDetail")
+        header_layout.addWidget(self.briefing_status_label)
         layout.addLayout(header_layout)
 
-        # Tab bar
-        tab_layout = QHBoxLayout()
-        tab_layout.setSpacing(10)
+        # Next red-event line (countdown context, not a news list)
+        self.briefing_next_event_label = QLabel("")
+        self.briefing_next_event_label.setObjectName("CardDetail")
+        self.briefing_next_event_label.setWordWrap(True)
+        layout.addWidget(self.briefing_next_event_label)
 
-        self.news_tab_bar = QTabBar()
-        self.news_tab_bar.setDrawBase(False)   # tắt native base bar (nguyên nhân nền trắng)
-        self.news_tab_bar.setExpanding(False)  # không stretch tab ra đầy chiều rộng
-        self.news_tab_bar.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.news_tab_keys = ["last_week", "this_week", "next_week"]
-        self.news_tab_bar.addTab("Tuần trước")
-        self.news_tab_bar.addTab("Tuần này")
-        self.news_tab_bar.addTab("Tuần sau")
-        self.news_tab_bar.setCurrentIndex(1) # Default to this week
-        self.news_tab_bar.currentChanged.connect(self._on_news_tab_changed)
-        tab_layout.addWidget(self.news_tab_bar)
+        # Briefing body — streamed plain text, markdown at the end
+        self.briefing_text = QTextEdit()
+        self.briefing_text.setObjectName("ReadonlyText")
+        self.briefing_text.setReadOnly(True)
+        self.briefing_text.setMinimumHeight(200)
+        layout.addWidget(self.briefing_text, 1)
 
-        self.news_scroll_btn = action_button(
-            "Xem tin sắp tới",
+        # Buttons
+        btn_layout = QHBoxLayout()
+        btn_layout.setSpacing(10)
+
+        self.briefing_button = action_button(
+            "Tạo bản tin",
             primary=True,
             color="info",
-            icon="map-pin",
+            icon="bot",
             icon_role="selection_text",
             icon_disabled_role="selection_text",
         )
-        self.news_scroll_btn.setToolTip("Chuyển sang tuần này và kéo tới tin sắp tới gần nhất")
-        self.news_scroll_btn.clicked.connect(self._go_to_nearest)
-        tab_layout.addWidget(self.news_scroll_btn)
-
-        tab_layout.addStretch()
-
-        self.news_refresh_button = action_button(
-            "Làm mới",
-            primary=True,
-            color="info",
-            icon="refresh",
-            icon_role="selection_text",
-            icon_disabled_role="selection_text",
+        self.briefing_button.setToolTip(
+            "AI tổng hợp DXY, VIX, lợi suất trái phiếu Mỹ và sự kiện ảnh hưởng lớn thành kịch bản phiên"
         )
-        self.news_refresh_button.setToolTip("Tải lại chỉ số thị trường, tin tức & sự kiện (3 tuần)")
-        self.news_refresh_button.clicked.connect(self.refresh_news_section)
-        tab_layout.addWidget(self.news_refresh_button)
+        self.briefing_button.clicked.connect(lambda: self._start_briefing(force=True))
+        btn_layout.addWidget(self.briefing_button)
 
-        layout.addLayout(tab_layout)
+        news_btn = action_button(
+            "Xem tin tức đầy đủ",
+            primary=False,
+            icon="external-link",
+        )
+        news_btn.setToolTip("Mở màn hình Tin tức & Sự kiện")
+        news_btn.clicked.connect(self._open_news_screen)
+        btn_layout.addWidget(news_btn)
+        btn_layout.addStretch()
+        layout.addLayout(btn_layout)
 
-        # Table
-        self.news_table = QTableWidget()
-        configure_table(self.news_table)
-        self.news_table.setColumnCount(8)
-        self.news_table.setHorizontalHeaderLabels(["Thời gian", "Loại", "Nội dung", "Thực tế", "Dự báo", "Kỳ trước", "Nguồn", ""])
-        self.news_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self.news_table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
-        self.news_table.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        self.news_table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
-
-        header = self.news_table.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
-        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
-        header.setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)
-        header.setSectionResizeMode(5, QHeaderView.ResizeMode.Fixed)
-        header.setSectionResizeMode(6, QHeaderView.ResizeMode.Fixed)
-        header.setSectionResizeMode(7, QHeaderView.ResizeMode.Fixed)
-        self.news_table.setColumnWidth(0, 185)
-        self.news_table.setColumnWidth(1, 55)
-        self.news_table.setColumnWidth(3, 85)
-        self.news_table.setColumnWidth(4, 85)
-        self.news_table.setColumnWidth(5, 85)
-        self.news_table.setColumnWidth(6, 115)
-        self.news_table.setColumnWidth(7, 50)
-
-        layout.addWidget(self.news_table)
-
-        # Initial tab style + trigger first load
-        self._update_tab_styles()
-        QTimer.singleShot(1500, self.refresh_news_section)
-        panel.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self._show_briefing_empty(_BRIEFING_IDLE_HINT)
+        # Auto-generate on first paint (guarded: chỉ khi AI đã cấu hình).
+        QTimer.singleShot(2000, self._maybe_auto_briefing)
         return panel
 
-    def refresh_news_section(self) -> None:
-        btn = getattr(self, "news_refresh_button", None)
-        if btn is not None:
-            btn.setEnabled(False)
-            btn.setText("Đang tải...")
-            QApplication.processEvents()
-
-        self._refresh_market_overview()
-
-        # Compute date range: last Monday 00:00 → next Sunday 23:59 (covers all 3 weeks)
-        from zoneinfo import ZoneInfo
-        try:
-            try:
-                settings = self.settings_service.load()
-                tz_str = settings.display.timezone
-            except Exception:
-                tz_str = "Asia/Ho_Chi_Minh"
-            tz = ZoneInfo(tz_str)
-        except Exception:
-            tz = ZoneInfo("Asia/Ho_Chi_Minh")
-
-        now_local = datetime.now(tz)
-        weekday = now_local.weekday()  # Monday=0
-        this_monday = (now_local - timedelta(days=weekday)).replace(
-            hour=0, minute=0, second=0, microsecond=0
-        )
-        from_date = (this_monday - timedelta(days=7)).astimezone(timezone.utc)
-        to_date = (this_monday + timedelta(days=14)).astimezone(timezone.utc)
-
-        if hasattr(self, 'news_worker') and self.news_worker is not None:
-            try:
-                if self.news_worker.isRunning():
-                    if btn is not None:
-                        btn.setText("Làm mới")
-                        btn.setEnabled(True)
-                    return
-            except RuntimeError:
-                pass
-            self.news_worker = None
-        self.news_worker = NewsWorker(currencies=[], from_date=from_date, to_date=to_date)
-        self.news_worker.finished.connect(self._on_news_data_ready)
-        self.news_worker.error.connect(lambda e: self._show_news_empty(f"Lỗi: {e}"))
-        self.news_worker.finished.connect(lambda: self._reset_news_button(btn))
-        self.news_worker.error.connect(lambda: self._reset_news_button(btn))
-        self.news_worker.start()
-
-    def _reset_news_button(self, btn):
-        if btn is not None:
-            btn.setText("Làm mới")
-            btn.setEnabled(True)
-
-    def _on_news_data_ready(self, result: dict) -> None:
-        self._light = self._is_light_theme()
-        self._news_data = result
-
-        from zoneinfo import ZoneInfo
-        try:
-            try:
-                settings = self.settings_service.load()
-                tz_str = settings.display.timezone
-            except Exception:
-                tz_str = "Asia/Ho_Chi_Minh"
-            try:
-                tz = ZoneInfo(tz_str)
-            except Exception:
-                tz = ZoneInfo("Asia/Ho_Chi_Minh")
-        except Exception:
-            tz = ZoneInfo("Asia/Ho_Chi_Minh")
-
-        combined = result.get("combined", [])
-        if not isinstance(combined, list):
-            combined = []
-
-        if not combined:
-            self._show_news_empty("Chưa có dữ liệu tin tức & sự kiện. Kiểm tra kết nối mạng.")
-            return
-
-        # Update date range label
-        try:
-            fd = datetime.fromisoformat(str(result.get("from_date", "")))
-            td = datetime.fromisoformat(str(result.get("to_date", "")))
-            # Convert to user timezone for display
-            fd_local = fd.astimezone(tz) if fd.tzinfo else fd.replace(tzinfo=timezone.utc).astimezone(tz)
-            td_local = td.astimezone(tz) if td.tzinfo else td.replace(tzinfo=timezone.utc).astimezone(tz)
-            self.news_date_range.setText(f"({fd_local.strftime('%d/%m')} — {td_local.strftime('%d/%m')})")
-        except Exception:
-            self.news_date_range.setText("")
-
-        # Update sources label
-        sources = result.get("sources", {})
-        src_text = str(sources.get("headlines", [])).strip("[]").replace("'", "")
-        cal_src = str(sources.get("calendar", ""))
-        if cal_src and cal_src != "unavailable":
-            src_text = (src_text + ", " + cal_src) if src_text else cal_src
-        self.news_source_label.setText(f"Nguồn: {src_text}" if src_text else "")
-
-        now_utc = datetime.now(timezone.utc)
-
-        # Filter by active tab
-        rows = self._filter_news_rows(combined)
-        self._render_news_rows(rows, tz, now_utc, self._news_tab)
-
-    def _filter_news_rows(self, combined: list) -> list:
-        """Filter combined news items by the active week tab (Mon 00:00 – Sun 23:59)."""
-        from zoneinfo import ZoneInfo
-
-        try:
-            try:
-                settings = self.settings_service.load()
-                tz_str = settings.display.timezone
-            except Exception:
-                tz_str = "Asia/Ho_Chi_Minh"
-            tz = ZoneInfo(tz_str)
-        except Exception:
-            tz = ZoneInfo("Asia/Ho_Chi_Minh")
-
-        now_local = datetime.now(tz)
-        weekday = now_local.weekday()  # Monday=0
-        this_monday = (now_local - timedelta(days=weekday)).replace(
-            hour=0, minute=0, second=0, microsecond=0
-        )
-
-        if self._news_tab == "last_week":
-            start_local = this_monday - timedelta(days=7)
-            end_local = this_monday
-        elif self._news_tab == "next_week":
-            start_local = this_monday + timedelta(days=7)
-            end_local = this_monday + timedelta(days=14)
-        else:  # this_week
-            start_local = this_monday
-            end_local = this_monday + timedelta(days=7)
-
-        start_utc = start_local.astimezone(timezone.utc)
-        end_utc = end_local.astimezone(timezone.utc)
-
-        filtered: list[dict] = []
-        for r in combined:
-            dt = r.get("display_time")
-            if isinstance(dt, datetime) and start_utc <= dt < end_utc:
-                filtered.append(r)
-        return filtered
-
-    def _on_news_tab_changed(self, index: int) -> None:
-        if 0 <= index < len(self.news_tab_keys):
-            self._switch_news_tab(self.news_tab_keys[index])
-
-    def _switch_news_tab(self, tab_key: str) -> None:
-        self._news_tab = tab_key
-        self._update_tab_styles()
-        if self._news_data:
-            from zoneinfo import ZoneInfo
-            try:
-                try:
-                    settings = self.settings_service.load()
-                    tz_str = settings.display.timezone
-                except Exception:
-                    tz_str = "Asia/Ho_Chi_Minh"
-                tz = ZoneInfo(tz_str)
-            except Exception:
-                tz = ZoneInfo("Asia/Ho_Chi_Minh")
-            self._render_news_rows(
-                self._filter_news_rows(self._news_data.get("combined", [])),
-                tz,
-                datetime.now(timezone.utc),
-                self._news_tab,
-            )
-
-    def _update_tab_styles(self) -> None:
-        if hasattr(self, "news_tab_bar"):
-            try:
-                idx = self.news_tab_keys.index(self._news_tab)
-                self.news_tab_bar.blockSignals(True)
-                self.news_tab_bar.setCurrentIndex(idx)
-                self.news_tab_bar.blockSignals(False)
-            except ValueError:
-                pass
-
-    def _render_news_rows(self, rows: list, tz, now_utc: datetime, tab_key: str = "this_week") -> None:
-        self._light = self._is_light_theme()
-        palette = current_palette(self.settings_service)
-        table = self.news_table
-        table.setRowCount(0)
-
-        if not rows:
-            self._show_news_empty("Không có mục nào để hiển thị.")
-            return
-
-        # --- Split into zones based on tab context ---
-        past_rows: list[dict] = []
-        nearest_row: dict | None = None
-        future_rows: list[dict] = []
-
-        for row in rows:
-            dt = row.get("display_time")
-            if not isinstance(dt, datetime):
-                future_rows.append(row)
-                continue
-            if dt < now_utc:
-                past_rows.append(row)
-            elif tab_key == "next_week":
-                future_rows.append(row)  # no "nearest" highlight for next week
-            elif nearest_row is None:
-                nearest_row = row
-            else:
-                future_rows.append(row)
-
-        # --- Build display rows with zone headers ---
-        display_rows: list[dict] = []
-
-        if past_rows:
-            display_rows.append({"is_zone_header": True, "zone": "past"})
-            display_rows.extend(past_rows)
-
-        if nearest_row is not None:
-            display_rows.append({"is_zone_header": True, "zone": "nearest"})
-            display_rows.append(nearest_row)
-
-        if future_rows:
-            display_rows.append({"is_zone_header": True, "zone": "future"})
-            display_rows.extend(future_rows)
-
-        # --- Render ---
-        table.setRowCount(len(display_rows))
-        for i, row in enumerate(display_rows):
-            if row.get("is_zone_header"):
-                self._render_zone_header(table, i, str(row.get("zone", "")))
-                continue
-
-            row_type = str(row.get("type", ""))
-            dt = row.get("display_time")
-            zone = self._row_zone(row, past_rows, nearest_row)
-            impact = str(row.get("impact", "")).lower()
-
-            # Determine colors and fonts based on zone and impact
-            bg_color = None
-            fg_color = None
-            is_bold = False
-
-            if zone == "past":
-                fg_color = QColor(palette.text_subtle)
-                bg_color = None  # Let it inherit table's default alternating colors
-                is_bold = False
-            elif zone == "nearest":
-                fg_color = QColor(palette.success)
-                bg_color = semantic_qcolor(
-                    "success",
-                    palette=palette,
-                    alpha=28,
-                )
-                is_bold = True
-            else:  # future zone
-                is_bold = False
-                if row_type == "event":
-                    if impact == "high":
-                        fg_color = QColor(palette.danger)
-                        bg_color = semantic_qcolor(
-                            "danger",
-                            palette=palette,
-                            alpha=25,
-                        )
-                    elif impact == "medium":
-                        fg_color = QColor(palette.warning)
-                        bg_color = semantic_qcolor(
-                            "warning",
-                            palette=palette,
-                            alpha=25,
-                        )
-                    else:
-                        fg_color = None
-                        bg_color = None
-                else:  # headline
-                    fg_color = None
-                    bg_color = None
-
-            # Helper function to style an item
-            def style_item(item: QTableWidgetItem):
-                if fg_color:
-                    item.setForeground(fg_color)
-                if bg_color:
-                    item.setBackground(bg_color)
-                if is_bold:
-                    f = get_body_font()
-                    f.setBold(True)
-                    item.setFont(f)
-
-            # Column 0: Time
-            if isinstance(dt, datetime):
-                local_dt = dt.astimezone(tz) if dt.tzinfo else dt.replace(tzinfo=timezone.utc).astimezone(tz)
-                w_day = local_dt.weekday()
-                w_name = {
-                    0: "Thứ 2",
-                    1: "Thứ 3",
-                    2: "Thứ 4",
-                    3: "Thứ 5",
-                    4: "Thứ 6",
-                    5: "Thứ 7",
-                    6: "Chủ Nhật"
-                }.get(w_day, "")
-                time_text = f"{w_name} ngày {local_dt.strftime('%d/%m %H:%M')}"
-            else:
-                time_text = "—"
-
-            time_item = QTableWidgetItem(time_text)
-            time_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            style_item(time_item)
-            table.setItem(i, 0, time_item)
-
-            # Column 1: Type icon
-            if row_type == "headline":
-                type_kind = "headline"
-                type_tooltip = "Tin tức"
-            else:
-                type_kind = "event"
-                type_tooltip = f"Sự kiện ({impact})"
-
-            type_icon_label = QLabel()
-            type_icon_label.setObjectName("NewsTypeIcon")
-            type_icon_label.setProperty("newsType", type_kind)
-            if type_kind == "event":
-                type_icon_label.setProperty("newsImpact", impact)
-            type_icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            type_icon_label.setToolTip(type_tooltip)
-            table.setCellWidget(i, 1, type_icon_label)
-
-            # Column 2: Content
-            title = str(row.get("title", ""))
-            currency = str(row.get("currency", ""))
-
-            if row_type == "headline":
-                content_text = title
-            else:
-                content_text = f"{currency}: {title}"
-
-            content_item = QTableWidgetItem(content_text)
-            style_item(content_item)
-            table.setItem(i, 2, content_item)
-
-            # Column 3: Actual (bold, colored if deviates from forecast)
-            if row_type == "event":
-                actual = str(row.get("actual", ""))
-            else:
-                actual = "—"
-            # Pre-compute forecast for color comparison below
-            if row_type == "event":
-                forecast = str(row.get("forecast", ""))
-            else:
-                forecast = "—"
-            actual_item = QTableWidgetItem(actual if actual else "—")
-            actual_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            has_actual = actual not in ("", "—")
-            if has_actual:
-                try:
-                    av = float(actual.replace("%", "").replace(",", ""))
-                    fv = float(forecast.replace("%", "").replace(",", ""))
-                    if av > fv:
-                        actual_item.setForeground(QColor(palette.success))
-                    elif av < fv:
-                        actual_item.setForeground(QColor(palette.danger))
-                except (ValueError, TypeError):
-                    pass
-            style_item(actual_item)
-            if has_actual:
-                actual_item.setFont(get_number_font())
-            table.setItem(i, 3, actual_item)
-
-            # Column 4: Forecast
-            fore_item = QTableWidgetItem(forecast if forecast else "—")
-            fore_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            style_item(fore_item)
-            table.setItem(i, 4, fore_item)
-
-            # Column 5: Previous
-            if row_type == "event":
-                previous = str(row.get("previous", ""))
-            else:
-                previous = "—"
-            prev_item = QTableWidgetItem(previous if previous else "—")
-            prev_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            style_item(prev_item)
-            table.setItem(i, 5, prev_item)
-
-            # Column 6: Source
-            source_text = str(row.get("source", ""))
-            short_source = source_text.split(" ")[0][:12] if source_text else "—"
-            src_item = QTableWidgetItem(short_source)
-            src_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            style_item(src_item)
-            table.setItem(i, 6, src_item)
-
-            # Column 7: Action button / link
-            action_item = QTableWidgetItem()
-            style_item(action_item)
-            table.setItem(i, 7, action_item)
-
-            if row_type == "event":
-                link_tone = zone
-                if zone == "nearest":
-                    link_tone = "nearest"
-                elif impact == "high" and zone == "future":
-                    link_tone = "danger"
-                elif impact == "medium" and zone == "future":
-                    link_tone = "warning"
-
-                icon_role = _LINK_TONE_ROLES.get(link_tone, "subtle")
-                detail_btn = QPushButton()
-                detail_btn.setObjectName("NewsIconButton")
-                detail_btn.setProperty("linkTone", link_tone)
-                detail_btn.setToolTip("Xem chi tiết sự kiện")
-                detail_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-                detail_btn.setIcon(flat_icon("eye", icon_role))
-                detail_btn.setIconSize(
-                    QSize(LayoutTokens.ICON_SIZE, LayoutTokens.ICON_SIZE)
-                )
-                hover_filter = LinkToneHoverFilter(
-                    detail_btn, "eye", icon_role, detail_btn
-                )
-                detail_btn.installEventFilter(hover_filter)
-                detail_btn.clicked.connect(lambda checked, r=row: self._show_news_event_detail(r, tz))
-                table.setCellWidget(i, 7, detail_btn)
-            else:
-                url = str(row.get("url", ""))
-                title = str(row.get("title", ""))
-                if url or title:
-                    icon_role = _LINK_TONE_ROLES.get(zone, "subtle")
-                    detail_btn = QPushButton()
-                    detail_btn.setObjectName("NewsIconButton")
-                    detail_btn.setProperty("linkTone", zone)
-                    detail_btn.setToolTip("Xem tóm tắt & chi tiết tin tức")
-                    detail_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-                    detail_btn.setIcon(flat_icon("external-link", icon_role))
-                    detail_btn.setIconSize(
-                        QSize(LayoutTokens.ICON_SIZE, LayoutTokens.ICON_SIZE)
-                    )
-                    hover_filter = LinkToneHoverFilter(
-                        detail_btn, "external-link", icon_role, detail_btn
-                    )
-                    detail_btn.installEventFilter(hover_filter)
-                    detail_btn.clicked.connect(lambda checked, r=row: self._show_headline_detail(r, tz))
-                    table.setCellWidget(i, 7, detail_btn)
-
-        # Auto-scroll to nearest upcoming after render
-        QTimer.singleShot(50, self._scroll_to_nearest)
-
-    def _go_to_nearest(self) -> None:
-        """Switch to this week's tab and scroll to the nearest upcoming item."""
-        if self._news_tab != "this_week":
-            self._switch_news_tab("this_week")
-        else:
-            self._scroll_to_nearest()
-
-    def _scroll_to_nearest(self) -> None:
-        """Scroll the news table so the nearest upcoming item is at the top."""
-        table = self.news_table
-        for r in range(table.rowCount()):
-            item = table.item(r, 0)
-            if item and "SẮP TỚI GẦN NHẤT" in (item.text() or ""):
-                table.scrollToItem(table.item(r + 1, 0) or item, QTableWidget.ScrollHint.PositionAtTop)
-                return
-        # Fallback: scroll to first future zone header
-        for r in range(table.rowCount()):
-            item = table.item(r, 0)
-            if item and "SẮP TỚI" in (item.text() or "") and "GẦN" not in (item.text() or ""):
-                table.scrollToItem(table.item(r + 1, 0) or item, QTableWidget.ScrollHint.PositionAtTop)
-                return
-
-    # ------------------------------------------------------------------
-    # Zone helpers
-    # ------------------------------------------------------------------
-    @staticmethod
-    def _row_zone(row: dict, past_rows: list, nearest_row: dict | None) -> str:
-        """Return 'past', 'nearest', or 'future' for a data row."""
-        if row in past_rows:
-            return "past"
-        if row is nearest_row:
-            return "nearest"
-        return "future"
-
-    def _render_zone_header(self, table: QTableWidget, row_idx: int, zone: str) -> None:
-        """Render a colored zone separator row with full background fill."""
-        configs = {
-            "past": ("─── ĐÃ QUA ───", "muted"),
-            "nearest": ("─── SẮP TỚI GẦN NHẤT ───", "success"),
-            "future": ("─── SẮP TỚI ───", "warning"),
-        }
-        text, role = configs.get(zone, ("───", "muted"))
-        palette = current_palette(self.settings_service)
-        fg_color = semantic_qcolor(role, palette=palette)
-        bg_color = semantic_qcolor(role, palette=palette, alpha=24)
-
-        sep_item = QTableWidgetItem(text)
-        sep_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-        sep_item.setForeground(fg_color)
-        sep_item.setBackground(bg_color)
-        sep_item.setFont(get_subtitle_font())
-        table.setItem(row_idx, 0, sep_item)
-        table.setSpan(row_idx, 0, 1, 5)
-        
-        # Fill rest of row columns with backgrounds to prevent visual glitches on spans
-        for c in range(1, 5):
-            dummy = QTableWidgetItem()
-            dummy.setBackground(bg_color)
-            table.setItem(row_idx, c, dummy)
-            
-    def _show_news_event_detail(self, row: dict, tz) -> None:
-        """Show detail dialog for a calendar event from the news feed."""
-        ev = {
-            "currency": str(row.get("currency", "")),
-            "event": str(row.get("title", "")),
-            "impact": str(row.get("impact", "low")),
-            "forecast": str(row.get("forecast", "")),
-            "previous": str(row.get("previous", "")),
-            "actual": str(row.get("actual", "")),
-            "time_utc": str(row.get("time_utc", "")),
-        }
-        ev_time = row.get("display_time")
-        if isinstance(ev_time, datetime):
-            self._show_event_detail(ev, ev_time, tz)
-
-    def _show_headline_detail(self, row: dict, tz) -> None:
-        """Show detail dialog for a news headline from the feed."""
-        title_text = str(row.get("title", ""))
-        source = str(row.get("source", ""))
-        url = str(row.get("url", ""))
-        dt = row.get("display_time")
-        
-        local_time_str = ""
-        if isinstance(dt, datetime):
-            local_dt = dt.astimezone(tz) if dt.tzinfo else dt.replace(tzinfo=timezone.utc).astimezone(tz)
-            local_time_str = local_dt.strftime("%d/%m/%Y %H:%M")
-
-        dlg = QDialog(self)
-        dlg.setWindowTitle(f"Chi tiết tin tức — {source}")
-        dlg.setMinimumSize(700, 450)
-        dlg.resize(750, 480)
-        dlg.setObjectName("AnalysisDetailDialog")
-
-        root = QVBoxLayout(dlg)
-        root.setContentsMargins(24, 24, 24, 24)
-        root.setSpacing(16)
-
-        # Title
-        title_lbl = QLabel(title_text)
-        title_lbl.setObjectName("ActionTitle")
-        title_lbl.setWordWrap(True)
-        root.addWidget(title_lbl)
-
-        # Info grid — 2 columns
-        info_frame = QFrame()
-        info_frame.setObjectName("TransparentFrame")
-        info_layout = QGridLayout(info_frame)
-        info_layout.setContentsMargins(0, 4, 0, 4)
-        info_layout.setHorizontalSpacing(40)
-        info_layout.setVerticalSpacing(8)
-
-        left_items = [
-            (f'{_rich_dialog_icon("clock")} Thời gian', local_time_str or "—"),
-            (f'{_rich_dialog_icon("book-open")} Nguồn', source),
-        ]
-
-        url_link = f"<a href='{url}' style='color:#ea580c;'>Link gốc</a>" if url else "—"
-        right_items = [
-            (f'{_rich_dialog_icon("external-link")} Liên kết', url_link),
-        ]
-
-        for row_idx, (lbl_txt, val_txt) in enumerate(left_items):
-            lbl = QLabel(compile_rich_html(lbl_txt))
-            lbl.setObjectName("CardDetail")
-            lbl.setFixedWidth(120)
-            lbl.setTextFormat(Qt.TextFormat.RichText)
-            val = QLabel(compile_rich_html(val_txt))
-            val.setObjectName("CardValue")
-            val.setTextFormat(Qt.TextFormat.RichText)
-            val.setWordWrap(True)
-            info_layout.addWidget(lbl, row_idx, 0)
-            info_layout.addWidget(val, row_idx, 1)
-
-        for row_idx, (lbl_txt, val_txt) in enumerate(right_items):
-            lbl = QLabel(compile_rich_html(lbl_txt))
-            lbl.setObjectName("CardDetail")
-            lbl.setFixedWidth(120)
-            lbl.setTextFormat(Qt.TextFormat.RichText)
-            val = QLabel(compile_rich_html(val_txt))
-            val.setObjectName("CardValue")
-            val.setTextFormat(Qt.TextFormat.RichText)
-            val.setWordWrap(True)
-            val.setOpenExternalLinks(True)
-            info_layout.addWidget(lbl, row_idx, 2)
-            info_layout.addWidget(val, row_idx, 3)
-
-        root.addWidget(info_frame)
-
-        # AI analysis area
-        ai_response = QTextEdit()
-        ai_response.setObjectName("ReadonlyText")
-        ai_response.setReadOnly(True)
-        ai_response.setMinimumHeight(140)
-        ai_response.setPlaceholderText("Bấm \"Tóm tắt AI\" để xem tóm tắt và đánh giá tác động...")
-        root.addWidget(ai_response, 1)
-
-        # Buttons
-        btn_layout = QHBoxLayout()
-        btn_layout.setSpacing(10)
-
-        ai_btn = action_button(
-            "Tóm tắt AI",
-            primary=True,
-            icon="bot",
-            icon_role="selection_text",
-        )
-        ai_btn.setObjectName("DialogAiButton")
-        btn_layout.addWidget(ai_btn)
-        btn_layout.addStretch()
-
-        close_btn = action_button(
-            "Đóng",
-            primary=False,
-            color="danger",
-            icon="x",
-            icon_role="danger",
-        )
-        close_btn.clicked.connect(dlg.accept)
-        btn_layout.addWidget(close_btn)
-
-        root.addLayout(btn_layout)
-
-        # Request AI handler
-        def request_summary():
-            ai_btn.setEnabled(False)
-            ai_btn.setText("Đang tóm tắt...")
-            QApplication.processEvents()
-
-            try:
-                settings = self.settings_service.load()
-                active = settings.ai.active_provider()
-                if not active or not (active.api_key or active.api_key_ref):
-                    set_rich_html(
-                        ai_response,
-                        empty_state_html(
-                            "Chưa cấu hình AI. Vào Cài đặt để chọn nhà cung "
-                            "cấp và nhập API key.",
-                            tone="danger",
-                            icon="alert-triangle",
-                            icon_role="danger",
-                        ),
-                    )
-                    ai_btn.setText("Tóm tắt AI")
-                    ai_btn.setEnabled(True)
-                    return
-
-                from services.ai_service import AIService, AIProviderConfig
-                ai_config = AIProviderConfig(
-                    provider=active.provider,
-                    model=active.model,
-                    api_key=active.api_key,
-                    base_url=active.base_url,
-                )
-                ai = AIService(ai_config)
-
-                prompt_lines = [
-                    f"Tóm tắt tin tức tài chính sau bằng tiếng Việt và phân tích tác động tiềm năng của nó tới thị trường tiền tệ (Forex):",
-                    f"- Tiêu đề: {title_text}",
-                    f"- Nguồn: {source}",
-                ]
-                prompt_lines.append("\nHãy phân tích ngắn gọn, trực diện, dễ hiểu cho nhà giao dịch.")
-                prompt = "\n".join(prompt_lines)
-
-                summary_text = ai.analyze(prompt)
-                ai_response.setMarkdown(summary_text)
-
-            except Exception as e:
-                ai_response.setText(f"Lỗi phân tích: {e}")
-            finally:
-                ai_btn.setText("Tóm tắt AI")
-                ai_btn.setEnabled(True)
-
-        ai_btn.clicked.connect(request_summary)
-        dlg.exec()
-
-    def _show_news_empty(self, message: str) -> None:
-        self._light = self._is_light_theme()
-        table = self.news_table
-        table.setRowCount(1)
-        table.setSpan(0, 0, 1, 5)
-        item = QTableWidgetItem(message)
-        item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-        item.setForeground(
-            QColor(current_palette(self.settings_service).text_muted)
-        )
-        table.setItem(0, 0, item)
-    def _show_event_detail(self, ev: dict, ev_time: datetime, tz) -> None:
-        impact = str(ev.get("impact", "low"))
-        currency = str(ev.get("currency", ""))
-        event_name = str(ev.get("event", "Sự kiện"))
-        forecast = str(ev.get("forecast", "--"))
-        previous = str(ev.get("previous", "--"))
-        actual = str(ev.get("actual", ""))
-        # Guard: clear actual for future events
-        now_utc = datetime.now(timezone.utc)
-        if ev_time >= now_utc:
-            actual = ""
-        local_time = ev_time.astimezone(tz)
-        time_str = local_time.strftime("%d/%m/%Y %H:%M")
-
-        dlg = QDialog(self)
-        dlg.setWindowTitle(f"Chi tiết sự kiện — {currency}")
-        dlg.setMinimumSize(700, 480)
-        dlg.resize(750, 520)
-        dlg.setObjectName("AnalysisDetailDialog")
-
-        root = QVBoxLayout(dlg)
-        root.setContentsMargins(24, 24, 24, 24)
-        root.setSpacing(16)
-
-        # Title
-        title = QLabel(f"{currency}: {event_name}")
-        title.setObjectName("ActionTitle")
-        title.setWordWrap(True)
-        root.addWidget(title)
-
-        # Info grid — 2 columns
-        info_frame = QFrame()
-        info_frame.setObjectName("TransparentFrame")
-        info_layout = QGridLayout(info_frame)
-        info_layout.setContentsMargins(0, 4, 0, 4)
-        info_layout.setHorizontalSpacing(40)
-        info_layout.setVerticalSpacing(8)
-
-        impact_map = {
-            "high": f'{_rich_dialog_icon("dot-high", "danger")} Cao',
-            "medium": f'{_rich_dialog_icon("dot-mid", "warning")} Trung bình',
-            "low": f'{_rich_dialog_icon("dot-low", "muted")} Thấp'
-        }
-        impact_text = impact_map.get(impact.lower(), impact)
-
-        left_items = [
-            (f'{_rich_dialog_icon("clock")} Thời gian', time_str),
-            (f'{_rich_dialog_icon("dollar-sign")} Tiền tệ', currency),
-            (f'{_rich_dialog_icon("bar-chart")} Mức tác động', impact_text),
-        ]
-        right_items = [
-            (f'{_rich_dialog_icon("trending-up")} Dự báo', forecast),
-            (f'{_rich_dialog_icon("trending-down")} Kỳ trước', previous),
-        ]
-        actual_val_label = None
-        if actual:
-            right_items.append((f'{_rich_dialog_icon("check", "success")} Kết quả', actual))
-        elif ev_time < now_utc:
-            right_items.append((f'{_rich_dialog_icon("refresh")} Kết quả', "Đang tra cứu..."))
-
-        for row_idx, (label_text, value_text) in enumerate(left_items):
-            lbl = QLabel(compile_rich_html(label_text))
-            lbl.setObjectName("CardDetail")
-            lbl.setFixedWidth(120)
-            lbl.setTextFormat(Qt.TextFormat.RichText)
-            val = QLabel(compile_rich_html(value_text))
-            val.setObjectName("CardValue")
-            val.setMargin(2)
-            val.setTextFormat(Qt.TextFormat.RichText)
-            val.setWordWrap(True)
-            if "Mức tác động" in label_text:
-                val.setProperty("impact", impact.lower())
-            info_layout.addWidget(lbl, row_idx, 0)
-            info_layout.addWidget(val, row_idx, 1)
-
-        for row_idx, (label_text, value_text) in enumerate(right_items):
-            lbl = QLabel(compile_rich_html(label_text))
-            lbl.setObjectName("CardDetail")
-            lbl.setFixedWidth(120)
-            lbl.setTextFormat(Qt.TextFormat.RichText)
-            val = QLabel(compile_rich_html(value_text))
-            val.setObjectName("CardValue")
-            val.setMargin(2)
-            val.setTextFormat(Qt.TextFormat.RichText)
-            val.setWordWrap(True)
-            info_layout.addWidget(lbl, row_idx, 2)
-            info_layout.addWidget(val, row_idx, 3)
-            if value_text == "Đang tra cứu...":
-                actual_val_label = val
-
-        root.addWidget(info_frame)
-
-        if actual_val_label is not None:
-            from services.news_service import NewsService
-            svc = NewsService()
-            if hasattr(self, '_actual_lookup_worker') and self._actual_lookup_worker is not None:
-                try:
-                    if self._actual_lookup_worker.isRunning():
-                        return
-                except RuntimeError:
-                    pass
-                self._actual_lookup_worker = None
-            self._actual_lookup_worker = ActualLookupWorker(currency, event_name, ev_time.strftime("%Y-%m-%d"), svc, forecast, previous)
-            self._actual_lookup_worker.result_ready.connect(
-                lambda result, lbl=actual_val_label: lbl.setText(f"Kết quả: {result}" if result else "Không tìm thấy")
-            )
-            self._actual_lookup_worker.finished.connect(self._actual_lookup_worker.deleteLater)
-            self._actual_lookup_worker.start()
-
-        # AI analysis area
-        self._event_ai_response = QTextEdit()
-        self._event_ai_response.setObjectName("ReadonlyText")
-        self._event_ai_response.setReadOnly(True)
-        self._event_ai_response.setMinimumHeight(140)
-        self._event_ai_response.setPlaceholderText("Bấm \"Xem tác động\" để AI phân tích...")
-        root.addWidget(self._event_ai_response, 1)
-
-        # Buttons
-        btn_layout = QHBoxLayout()
-        btn_layout.setSpacing(10)
-
-        ai_btn = action_button(
-            "Xem tác động",
-            primary=True,
-            icon="bot",
-            icon_role="selection_text",
-        )
-        ai_btn.setObjectName("DialogAiButton")
-        btn_layout.addWidget(ai_btn)
-        btn_layout.addStretch()
-
-        close_btn = action_button(
-            "Đóng",
-            primary=False,
-            color="danger",
-            icon="x",
-            icon_role="danger",
-        )
-        close_btn.clicked.connect(dlg.accept)
-        btn_layout.addWidget(close_btn)
-
-        root.addLayout(btn_layout)
-
-        # Connect AI button
-        ai_btn.clicked.connect(lambda: self._request_ai_impact(ai_btn, ev, self._event_ai_response))
-
-        dlg.exec()
-
-    def _request_ai_impact(self, btn: QPushButton, ev: dict, text_widget: QTextEdit) -> None:
-        btn.setEnabled(False)
-        btn.setText("Đang phân tích...")
-        QApplication.processEvents()
-
+    def _open_news_screen(self) -> None:
+        if self.navigate:
+            self.navigate("news")
+
+    def _active_ai_config(self):
         settings = self.settings_service.load()
         active = settings.ai.active_provider()
         if not active or not (active.api_key or active.api_key_ref):
-            set_rich_html(
-                text_widget,
-                empty_state_html(
-                    "Chưa cấu hình AI. Vào Cài đặt để chọn nhà cung cấp và "
-                    "nhập API key.",
-                    tone="danger",
-                    icon="alert-triangle",
-                    icon_role="danger",
-                ),
-            )
-            btn.setText("Xem tác động")
-            btn.setEnabled(True)
-            return
+            return None
+        from services.ai_service import AIProviderConfig
 
-        from services.ai_service import AIService, AIProviderConfig
-
-        ai_config = AIProviderConfig(
+        return AIProviderConfig(
             provider=active.provider,
             model=active.model,
             api_key=active.api_key,
             base_url=active.base_url,
         )
-        ai = AIService(ai_config)
 
-        currency = str(ev.get("currency", ""))
-        event_name = str(ev.get("event", ""))
-        impact = str(ev.get("impact", ""))
-        forecast = str(ev.get("forecast", "--"))
-        previous = str(ev.get("previous", "--"))
-        actual = str(ev.get("actual", ""))
+    def _maybe_auto_briefing(self) -> None:
+        """Tự tạo bản tin một lần mỗi phiên khi AI đã được cấu hình."""
+        if self._briefing_text:
+            return
+        if self._briefing_worker is not None:
+            return
+        if self._active_ai_config() is None:
+            return
+        self._start_briefing()
 
-        prompt_lines = [
-            f"Phân tích ngắn gọn bằng tiếng Việt sự kiện kinh tế sau:",
-            f"- Sự kiện: {event_name}",
-            f"- Tiền tệ: {currency}",
-            f"- Mức tác động: {impact}",
-            f"- Dự báo: {forecast}",
-            f"- Kỳ trước: {previous}",
-        ]
-        if actual:
-            prompt_lines.append(f"- Kết quả thực tế: {actual}")
-            prompt_lines.append("(Đây là tin đã ra — phân tích dựa trên kết quả thực tế này)")
-        prompt_lines.extend([
-            "",
-            "Trả lời theo cấu trúc sau (dùng markdown, ngắn gọn):",
-            "### 📌 Tin này là gì?",
-            "(Giải thích 1-2 câu)",
-            "",
-            "### 📈 Tác động đến các cặp tiền và tài sản:",
-            f"- Nêu cụ thể từng cặp tiền/tài sản bị ảnh hưởng nếu có ({currency} là chính)",
-            "- Với vàng (XAU), bạc (XAG), BTC: nêu rõ nếu có liên quan",
-            "- Dùng bullet point, mỗi dòng 1 ý",
-            "",
-            "### ⚡ Mức độ ảnh hưởng:",
-            "(Cao/Trung bình/Thấp — kèm lý do ngắn)",
-        ])
-        prompt = "\n".join(prompt_lines)
+    def _start_briefing(self, *, force: bool = False) -> None:
+        if self._briefing_worker is not None:
+            try:
+                if self._briefing_worker.isRunning():
+                    return
+            except RuntimeError:
+                pass
+            self._briefing_worker = None
 
-        text_widget.setPlainText("Đang chờ AI phản hồi...")
+        if not force and self._briefing_text:
+            return
 
-        # Stop any running worker first
-        _prev = getattr(self, '_impact_worker', None)
-        if _prev is not None and _prev.isRunning():
-            _prev.stop_flag = True
-            _prev.quit()
-            _prev.wait(3000)
-
-        class ImpactWorker(QThread):
-            finished = pyqtSignal(str)
-            error = pyqtSignal(str)
-
-            def __init__(self, ai_service, prompt_text):
-                super().__init__()
-                self.ai_service = ai_service
-                self.prompt_text = prompt_text
-                self.stop_flag = False
-
-            def run(self):
-                try:
-                    result = self.ai_service.analyze(self.prompt_text)
-                    if not self.stop_flag:
-                        self.finished.emit(result)
-                except Exception as exc:
-                    if not self.stop_flag:
-                        self.error.emit(str(exc))
-
-        worker = ImpactWorker(ai, prompt)
-        self._impact_worker = worker
-
-        def on_finished(text):
-            lines_out: list[str] = []
-            for line in text.split("\n"):
-                stripped = line.strip()
-                stripped = stripped.replace("**", "").replace("*", "").replace("### ", "").replace("- ", "  • ")
-                if not stripped:
-                    lines_out.append("")
-                else:
-                    lines_out.append(stripped)
-            text_widget.setPlainText("\n".join(lines_out))
-            btn.setText("Xem tác động")
-            btn.setEnabled(True)
-            self._impact_worker = None
-
-        def on_error(err_msg):
-            set_rich_html(
-                text_widget,
-                empty_state_html(
-                    f"Lỗi khi gọi AI: {err_msg}",
-                    tone="danger",
-                ),
+        config = self._active_ai_config()
+        if config is None:
+            self._show_briefing_empty(
+                "Chưa cấu hình AI. Vào Cài đặt để chọn nhà cung cấp và nhập API key.",
+                tone="danger",
             )
-            btn.setText("Xem tác động")
-            btn.setEnabled(True)
-            self._impact_worker = None
+            return
 
-        worker.finished.connect(on_finished)
-        worker.error.connect(on_error)
+        self.briefing_button.setEnabled(False)
+        self.briefing_button.setText("Đang soạn...")
+        QApplication.processEvents()
+
+        self.briefing_text.clear()
+        self.briefing_text.setPlainText("Đang chờ AI phản hồi...\n\n")
+        self.briefing_status_label.setText("Đang chuẩn bị dữ liệu...")
+
+        worker = BriefingWorker(
+            config,
+            market_values=self._market_values,
+            tz=_display_timezone(self.settings_service),
+        )
+        self._briefing_worker = worker
+        worker.status.connect(self._on_briefing_status)
+        worker.events_ready.connect(self._on_briefing_events)
+        worker.chunk_ready.connect(self._on_briefing_chunk)
+        worker.finished.connect(self._on_briefing_finished)
+        worker.error.connect(self._on_briefing_error)
         worker.finished.connect(worker.deleteLater)
         worker.error.connect(worker.deleteLater)
         worker.start()
+
+    def _on_briefing_status(self, message: str) -> None:
+        self.briefing_status_label.setText(message)
+
+    def _on_briefing_events(self, events: list) -> None:
+        tz = _display_timezone(self.settings_service)
+        now_utc = datetime.now(timezone.utc)
+        parts: list[str] = []
+        for ev in events[:3]:
+            dt = ev.get("display_time")
+            if not isinstance(dt, datetime):
+                continue
+            local_dt = (
+                dt.astimezone(tz) if dt.tzinfo else dt.replace(tzinfo=timezone.utc).astimezone(tz)
+            )
+            when = local_dt.strftime("%d/%m %H:%M")
+            hours = (dt - now_utc).total_seconds() / 3600
+            countdown = f" (còn ~{hours:.0f}h)" if hours >= 1 else " (sắp diễn ra)"
+            name = f"{str(ev.get('currency', ''))} {str(ev.get('event', ''))}".strip()
+            parts.append(f"{name} — {when}{countdown}")
+        if parts:
+            self.briefing_next_event_label.setText(
+                "Sự kiện ảnh hưởng lớn sắp tới: " + " · ".join(parts)
+            )
+        else:
+            self.briefing_next_event_label.setText(
+                "Không có sự kiện ảnh hưởng lớn nào trong 72 giờ tới."
+            )
+
+    def _on_briefing_chunk(self, chunk: str) -> None:
+        self.briefing_text.insertPlainText(chunk)
+        scrollbar = self.briefing_text.verticalScrollBar()
+        if scrollbar is not None:
+            scrollbar.setValue(scrollbar.maximum())
+
+    def _on_briefing_finished(self, result: dict) -> None:
+        self._briefing_text = str(result.get("text", ""))
+        self._briefing_cache_key = str(result.get("cache_key", ""))
+        tz = _display_timezone(self.settings_service)
+        now_local = datetime.now(tz)
+        self.briefing_date_label.setText(f"({now_local.strftime('%d/%m/%Y')})")
+        self.briefing_text.setMarkdown(self._briefing_text)
+        self.briefing_status_label.setText(
+            f"Đã tạo lúc {now_local.strftime('%H:%M')} — tổng hợp từ chỉ số thị trường & lịch kinh tế"
+        )
+        self._on_briefing_events(result.get("events", []))
+        self._reset_briefing_button()
+        self._briefing_worker = None
+
+    def _on_briefing_error(self, message: str) -> None:
+        self._show_briefing_empty(f"Lỗi khi soạn bản tin: {message}", tone="danger")
+        self.briefing_status_label.setText("")
+        self._reset_briefing_button()
+        self._briefing_worker = None
+
+    def _reset_briefing_button(self) -> None:
+        self.briefing_button.setText("Tạo lại bản tin")
+        self.briefing_button.setEnabled(True)
+
+    def _show_briefing_empty(self, message: str, tone: str = "muted") -> None:
+        icon = "alert-triangle" if tone == "danger" else "bot"
+        icon_role = "danger" if tone == "danger" else "text"
+        set_rich_html(
+            self.briefing_text,
+            empty_state_html(message, tone=tone, icon=icon, icon_role=icon_role),
+        )
 
     def _refresh_market_overview(self) -> None:
         """Fetch market overview data using MarketWorker to avoid freezing UI."""

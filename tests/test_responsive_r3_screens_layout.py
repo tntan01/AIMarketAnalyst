@@ -96,21 +96,6 @@ def _journal_entry(index: int):
     )
 
 
-def _news_rows() -> list[dict[str, Any]]:
-    return [
-        {
-            "time": f"2026-09-19T{hour:02d}:30:00+00:00",
-            "impact": "high" if hour % 3 == 0 else "medium",
-            "content": "Dữ liệu việc làm và lạm phát khu vực đồng Euro công bố",
-            "actual": "2.4%",
-            "forecast": "2.3%",
-            "previous": "2.2%",
-            "source": "ForexFactory",
-        }
-        for hour in range(6, 18)
-    ]
-
-
 def _order_rows() -> list[dict[str, Any]]:
     return [
         {
@@ -177,8 +162,6 @@ def _open(shell: Any, route: str, viewport: tuple[int, int]) -> QWidget:
         screen._positions = _order_rows()
         screen._pending_orders = _order_rows()[:2]
         screen._render_table()
-    elif route == "dashboard":
-        screen._render_news_rows(_news_rows(), timezone.utc, datetime.now(timezone.utc))
     app.processEvents()
     return screen
 
