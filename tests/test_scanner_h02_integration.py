@@ -207,3 +207,68 @@ def test_controller_packet_cutoff_survives_worker_delay_across_h1_h4_boundary(
     assert seen["snapshot_captured_at"] == cutoff
     assert isinstance(seen["run_now"], datetime)
     assert seen["run_now"] > cutoff
+
+
+def test_slow_scan_uses_packet_observation_for_freshness():
+    """Regression (31/31 "Không đủ dữ liệu"): a slow scan must not age out.
+
+    The PIT cutoff is frozen just before a symbol's history request, but the
+    analysis can run minutes later (a cold MT5 downloads history sequentially).
+    The composition freshness clock must therefore be the packet's own source
+    observation instant (``v4_observed_at``), not the worker's later wall clock,
+    otherwise ``compose_scanner`` sees ``now - captured_at > 120s`` and demotes
+    every row to ``DATA_UNAVAILABLE``.
+    """
+    from core.scanner_live_producers import build_live_market_safety_context
+    from controllers import scanner_controller
+
+    d1, h4, h1 = _live_candles()
+    wall_now = datetime.now(timezone.utc)
+    captured_at = wall_now - timedelta(seconds=600)  # frozen before the fetch
+    observed_at = captured_at + timedelta(seconds=5)  # fetch finished 5s later
+    safety = build_live_market_safety_context(
+        "XAU/USD",
+        observed_at,
+        terminal_connected=True,
+        broker_logged_in=True,
+        connectivity_checked_at=observed_at,
+        last_candle_time_utc=observed_at,
+        last_tick_time_utc=observed_at,
+        data_checked_at=observed_at,
+        spread_points=20.0,
+        spread_checked_at=observed_at,
+        news_source_verified=True,
+        news_checked_at=observed_at,
+        volatility_ratio=1.0,
+        volatility_checked_at=observed_at,
+    )
+    packet = {
+        "symbol": "XAU/USD",
+        "broker_symbol": "XAUUSDc",
+        "candles": {"D1": d1, "H4": h4, "H1": h1},
+        "macro_context": {},
+        "input_timestamps": {},
+        "v4_safety": safety,
+        "v4_captured_at": captured_at,
+        "location_cutoff": captured_at,
+        "v4_observed_at": observed_at,
+        "account": None,
+        "portfolio": None,
+        "journal": None,
+    }
+
+    row = scanner_controller._analyze_one_symbol(
+        packet,
+        correlation_context={},
+        freshness_multiplier=1.0,
+        contract_size_overrides={},
+        analysis_input_kwargs={},
+        closed_trades=[],
+        account_guard_settings={},
+    )
+
+    # The exact regression: before the fix ``now`` was the worker wall clock,
+    # so ``now - captured_at`` was 600s and every row carried SNAPSHOT_STALE.
+    # (This fixture's canonical SMC still fails closed for its own reason, so
+    # the status itself may be DATA_UNAVAILABLE — but never for staleness.)
+    assert "SNAPSHOT_STALE" not in (row.get("reason_codes") or [])

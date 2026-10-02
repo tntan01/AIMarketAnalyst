@@ -154,9 +154,13 @@ yêu cầu backtest cho Location.
 - Giới hạn cửa sổ nến; chỉ tối ưu thêm khi có số đo cho thấy chậm, không thêm
   hạ tầng dự phòng theo giả định.
 
-Cutoff được đóng băng trước khi lấy history và đi xuyên packet → analysis →
-snapshot. UI đọc detail versioned bằng template/semantic palette chung. Chưa có
-nghiệm thu production smoke; broker không gửi lệnh trong smoke hiện tại.
+Cutoff được đóng băng ngay trước mỗi request history của từng symbol và đi xuyên
+packet → analysis → snapshot (không dùng wall-clock của worker để chọn nến đã
+đóng). Thời điểm đánh giá freshness là `v4_observed_at` của chính packet, tách
+khỏi cutoff, nên một lần quét tuần tự chậm (MT5 nạp history lần đầu) không làm
+mọi row thành `SNAPSHOT_STALE`. UI đọc detail versioned bằng template/semantic
+palette chung. Chưa có nghiệm thu production smoke; broker không gửi lệnh trong
+smoke hiện tại.
 Checkpoint rollback/config: `reports/scanner/location-r5-checkpoint.json`.
 
 ## Phạm vi symbol được hỗ trợ

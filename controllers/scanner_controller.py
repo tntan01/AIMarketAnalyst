@@ -831,15 +831,20 @@ class ScannerController:
         )
 
         # ---- Phase 1: fetch MT5 data sequentially (MT5 works best single-threaded) ----
-        # Freeze the point-in-time boundary before the first history request.
-        # Worker/evaluation time may be later, but it must never decide which
-        # H1/H4 candles were closed for this packet.
-        history_cutoff = datetime.now(timezone.utc)
+        # Freeze the point-in-time boundary just before EACH symbol's history
+        # request.  Worker/evaluation time must never decide which H1/H4 candles
+        # were closed for a packet, so the cutoff travels through the packet to
+        # analysis/snapshot.  It is frozen per symbol (not once per scan): the
+        # sequential fetch can take minutes on a cold MT5, and the composition
+        # freshness SLA compares the snapshot's captured_at against the packet's
+        # own observation instant (``v4_observed_at``), so a single scan-level
+        # cutoff would mark every late symbol SNAPSHOT_STALE.
         _record_performance(performance, "start_phase", "mt5_fetch")
         packets: list[dict[str, Any] | None] = []
         for i, symbol in enumerate(request.symbols):
             progress(19 + int(i / total * 30), f"Đang tải dữ liệu {symbol} ({i + 1}/{total})...")
             symbol_fetch_started = perf_counter()
+            symbol_capture_cutoff = datetime.now(timezone.utc)
             try:
                 pkt = _fetch_one_symbol_mt5(
                     symbol,
@@ -857,7 +862,7 @@ class ScannerController:
                         )
                     ),
                     history_cache_identity=mt5_history_cache_identity,
-                    capture_cutoff=history_cutoff,
+                    capture_cutoff=symbol_capture_cutoff,
                     v4_account=v4_account,
                     v4_portfolio=v4_portfolio,
                     v4_journal=v4_journal,
@@ -903,7 +908,7 @@ class ScannerController:
             ),
             "ai_service": ai_svc,
             # F-BCTX-01: NO ``context_cache_root`` here.  The live scan freezes a
-            # NEW ``history_cutoff = now(UTC)`` every scan and runs exactly ONE
+            # NEW ``history_cutoff = now(UTC)`` per symbol and runs exactly ONE
             # ``_analyze_one_symbol`` per symbol, so no two real callers ever
             # share a (symbol, cutoff, candles) key: the seam could only miss and
             # write a record nobody reads, into a directory retention does not
@@ -3267,7 +3272,12 @@ def _analyze_one_symbol(
     ``now`` is the observation instant this row is composed against.  It is the
     clock the composition freshness SLA compares the snapshot to, so a caller
     that must produce a repayable row pins it together with the data it placed
-    at that instant; production passes nothing and keeps reading the UTC clock.
+    at that instant.  Production passes nothing, and the default reads the
+    packet's own source observation instant (``v4_observed_at``, stamped after
+    that symbol's history fetch): the snapshot's PIT ``captured_at`` is frozen
+    just before the fetch, so comparing it to the WORKER's later clock would
+    mark every late symbol of a slow scan SNAPSHOT_STALE.  Packets without an
+    observation instant (direct/test callers) fall back to the UTC clock.
 
     ``context_cache_root`` is the explicit injection point of the canonical
     CONTEXT cache (``core.smc_context_cache``).  **No production caller passes it
@@ -3286,7 +3296,15 @@ def _analyze_one_symbol(
         if isinstance(pkt.get("macro_context"), dict)
         else {}
     )
-    now = now if now is not None else datetime.now(timezone.utc)
+    observed_at = pkt.get("v4_observed_at")
+    if now is None:
+        now = (
+            observed_at
+            if isinstance(observed_at, datetime)
+            and observed_at.tzinfo is not None
+            and observed_at.utcoffset() is not None
+            else datetime.now(timezone.utc)
+        )
     try:
         analysis_cutoff = pkt.get("location_cutoff", pkt.get("v4_captured_at"))
         if not isinstance(analysis_cutoff, datetime):
