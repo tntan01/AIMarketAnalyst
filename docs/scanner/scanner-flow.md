@@ -156,6 +156,14 @@ mục Bước 7.
 
 Các lỗi dữ liệu phải được biểu diễn bằng status/reason code; không được coi giá trị thiếu là điều kiện đã đạt.
 
+**Ca đấu nối b (đặc tả đã ghi 02/10/2026 — CHƯA TRIỂN KHẢI):** macro context
+chuyển từ `NewsService` (tự fetch mạng) sang provider đọc `NewsRepository`
+(`news.db`); `news_in_3h` thật được đưa vào analysis (hiện hardcode `False`)
+và `news_events` được truyền vào safety context (hiện thiếu). Gate/policy giữ
+nguyên. Hợp đồng thi hành:
+[`../macro/macro_score_architecture.md`](../macro/macro_score_architecture.md)
+mục 0.
+
 ## 5. Candidate Engine
 
 **Nguồn chính:** `core/scanner_candidate_engine.py`, `core/scanner_strategy_engine.py`, `core/scanner_models.py`.

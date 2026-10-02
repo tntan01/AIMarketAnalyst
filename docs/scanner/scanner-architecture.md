@@ -327,6 +327,16 @@ thật khi thị trường lành mạnh — xem §13.1 (block "Năm producer liv
 
 Module canonical: `core/market_safety_gate.py`.
 
+**Gap đã ghi (02/10/2026 — sẽ vá ở ca đấu nối b, đặc tả
+[`../macro/macro_score_architecture.md`](../macro/macro_score_architecture.md)
+mục 0):** producer live hiện chưa truyền `news_events` vào
+`build_live_market_safety_context` (chỉ `news_source_verified`), nên sub-gate
+News ở bảng trên không thấy event thật để chặn trong luồng quét; đồng thời
+`news_in_3h` từ `data_quality_flags` bị hardcode `False` tại
+`_analyze_one_symbol` (regime không bao giờ thấy cờ). Cả hai được vá trong cùng
+ca đấu nối b, khi macro/news context chuyển sang đọc `news.db` qua
+`NewsRepository`.
+
 ### 5.3 MacroGate
 
 `MacroAssessment` giữ:
@@ -364,6 +374,15 @@ Với cấu hình này MacroGate trả `UNKNOWN` khi chưa đủ policy để k�
 hành vi mặc định có chủ ý, không phải lỗi runtime.
 
 Module canonical: `core/macro_gate.py`.
+
+**Nguồn dữ liệu (ca đấu nối b — đặc tả đã ghi 02/10/2026, CHƯA TRIỂN KHAI):**
+`macro_raw_buy/sell` + `macro_confidence` sẽ do provider đọc `NewsRepository`
+(`news.db`) sản xuất thay cho `news_service.py` tự fetch mạng; mapping từng
+thành phần ở
+[`../macro/macro_score_architecture.md`](../macro/macro_score_architecture.md)
+mục 0.2. Gate, `MacroPolicy` (§13.1) và vị trí đánh giá (một lần, selected
+side) không đổi. Verdict AI của miền Tin tức **không** vào assessment/gate
+(advisory-only, QĐ owner 20/09/2026 — news-architecture §9.2).
 
 ### 5.4 Gate còn lại
 

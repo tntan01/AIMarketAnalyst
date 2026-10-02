@@ -787,13 +787,13 @@ liên quan đồng tiền nào và có thể tác động ra sao, cần theo dõ
 ## 12. Tài liệu liên quan (trỏ, không chép — D5)
 
 Viết **sau** khi phần Tin tức được duyệt và triển khai (theo quyết định Owner
-20/09/2026 — làm phần news trước):
+20/09/2026 — làm phần news trước; phần Tin tức đã nghiệm thu 29/09/2026):
 
 | Tài liệu | Nội dung tiếp nhận từ miền này |
 |---|---|
 | `docs/ui/screen_design.md` | **ĐÃ GHI 20/09/2026 + IMPLEMENTED 23/09/2026:** màn Quản lý tin + layout cửa sổ AI (mục News Screen — ca Tin tức đã nghiệm thu). **Đợt 5 (ghi 28/09/2026 — chưa triển khai):** thiết kế lại cửa sổ AI thành 3 tab (Tổng quan 11 tài sản + batch, Chi tiết, Cặp forex) theo §9.3. **Viết sau (ca đấu nối a):** đặc tả hiển thị mục tin Dashboard (cột/tab/dialog/empty state) — tiêu thụ hợp đồng repository mục 8 |
-| `docs/macro/macro_score_architecture.md` | Mapping 3 tier + gate sang đọc DB; hệ quả fail-closed từ `store_state`/`stale`; công thức và ngưỡng vĩ mô giữ nguyên |
-| `docs/scanner/scanner-architecture.md` + `scanner-flow.md` | MacroGate/news gate đọc `events_in_range` + trạng thái `stale` — fail-closed: độ tươi dữ kiện FF phụ thuộc kỷ luật dán mã nguồn của người dùng (đợt 3, 24/09/2026 — không còn đường tự chữa `event_actual_or_lookup`); khẳng định verdict AI ngoài guard chain |
+| `docs/macro/macro_score_architecture.md` | **ĐÃ GHI 02/10/2026 (mục 0 — đặc tả ca đấu nối b, owner đã duyệt, CHƯA TRIỂN KHAI):** mapping 3 tier + gate sang đọc DB; hệ quả fail-closed từ `store_state`/`stale`; công thức và ngưỡng vĩ mô giữ nguyên; lộ trình 4 bước B3 → port/provider → đấu nối + xóa path cũ (D2) → vận hành |
+| `docs/scanner/scanner-architecture.md` + `scanner-flow.md` | **ĐÃ GHI 02/10/2026 (§5.2/§5.3 + flow §4 — CHƯA TRIỂN KHAI):** MacroGate/news gate đọc `events_in_range` + trạng thái `stale` — fail-closed: độ tươi dữ kiện FF phụ thuộc kỷ luật dán mã nguồn của người dùng (đợt 3, 24/09/2026 — không còn đường tự chữa `event_actual_or_lookup`); khẳng định verdict AI ngoài guard chain; ghi nhận 2 gap hiện hành (`news_events` chưa vào safety context, `news_in_3h` hardcode `False`) sẽ vá cùng ca đấu nối b |
 | `docs/architecture/architecture.md` | Bản đồ module/luồng dữ liệu mới; xóa mô tả `news_service.py` cũ |
 | `docs/architecture/architecture-rules.md` (Phụ lục B) | **ĐÃ GHI 20/09/2026:** ngoại lệ E3 cho ca "đập đi – xây mới"; cập nhật mốc xử lý sổ nợ #1 |
 | `docs/README.md` | **ĐÃ ĐĂNG KÝ 20/09/2026** vào danh sách tài liệu chính (D3) |

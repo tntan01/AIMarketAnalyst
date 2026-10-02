@@ -235,6 +235,32 @@ Miền Tin tức (tầng dữ liệu) đã mở rộng theo **đợt 5** (contra
 - **Dialog có panel "độ phủ theo chân trời":** tab Chi tiết hiển thị số dòng
   từng cửa sổ (chỉ đọc, không gọi AI) + rate path/delta 3m/6m ở dòng ngữ cảnh.
 
+## Scanner — sửa freshness `SNAPSHOT_STALE` (02/10/2026)
+
+Lần quét 31 cặp sáng 02/10/2026 (MT5 nguội, fetch tuần tự ~220 giây) đánh dấu
+**31/31 row `DATA_UNAVAILABLE`/`SNAPSHOT_STALE`**: cutoff PIT bị đóng băng một
+lần ở đầu quét nhưng `now` của composition lấy wall-clock sau khi fetch xong,
+vượt `SNAPSHOT_MAX_AGE_SECONDS` (120 giây). Đã sửa: cutoff PIT đóng băng ngay
+trước request history **của từng symbol** và `now` mặc định đọc `v4_observed_at`
+của chính packet (thời điểm quan sát nguồn). Regression:
+`tests/test_scanner_h02_integration.py::test_slow_scan_uses_packet_observation_for_freshness`
+(toàn bộ test scanner 1397 passed). Thay đổi chưa commit tại thời điểm ghi.
+
+## Kế hoạch đấu nối (b) — vĩ mô đọc miền Tin tức (02/10/2026)
+
+Owner đã duyệt phương án: **MacroGate/MacroPolicy giữ nguyên, chỉ thay nguồn
+dữ liệu** `macro_raw_buy/sell` + `macro_confidence` — từ provider đọc
+`NewsRepository` (`news.db`) thay `news_service.py` tự fetch mạng; bỏ AI stance
+khỏi Tier 1; confidence/freshness từ `store_state` (per-scope). Đặc tả:
+`docs/macro/macro_score_architecture.md` mục 0 (**CHƯA code** — thi hành 4
+bước: B3 pin → port `core/macro_tiers.py` + provider → đấu nối 4 seam + xóa
+`news_service.py`/`forex_factory_client.py`/`interest_rate_service.py` cùng
+commit (D2) → vận hành với reason code `MACRO_CALENDAR_STALE` + hint UI "Cần
+dán lịch FF"). Hai gap đã ghi sẽ vá trong ca này: `news_events` chưa vào
+safety context, `news_in_3h` hardcode `False` (chi tiết
+`docs/scanner/scanner-architecture.md` §5.2/§5.3). Plan thi hành cho CODER:
+`docs/plans/macro-news-cutover-b-plan.md` (8 work item, 4 điểm dừng bắt buộc).
+
 ## Khôi phục cấu hình
 
 Bản sao cấu hình trước thay đổi (thời điểm 24/07/2026) được lưu tại:

@@ -21,6 +21,93 @@ diagnostics, Bước 5 event-impact derate và Bước 6 AI Macro Verdict.
 
 ---
 
+## 0. Đấu nối vĩ mô vào miền Tin tức (ca đấu nối b)
+
+**Trạng thái: đặc tả ĐÃ GHI 02/10/2026 — owner đã duyệt phương án, CHƯA TRIỂN
+KHAI.** Runtime hiện hành vẫn đọc `services/news_service.py` (tự fetch mạng:
+ForexFactory JSON/HTML, Google News RSS, FRED, Yahoo ^TNX/^FVX). Mục này là hợp
+đồng thi hành ca đấu nối (b) của
+[`../news/news-architecture.md`](../news/news-architecture.md) §3.1 mục 3b/4 +
+§12; các mục 1–20 bên dưới vẫn là contract V1 cũ (giữ cho audit/replay, không
+đổi).
+
+### 0.1 Nguyên tắc
+
+- **Gate không đổi.** `core/macro_gate.py`, `MacroPolicy` (deadband 3 /
+  confidence 0.6 / conflict_cap `WATCH_ZONE` / unknown_cap `DATA_UNAVAILABLE` —
+  `scanner-architecture.md` §13.1, `config/scanner_order_policy.json`) và vị
+  trí đánh giá (một lần, selected side) giữ nguyên. Tích hợp là **thay nguồn
+  dữ liệu** cho `macro_raw_buy/sell` + `macro_confidence`, không phải sửa gate.
+- **Công thức giữ nguyên, port nguyên thức.** Ba tier 0–30 được port nguyên
+  công thức từ `news_service._compute_macro_tiers/_macro_tier1/2/3` sang module
+  thuần `core/macro_tiers.py` (L2 — tách khỏi I/O; đúng quy tắc
+  news-architecture §3: công thức chấm điểm không nằm trong `services/`).
+- **Một nguồn chân lý, không dual-run.** Bên tiêu thụ chỉ ĐỌC qua
+  `NewsRepository` (S1); không bên tiêu thụ nào gọi nguồn ngoài; cutover
+  atomic, xóa path cũ cùng commit (D2).
+
+### 0.2 Mapping nguồn dữ liệu (news.db → `macro_context`)
+
+| Thành phần `macro_context` | Đọc từ | Ghi chú |
+|---|---|---|
+| `events` (Tier 2, safety news, `news_in_3h`) | `NewsRepository.events_in_range` | Status re-classified lúc đọc (`news_freshness`); lịch FF chỉ tồn tại khi người dùng dán mã nguồn trang (đợt 3, 24/09/2026) |
+| `latest_headlines` (Tier 1/3) | `items_in_range` | Tôn trọng cờ `excluded` (mặc định của repository) |
+| Tier 1 — lãi suất | `latest_rates` + `rate_paths` (`core/rate_trend`) | **Bỏ AI stance** khỏi Tier 1 (căn cứ: Bước 6 AI Macro Verdict đã gỡ 16/08/2026; verdict AI advisory-only 20/09/2026) |
+| Tier 1 — đường cong | `latest_bond_yields` (`core/yield_context`) | Thay fetch Yahoo ^TNX/^FVX. **Đổi series có chủ ý:** 10y–5y cũ → 2y/10y/spread/real yield từ `bond_yields` (đợt 5–6, giai đoạn 1 chỉ USD); đồng không USD thiếu dữ liệu → thành phần đó thiếu (fail-closed theo công thức), không bịa |
+| Tier 3 — sentiment/địa chính trị | `items_in_range` (headline + statements) | |
+| `macro_data_quality` + freshness | `store_state` → `core/news_freshness` (fresh/stale/unavailable từng producer) | Thay "tuổi lần fetch cuối" (1.0/0.85/0.6 theo 4h/24h) bằng trạng thái ingest thật từng phạm vi — semantics đổi có chủ ý, đối chiếu B3 (§0.4) không áp dụng cho thành phần đổi nguồn |
+
+Shape `macro_context` đầu ra **giữ nguyên key** (`macro_alignment_scores`,
+`macro_data_quality`, `events`, ...) để packet Scanner và
+`_analyze_one_symbol` → `build_live_snapshot` → `compose_scanner` không đổi.
+
+### 0.3 Hệ quả fail-closed phải hiển thị rõ
+
+- Người dùng không dán mã nguồn FF → phạm vi calendar `stale`/`unavailable` →
+  confidence tụt → MacroGate `UNKNOWN` → row BLOCKED/`DATA_UNAVAILABLE`. Đây là
+  hành vi đúng (fail-closed) nhưng phải nhìn thấy được: thêm reason code
+  `MACRO_CALENDAR_STALE` (phân biệt với `MACRO_LOW_CONFIDENCE`) và hint UI
+  "Cần dán lịch FF" trên Scanner khi phạm vi calendar không tươi.
+- Sau khi đạt tương đương, mới cân nhắc hiệu chỉnh `confidence_threshold` theo
+  semantics freshness mới (kiểu Bước 09, data-driven — **không** đổi số trong
+  ca đấu nối).
+
+### 0.4 Lộ trình thi hành (4 bước, B3 → đấu nối → D2)
+
+1. **Ghim hành vi (B3, làm trước):** test characterization pin đầu ra vĩ mô
+   hiện tại (fixed `macro_context` fixture → macro raws, confidence, gate
+   statuses aligned/neutral/conflict/low-confidence cho vài symbol đại diện) —
+   oracle tương đương sau đấu nối (trừ các thành phần đổi nguồn đã ghi ở §0.2).
+2. **Port + provider:** `core/macro_tiers.py` (thuần) +
+   `services/news_macro_provider.py` dựng cùng shape `macro_context` từ
+   `NewsRepository`; bỏ toàn bộ HTTP trên đường vĩ mô (SQLite local); bỏ AI
+   stance.
+3. **Đấu nối (D2, xóa path cũ cùng commit):** đổi 4 seam đang gọi
+   `news_service` — `preload_macro_contexts` + `macro_freshness_status` +
+   `data_quality_flags` (Scanner) và `execution_news_status` (re-validation
+   trước gửi lệnh) — sang provider; vá 2 gap đã ghi tại
+   `scanner-architecture.md` §5.2 (`news_events` chưa vào safety context) và
+   `news_in_3h` hardcode `False`; xóa `services/news_service.py`,
+   `services/forex_factory_client.py`, `services/interest_rate_service.py` +
+   cache đĩa tin cũ + test của path cũ; chạy lại B3 pin đối chiếu.
+4. **Vận hành:** reason code/hint theo §0.3; theo dõi tần suất
+   `MACRO_CALENDAR_STALE` trước khi quyết định hiệu chỉnh ngưỡng.
+
+### 0.5 Phạm vi cố tình không đụng
+
+- **Verdict AI (`ai_trend_verdicts`) và `pair_bias`:** advisory-only (QĐ owner
+  20/09/2026, news-architecture §9.2) — không vào assessment/gate; đổi ranh
+  giới này là quyết định owner mới, không nối ngầm.
+- **VIX / correlation context (`market_data_service` + Bước 7 VIX pair
+  sensitivity):** thuộc correlation/regime, không thuộc MacroGate — ca riêng;
+  `macro_market_cache` giữ lại cho đường này.
+- **Giá trị MacroPolicy** (deadband/confidence/caps): giữ nguyên trong ca đấu
+  nối.
+
+---
+
+---
+
 ## Phase 15 Changelog Summary
 
 | Phase | Date | Change | Impact |
