@@ -23,13 +23,35 @@ diagnostics, Bước 5 event-impact derate và Bước 6 AI Macro Verdict.
 
 ## 0. Đấu nối vĩ mô vào miền Tin tức (ca đấu nối b)
 
-**Trạng thái: đặc tả ĐÃ GHI 02/10/2026 — owner đã duyệt phương án, CHƯA TRIỂN
-KHAI.** Runtime hiện hành vẫn đọc `services/news_service.py` (tự fetch mạng:
-ForexFactory JSON/HTML, Google News RSS, FRED, Yahoo ^TNX/^FVX). Mục này là hợp
-đồng thi hành ca đấu nối (b) của
+**Trạng thái: IMPLEMENTED (03/10/2026).** Runtime đọc `NewsMacroProvider`
+(`services/news_macro_provider.py`) → `NewsRepository` (`news.db`); công thức
+3-tier nằm ở module thuần `core/macro_tiers.py`; ba service cũ
+(`services/news_service.py`, `services/forex_factory_client.py`,
+`services/interest_rate_service.py`) **đã xóa**. Mục này là hợp đồng thi hành ca
+đấu nối (b) của
 [`../news/news-architecture.md`](../news/news-architecture.md) §3.1 mục 3b/4 +
-§12; các mục 1–20 bên dưới vẫn là contract V1 cũ (giữ cho audit/replay, không
-đổi).
+§12; các mục 1–20 bên dưới vẫn là contract V1 cũ (ghi chú lịch sử cho
+audit/replay — các file `news_service.py`/`forex_factory_client.py`/
+`interest_rate_service.py` được nhắc ở đó **không còn tồn tại**, không đổi).
+
+**Bốn thay đổi nguồn CÓ CHỦ Ý** (dùng để đối chiếu pin B3 —
+`tests/test_macro_cutover_b3_pin.py`; ngoài bốn điểm này, kết quả chấm điểm phải
+khớp tuyệt đối với đường cũ):
+
+| # | Thay đổi | Nguồn mới |
+|---|---|---|
+| (a) | AI stance bỏ khỏi Tier 1 → stance **keyword** | headline trong `news.db` (`currency_stance`) |
+| (b) | Chuỗi đường cong **10y-5y → 2y/10y** | `latest_bond_yields` (`bond_yields`) |
+| (c) | Freshness theo **`store_state`** thay "tuổi lần fetch cuối": `confidence_multiplier` = worst-of-4 scope; riêng News sub-gate đọc **`news_events_scope()`** (chỉ scope `events`) | `ingest_runs` |
+| (d) | Events **KHÔNG fallback chéo currency** (quyết định Owner 03/10/2026): cặp không có event nào của 2 currency mình → `events` rỗng, `macro_data_quality` −0.10, fail-closed | `events_in_range` (lọc theo 2 currency của cặp) |
+
+**Nghiệm thu runtime (headless, MT5 thật — 03/10/2026):** KB1 (hint
+`MACRO_CALENDAR_STALE` hiện đúng khi chưa dán lịch FF) **ĐẠT**; KB2 (quét 1
+symbol 11.4s + 31 symbol 43.3s, không crash) **ĐẠT**; KB3 (chặn socket trong
+tiến trình → 5 method provider vẫn trả số thật từ `news.db` = **0 request mạng
+trên đường vĩ mô**) **ĐẠT**; KB4 (sub-gate News chặn theo event thật) **CHƯA
+quan sát được** — cửa sổ nghiệm thu cuối tuần không có tin high-impact trong 180
+phút, **chờ quan sát đầu tuần sau**.
 
 ### 0.1 Nguyên tắc
 
@@ -65,33 +87,42 @@ Shape `macro_context` đầu ra **giữ nguyên key** (`macro_alignment_scores`,
 
 - Người dùng không dán mã nguồn FF → phạm vi calendar `stale`/`unavailable` →
   confidence tụt → MacroGate `UNKNOWN` → row BLOCKED/`DATA_UNAVAILABLE`. Đây là
-  hành vi đúng (fail-closed) nhưng phải nhìn thấy được: thêm reason code
+  hành vi đúng (fail-closed) nhưng phải nhìn thấy được: reason code
   `MACRO_CALENDAR_STALE` (phân biệt với `MACRO_LOW_CONFIDENCE`) và hint UI
-  "Cần dán lịch FF" trên Scanner khi phạm vi calendar không tươi.
+  "Cần dán lịch ForexFactory (màn Quản lý tin)" trên Scanner khi phạm vi lịch
+  không tươi. **ĐÃ IMPLEMENTED 03/10/2026**: `macro_freshness_status()` trả
+  `reason_codes: [MACRO_CALENDAR_STALE]` (display-only — KHÔNG vào
+  MacroGate/decision reason_codes), `_analyze_one_symbol` copy sang
+  `row["macro"]["freshness_reason_codes"]`, `ui/screens/scanner_screen.py` hiện
+  một dòng hint khi bất kỳ row nào mang cờ.
 - Sau khi đạt tương đương, mới cân nhắc hiệu chỉnh `confidence_threshold` theo
   semantics freshness mới (kiểu Bước 09, data-driven — **không** đổi số trong
   ca đấu nối).
 
-### 0.4 Lộ trình thi hành (4 bước, B3 → đấu nối → D2)
+### 0.4 Lộ trình thi hành (4 bước, B3 → đấu nối → D2) — ĐÃ HOÀN TẤT
 
-1. **Ghim hành vi (B3, làm trước):** test characterization pin đầu ra vĩ mô
-   hiện tại (fixed `macro_context` fixture → macro raws, confidence, gate
-   statuses aligned/neutral/conflict/low-confidence cho vài symbol đại diện) —
-   oracle tương đương sau đấu nối (trừ các thành phần đổi nguồn đã ghi ở §0.2).
-2. **Port + provider:** `core/macro_tiers.py` (thuần) +
+1. **Ghim hành vi (B3)** — ✅ commit `1a74934`: `tests/test_macro_cutover_b3_pin.py`
+   (Pin A ghim đường tiêu thụ; cụm Pin B ghim công thức trên path cũ đã hoàn
+   thành sứ mệnh và được gỡ ở lô C cùng `news_service.py`; hằng số Pin B nay ở
+   `tests/test_macro_tiers.py`).
+2. **Port + provider** — ✅ commit `20797ec`: `core/macro_tiers.py` (thuần) +
    `services/news_macro_provider.py` dựng cùng shape `macro_context` từ
-   `NewsRepository`; bỏ toàn bộ HTTP trên đường vĩ mô (SQLite local); bỏ AI
-   stance.
-3. **Đấu nối (D2, xóa path cũ cùng commit):** đổi 4 seam đang gọi
-   `news_service` — `preload_macro_contexts` + `macro_freshness_status` +
-   `data_quality_flags` (Scanner) và `execution_news_status` (re-validation
-   trước gửi lệnh) — sang provider; vá 2 gap đã ghi tại
-   `scanner-architecture.md` §5.2 (`news_events` chưa vào safety context) và
-   `news_in_3h` hardcode `False`; xóa `services/news_service.py`,
-   `services/forex_factory_client.py`, `services/interest_rate_service.py` +
-   cache đĩa tin cũ + test của path cũ; chạy lại B3 pin đối chiếu.
-4. **Vận hành:** reason code/hint theo §0.3; theo dõi tần suất
-   `MACRO_CALENDAR_STALE` trước khi quyết định hiệu chỉnh ngưỡng.
+   `NewsRepository`; không còn HTTP trên đường vĩ mô (SQLite local); AI stance
+   bỏ.
+3. **Đấu nối (D2, xóa path cũ cùng commit)** — ✅ commit `d0175ff`: 4 seam
+   (`preload_macro_contexts`, `macro_freshness_status`, `data_quality_flags`,
+   `execution_news_status`) đọc provider; vá 2 gap (§5.2 scanner-architecture);
+   3 service cũ + test path cũ đã xóa; Pin A chạy lại đạt.
+4. **Vận hành** — reason code `MACRO_CALENDAR_STALE` + hint UI đã live (§0.3);
+   theo dõi tần suất trước khi quyết định hiệu chỉnh ngưỡng.
+
+**Erratum (ghi đúng hành vi code):** tài liệu kế hoạch cũ từng viết "event
+impact cao ≤3h → regime `volatile`". **Sai so với code:** `news_in_3h = True`
+chỉ thêm secondary **`news_sensitive`** vào `detect_market_regime`
+(`core/technical_context.py`); `volatile` **chỉ** đến từ ATR spike
+(`atr_h4 > 1.5 × atr_avg_14d`, hoặc `primary == "volatile"`). Cờ này vẫn có tác
+dụng thật: nó nuôi `risk_engine`, `calc_risk_condition`, ranking và checklist —
+chỉ **không** đổi regime sang `volatile`. Không sửa logic regime trong ca này.
 
 ### 0.5 Phạm vi cố tình không đụng
 

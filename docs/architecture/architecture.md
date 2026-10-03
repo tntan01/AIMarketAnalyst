@@ -94,13 +94,13 @@ MT5 / Yahoo / ForexFactory ──► services (data) ──► core (phân tích
 - `services/mt5_service.py` — MT5
 - `services/market_data_service.py` + `data_provider.py` + `candle_history_cache.py`
 - `services/yahoo_chart_fetcher.py` — Yahoo fallback
-- `services/forex_factory_client.py` + `macro_*` — tin tức/vĩ mô
+- `services/macro_market_cache.py` — cache proxy vĩ mô dùng chung (VIX/DXY/yields) cho đường correlation
 
 **Tin tức (tầng dữ liệu) — IMPLEMENTED, READY-FOR-CONNECT (nghiệm thu 23/09/2026; contract [`news/news-architecture.md`](../news/news-architecture.md)) — sửa đổi đợt 3+4 (24/09/2026, IMPLEMENTED — ca "Nguồn dán FF" nghiệm thu 25/09/2026): kênh ForexFactory chuyển sang dán mã nguồn trang, bỏ thu tự động FF + xuất/nhập file — sửa đổi đợt 5 (28/09/2026, IMPLEMENTED — nghiệm thu 29/09/2026, lô B1–B5): tín hiệu lợi suất trái phiếu `bond_yields` + AI nhận định theo 11 tài sản + khối Market context trong prompt AI (contract §4.7, §6.6, §9.3, §13 đợt 5) — sửa đổi đợt 6 (29/09/2026, IMPLEMENTED — ca "Độ sâu dữ liệu theo chân trời" nghiệm thu 29/09/2026, lô C1–C5): cửa sổ dữ kiện **phân tầng theo chân trời** (short 7 / mid 42 / long 180 ngày), context mở rộng **rate path 6 tháng + yield delta 3m/6m**, khung prompt v2 (render `status` sự kiện + chỉ dẫn đối chiếu độ phủ — `prompt_hash` đổi lần 2), panel "độ phủ theo chân trời" trong dialog (contract §7, §9.1, §9.3 khoản 6, §13 đợt 6)**
 - `services/news_repository.py` — điểm truy cập duy nhất (đọc + ghi) vào `news.db`
 - `services/ff_source_parser.py` — bóc tách mã nguồn trang ForexFactory do người dùng dán (JSON `calendarComponentStates` → sự kiện lịch kinh tế + actual + lãi suất `ff_html`) — **kênh duy nhất** của lịch kinh tế/actual, không mạng (contract §6.1 đợt 3; thay thế các đường fetch của `ff_calendar_producer` — gỡ tại ca "Nguồn dán FF")
 - `services/news_producers/rss_producer.py` — bộ sản xuất tin văn bản (headline, phát biểu chính thức) — tự động định kỳ
-- `services/news_producers/fred_rate_producer.py` — bộ sản xuất quan sát lãi suất FRED (API + config fallback; kênh FF-HTML qua mạng bị gỡ đợt 3 — lãi suất `ff_html` đến từ parser dán nguồn; hấp thụ `interest_rate_service.py` — file cũ bị xóa tại đấu nối vĩ mô)
+- `services/news_producers/fred_rate_producer.py` — bộ sản xuất quan sát lãi suất FRED (API + config fallback; kênh FF-HTML qua mạng bị gỡ đợt 3 — lãi suất `ff_html` đến từ parser dán nguồn) — **hấp thụ trọn `interest_rate_service.py`** (file cũ đã xóa tại ca đấu nối vĩ mô, 03/10/2026)
 - `services/news_producers/bond_yield_producer.py` (đợt 5 — IMPLEMENTED) — bộ sản xuất quan sát lợi suất trái phiếu (FRED `DGS2`/`DGS10`/`T10YIE` → Yahoo `2YY=F`/`^TNX` fallback; giai đoạn 1 chỉ USD) — ghi bảng `bond_yields`; **đợt 6:** mỗi round ghi **toàn bộ lịch sử** lấy được (FRED `limit=130` ~6 tháng / Yahoo `range=1y`) — phục vụ delta 3m/6m
 - `controllers/news_controller.py` — điều phối lịch producer, tiếp nhận nhập tay + mã nguồn trang FF dán, lời gọi AI nhận định (đợt 5: thêm batch "Nhận định tất cả" 11 phạm vi; **đợt 6:** đọc 3 cửa sổ chân trời + rate path, preview mang panel độ phủ)
 - `core/news_models.py` — mô hình miền có kiểu của miền Tin tức (`CalendarEvent`, `NewsItem`, `RateObservation`, `BondYieldObservation` — đợt 5, `TrendVerdict`, `IngestRun`, `StoreState`)
@@ -112,9 +112,15 @@ MT5 / Yahoo / ForexFactory ──► services (data) ──► core (phân tích
 - `ui/screens/news_screen.py` — màn Quản lý tin (đợt 6: panel "độ phủ theo chân trời" + dòng ngữ cảnh rate path/delta 3m/6m trong dialog)
 - Chính sách vận hành: `config/news_policy.json` — nguồn duy nhất của mọi con số vận hành miền này (tài liệu trỏ về khóa, không chép giá trị — D5; đợt 5: thêm khóa `bond_yield_refresh_hours`; **đợt 6:** `ai_horizon_windows` + `ai_long_window_max_rows`)
 
-Nhóm module Tin tức thay thế dần `services/news_service.py` và
-`services/forex_factory_client.py`; hai file cũ bị xóa khi di trú xong (ngoại lệ
-E3 đã ghi trong Phụ lục B của [Quy tắc kiến trúc](architecture-rules.md)).
+- `services/news_macro_provider.py` — **nguồn dữ liệu vĩ mô của Scanner** (`NewsMacroProvider`, 5 method duck-type của `NewsService` cũ: `preload_macro_contexts`/`latest_macro_context`/`data_quality_flags`/`macro_freshness_status`/`execution_news_status` + probe `news_events_scope()`) — đọc `NewsRepository`, **không HTTP**; thay `services/news_service.py` (đã xóa tại ca đấu nối vĩ mô, 03/10/2026)
+- `core/macro_tiers.py` — công thức chấm điểm vĩ mô 3-tier (0–30) **thuần** (không I/O, không AI, không clock) + lexicon; dùng bởi `NewsMacroProvider`
+- `core/scanner_live_producers.py` — producer live của Scanner (safety context, technical raws, regime); `build_live_market_safety_context` nhận `news_events` thật của cặp
+
+Nhóm module Tin tức (tầng dữ liệu) **đã thay thế trọn** `services/news_service.py`
+và `services/forex_factory_client.py`: hai file này cùng
+`services/interest_rate_service.py` **đã xóa** ở ca đấu nối vĩ mô (03/10/2026,
+commit `d0175ff`) — ngoại lệ E3 trong Phụ lục B của
+[Quy tắc kiến trúc](architecture-rules.md) tự hết hiệu lực.
 
 ### Ghi chú
 
@@ -256,27 +262,42 @@ Luồng phân tích phải lấy lịch tin kinh tế, headline vĩ mô mới nh
 > trực tiếp, không chạy dual scoring/shadow.
 > Xem [`scanner-architecture.md`](../scanner/scanner-architecture.md).
 
-> **Đang thay thế (E3, Owner duyệt 20/09/2026):** phần thu thập tin tức của
-> `news_service.py` (lịch kinh tế, headline, phát biểu, cache đĩa) được thay
-> bằng tầng dữ liệu Tin tức — database `news.db` là nguồn chân lý duy nhất,
-> bộ sản xuất chỉ ghi, bên tiêu thụ chỉ đọc qua repository — theo
-> [`news/news-architecture.md`](../news/news-architecture.md). Đoạn mô tả dưới
-> đây còn hiệu lực với code đang chạy cho tới khi di trú xong và bị xóa cùng
-> commit xóa code (D2); phần chấm điểm vĩ mô di trú ở ca sau, chưa đụng trong
-> ca Tin tức.
+> **Đã thay thế (E3 hoàn tất — 03/10/2026, commit `d0175ff`):** phần thu thập tin
+> tức của `news_service.py` (lịch kinh tế, headline, phát biểu, cache đĩa) đã
+> được thay bằng tầng dữ liệu Tin tức — database `news.db` là nguồn chân lý duy
+> nhất, bộ sản xuất chỉ ghi, bên tiêu thụ chỉ đọc qua `NewsRepository` — theo
+> [`news/news-architecture.md`](../news/news-architecture.md). Đường vĩ mô của
+> Scanner đọc `NewsMacroProvider` + `core/macro_tiers.py`; ba service cũ
+> (`news_service.py`, `forex_factory_client.py`, `interest_rate_service.py`) đã
+> xóa. Đoạn mô tả hành vi bên dưới được giữ làm **ghi chú lịch sử** cho
+> audit/replay — file được nhắc không còn tồn tại.
 
-`services/news_service.py` chịu trách nhiệm gom:
+Hợp đồng hành vi vĩ mô (nay do `NewsMacroProvider` + `core/macro_tiers.py` thi
+hành, đọc từ `news.db`):
 
-* Lịch kinh tế theo chuỗi fallback: Forex Factory JSON, Forex Factory HTML scrape nhẹ, file cache gần nhất, cuối cùng là `Calendar unavailable` kèm warning.
-* Headline macro mới nhất từ RSS/search feed công khai.
-* Phát biểu đáng chú ý trong 24h qua từ RSS/search feed công khai: Truth Social/Trump, quan chức Mỹ/Fed, thủ tướng Nhật, thủ tướng Anh và quan chức EU.
-* Macro theme theo từng đồng tiền: hawkish, dovish hoặc neutral — xác định qua AI (có fallback keyword matching) hoặc keyword matching thuần nếu không có AI service.
-* Macro theme cho XAU, XAG và BTC dựa trên real yields, DXY, risk sentiment, ETF/flow và catalyst liên quan từng tài sản.
+* Lịch kinh tế: `NewsRepository.events_in_range(now−24h, now+72h)` lọc theo 2
+  currency của cặp, cap 8, ASC. **Không fallback chéo currency**: cặp không có
+  event của mình → `events` rỗng (fail-closed, QĐ Owner 03/10/2026).
+* Headline macro 24h gần nhất từ `news_items` (RSS producer ghi).
+* Phát biểu đáng chú ý: `news_items` kind `statement`.
+* Macro theme theo từng đồng tiền: hawkish/dovish/neutral — **keyword matching**
+  (`currency_stance`); AI stance đã bỏ khỏi đường vĩ mô.
 * Điểm nóng thế giới liên quan risk-off, dầu, chiến sự, trừng phạt, tariff.
-* **Macro alignment score 3 tầng (raw được clamp 0-30 khi compose):** T1 lãi suất & chính sách tiền tệ (0-12) — lãi suất tự động cập nhật từ FRED API (fallback về `config/interest_rates.json` nếu không có API key) + stance từ AI hoặc keyword; T2 giữ contract 0-10 nhưng runtime hiện luôn 5/5 directional-neutral và đưa event severity vào diagnostic/gate; T3 tâm lý rủi ro (0-8) + địa chính trị (0-4). Contribution vào signal còn được co theo `macro_confidence` dựa trên chất lượng/freshness dữ liệu.
-* AI chỉ được dịch, tóm tắt và nhận định tác động dựa trên dữ liệu app đã lấy, không tự bịa headline, phát biểu hoặc sự kiện.
+* **Macro alignment score 3 tầng (0-30):** T1 lãi suất & chính sách tiền tệ
+  (0-12) — lãi suất từ `interest_rates` (fallback `config/interest_rates.json`);
+  T2 giữ contract 0-10 nhưng runtime luôn 5/5 directional-neutral và đưa event
+  severity vào diagnostic; T3 tâm lý rủi ro (0-8) + địa chính trị (0-4).
+  `macro_confidence` = `macro_data_quality` × freshness multiplier (worst-of-4
+  scope từ `store_state`).
+* AI chỉ được dịch, tóm tắt và nhận định tác động dựa trên dữ liệu app đã lấy,
+  không tự bịa headline, phát biểu hoặc sự kiện.
 
-Nếu lịch kinh tế bị rate limit, ví dụ HTTP 429 từ Forex Factory, app không được làm mất toàn bộ macro context. `news_service.py` phải thử HTML calendar, sau đó dùng cache lịch kinh tế gần nhất nếu có, và ghi warning rõ ràng. Khi không có cache, `events` để rỗng nhưng `latest_headlines`, `latest_statements`, `macro_themes`, `geopolitical_hotspots` và `macro_alignment_scores` vẫn được trả về nếu nguồn headline còn hoạt động.
+Khi phạm vi lịch kinh tế không tươi (`store_state` scope `events` =
+`degraded`/`unavailable`), app không được làm mất toàn bộ macro context:
+`latest_headlines`, `latest_statements`, `macro_themes`, `geopolitical_hotspots`
+và `macro_alignment_scores` vẫn được trả về; `events` để rỗng, confidence tụt
+và người dùng thấy hint "Cần dán lịch ForexFactory" (reason code
+`MACRO_CALENDAR_STALE`).
 
 `services/market_data_service.py` chịu trách nhiệm cung cấp dữ liệu thị trường Mỹ cho correlation checking:
 
@@ -292,19 +313,23 @@ VIX có hai horizon tách biệt:
   map. Runner không phải System Backtest và không tự bật scoring.
 
 Đường Bước 7 là
-`AdvancedSettings.vix_pair_aware_enabled → SettingsService → NewsService.data_quality_flags → AnalysisPipeline → correlation_check`.
+`AdvancedSettings.vix_pair_aware_enabled → SettingsService → NewsMacroProvider.data_quality_flags → AnalysisPipeline → correlation_check`.
 Loader chỉ dùng data-backed map còn TTL, ưu tiên APPDATA rồi repo/bundled
 fallback. Candidate seed/stale/legacy/malformed bị bỏ qua; chỉ flag OFF, không
 còn candidate eligible hoặc pair non-actionable mới giữ VIX penalty phẳng.
 Chi tiết và evidence hiện hành xem mục **Bước 7 — VIX Pair Sensitivity** trong
 [`macro_score_architecture.md`](../macro/macro_score_architecture.md).
 
-`services/interest_rate_service.py` chịu trách nhiệm cập nhật lãi suất ngân hàng trung ương:
+Lãi suất ngân hàng trung ương nay do
+`services/news_producers/fred_rate_producer.py` sản xuất (hấp thụ trọn
+`interest_rate_service.py`, file cũ đã xóa 03/10/2026):
 
-* Tự động fetch từ FRED API (miễn phí, cần API key) cho 8 loại tiền tệ: USD, EUR, GBP, JPY, AUD, NZD, CAD, CHF.
-* Fallback về `config/interest_rates.json` nếu không có API key hoặc FRED lỗi.
-* Cache 6 giờ để giới hạn 4 lần gọi/ngày.
-* Tính trend (hike/cut/hold) từ 2 observation gần nhất.
+* FRED API (miễn phí, cần API key) cho các loại tiền tệ cấu hình trong producer;
+  fallback `config/interest_rates.json` khi không có API key hoặc FRED lỗi.
+* Nhịp làm mới theo khóa `fred_refresh_hours` trong `config/news_policy.json`
+  (kế thừa 6 giờ của runtime cũ) do worker điều phối — producer không tự giữ TTL.
+* Trend (hike/cut/hold) dẫn xuất lúc ĐỌC bằng `core/rate_trend.derive_rate_trend`
+  từ hai quan sát gần nhất.
 
 Mọi lịch kinh tế hiển thị cho người dùng phải ưu tiên mẫu: `ngày-tháng-năm thời gian: nội dung tiếng Việt -> ảnh hưởng tới đồng tiền đang xét`. Mục Tin mới nhất chỉ giữ headline/phát biểu trong 24h trước và dùng mẫu `ngày-tháng-năm thời gian: nội dung tiếng Việt`; chỉ thêm phần `-> ảnh hưởng...` khi có nhận định tác động cụ thể từ AI hoặc rule heuristic. Nếu không xác định được tác động, không thêm câu chung chung.
 

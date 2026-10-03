@@ -134,11 +134,11 @@ Tính năng tầng dữ liệu tin tức theo contract duy nhất
 - Mọi con số vận hành (chu kỳ thu tin, ân hạn, cửa sổ AI...) nằm trong một
   tệp chính sách duy nhất `config/news_policy.json`; giá trị đã được Owner
   chốt trong contract.
-- Tính năng thay thế `services/news_service.py` theo lộ trình trong contract
-  (ngoại lệ E3 của quy tắc B6, đã ghi trong Phụ lục B
-  `architecture/architecture-rules.md`); hai bên tiêu thụ lớn — hiển thị
-  Dashboard và chấm điểm vĩ mô — sẽ di trú sang đọc database ở các ca kế
-  tiếp, đặc tả tại tài liệu miền tương ứng.
+- Tính năng **đã thay thế** `services/news_service.py` (hoàn tất 03/10/2026,
+  commit `d0175ff` — ba service cũ đã xóa; ngoại lệ E3 của quy tắc B6 trong
+  Phụ lục B `architecture/architecture-rules.md` đã hết hiệu lực). Hai bên
+  tiêu thụ lớn — hiển thị Dashboard và chấm điểm vĩ mô — nay đọc `news.db`
+  (`NewsRepository`), đặc tả tại tài liệu miền tương ứng.
 
 ## 4. Contract quyết định Scanner
 

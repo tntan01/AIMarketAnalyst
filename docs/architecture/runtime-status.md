@@ -246,20 +246,35 @@ của chính packet (thời điểm quan sát nguồn). Regression:
 `tests/test_scanner_h02_integration.py::test_slow_scan_uses_packet_observation_for_freshness`
 (toàn bộ test scanner 1397 passed). Thay đổi chưa commit tại thời điểm ghi.
 
-## Kế hoạch đấu nối (b) — vĩ mô đọc miền Tin tức (02/10/2026)
+## Đấu nối (b) — vĩ mô đọc miền Tin tức: ĐÃ THI HÀNH (03/10/2026, commit `d0175ff`)
 
-Owner đã duyệt phương án: **MacroGate/MacroPolicy giữ nguyên, chỉ thay nguồn
-dữ liệu** `macro_raw_buy/sell` + `macro_confidence` — từ provider đọc
+Owner duyệt phương án: **MacroGate/MacroPolicy giữ nguyên, chỉ thay nguồn dữ
+liệu** `macro_raw_buy/sell` + `macro_confidence` — từ `NewsMacroProvider` đọc
 `NewsRepository` (`news.db`) thay `news_service.py` tự fetch mạng; bỏ AI stance
-khỏi Tier 1; confidence/freshness từ `store_state` (per-scope). Đặc tả:
-`docs/macro/macro_score_architecture.md` mục 0 (**CHƯA code** — thi hành 4
-bước: B3 pin → port `core/macro_tiers.py` + provider → đấu nối 4 seam + xóa
-`news_service.py`/`forex_factory_client.py`/`interest_rate_service.py` cùng
-commit (D2) → vận hành với reason code `MACRO_CALENDAR_STALE` + hint UI "Cần
-dán lịch FF"). Hai gap đã ghi sẽ vá trong ca này: `news_events` chưa vào
-safety context, `news_in_3h` hardcode `False` (chi tiết
-`docs/scanner/scanner-architecture.md` §5.2/§5.3). Plan thi hành cho CODER:
-`docs/plans/macro-news-cutover-b-plan.md` (8 work item, 4 điểm dừng bắt buộc).
+khỏi Tier 1; confidence/freshness từ `store_state` (worst-of-4 cho
+`confidence_multiplier`, riêng News sub-gate đọc `news_events_scope()`). Đặc tả:
+`docs/macro/macro_score_architecture.md` mục 0 (**IMPLEMENTED**).
+
+Đã hoàn tất trong lô A/B/C (commit `1a74934` → `20797ec` → `d0175ff`):
+
+- **B3 pin** ghim hành vi vĩ mô trước cutover (`tests/test_macro_cutover_b3_pin.py`
+  — Pin A còn sống sau cutover);
+- **`core/macro_tiers.py`** (công thức 3-tier thuần) + **`NewsMacroProvider`**
+  (5 method duck-type, không HTTP);
+- **2 gap đã vá**: `news_events` vào `build_live_market_safety_context`,
+  `news_in_3h` thật đi vào regime (`docs/scanner/scanner-architecture.md`
+  §5.2/§5.3);
+- **reason code `MACRO_CALENDAR_STALE` + hint UI** "Cần dán lịch FF" live;
+- **3 service cũ đã xóa** (`news_service.py`, `forex_factory_client.py`,
+  `interest_rate_service.py`) cùng test path cũ; Dashboard chuyển nguồn sự kiện
+  đỏ sang `NewsRepository`.
+
+**Nghiệm thu runtime (headless, MT5 thật — 03/10/2026):** KB1 (hint
+`MACRO_CALENDAR_STALE`) **ĐẠT**; KB2 (quét 1 symbol 11.4s + 31 symbol 43.3s,
+không crash) **ĐẠT**; KB3 (chặn socket trong tiến trình → 5 method vẫn trả số
+thật từ `news.db` = 0 request mạng trên đường vĩ mô) **ĐẠT**; KB4 (sub-gate News
+chặn theo event thật) **CHƯA quan sát được** — cuối tuần không có tin high-impact
+trong 180 phút, **chờ quan sát đầu tuần sau**.
 
 ## Khôi phục cấu hình
 

@@ -327,15 +327,20 @@ thật khi thị trường lành mạnh — xem §13.1 (block "Năm producer liv
 
 Module canonical: `core/market_safety_gate.py`.
 
-**Gap đã ghi (02/10/2026 — sẽ vá ở ca đấu nối b, đặc tả
-[`../macro/macro_score_architecture.md`](../macro/macro_score_architecture.md)
-mục 0):** producer live hiện chưa truyền `news_events` vào
-`build_live_market_safety_context` (chỉ `news_source_verified`), nên sub-gate
-News ở bảng trên không thấy event thật để chặn trong luồng quét; đồng thời
-`news_in_3h` từ `data_quality_flags` bị hardcode `False` tại
-`_analyze_one_symbol` (regime không bao giờ thấy cờ). Cả hai được vá trong cùng
-ca đấu nối b, khi macro/news context chuyển sang đọc `news.db` qua
-`NewsRepository`.
+**Gap đã VÁ (03/10/2026 — ca đấu nối b, commit `d0175ff`):** producer live nay
+truyền `news_events` (events thật của cặp, lấy từ `macro_context["events"]`) vào
+`build_live_market_safety_context`, nên sub-gate News ở bảng trên chặn được
+event high-impact thật trong luồng quét (BLOCK `[0, 30]` phút / CAUTION
+`(30, 180]` phút); đồng thời `news_in_3h` thật từ `data_quality_flags` được đưa
+vào packet và đi tới regime. `news_source_verified` nay suy từ trạng thái
+**riêng của scope `events`** (`NewsMacroProvider.news_events_scope()`), không
+dùng worst-of-4 scope của `macro_freshness_status()` — một scope khác chưa từng
+ingest (rates/yields/items) không được phép khóa News gate.
+
+**Lưu ý hành vi (erratum):** `news_in_3h = True` **không** làm regime thành
+`volatile`; `detect_market_regime` chỉ thêm secondary `news_sensitive`, còn
+`volatile` chỉ đến từ ATR spike (`atr_h4 > 1.5 × atr_avg_14d`). Cờ vẫn có tác
+dụng thật qua `risk_engine`, `calc_risk_condition`, ranking và checklist.
 
 ### 5.3 MacroGate
 
@@ -375,10 +380,12 @@ hành vi mặc định có chủ ý, không phải lỗi runtime.
 
 Module canonical: `core/macro_gate.py`.
 
-**Nguồn dữ liệu (ca đấu nối b — đặc tả đã ghi 02/10/2026, CHƯA TRIỂN KHAI):**
-`macro_raw_buy/sell` + `macro_confidence` sẽ do provider đọc `NewsRepository`
-(`news.db`) sản xuất thay cho `news_service.py` tự fetch mạng; mapping từng
-thành phần ở
+**Nguồn dữ liệu (ca đấu nối b — ĐÃ THI HÀNH 03/10/2026, commit `d0175ff`):**
+`macro_raw_buy/sell` + `macro_confidence` do `NewsMacroProvider`
+(`services/news_macro_provider.py`) đọc `NewsRepository` (`news.db`) sản xuất;
+công thức 3-tier ở module thuần `core/macro_tiers.py`; ba service cũ
+(`news_service.py`/`forex_factory_client.py`/`interest_rate_service.py`) đã xóa
+— không còn request mạng nào trên đường vĩ mô. Mapping từng thành phần ở
 [`../macro/macro_score_architecture.md`](../macro/macro_score_architecture.md)
 mục 0.2. Gate, `MacroPolicy` (§13.1) và vị trí đánh giá (một lần, selected
 side) không đổi. Verdict AI của miền Tin tức **không** vào assessment/gate
@@ -820,7 +827,7 @@ chạy live đầu tiên.
 
 ### 13.1 Cấu hình RuntimeOrderPolicy — LIVE (owner-accepted 2026-08-15)
 
-Khe cấu hình order duy nhất cho live runtime ([core/scanner_order_policy.py](../core/scanner_order_policy.py))
+Khe cấu hình order duy nhất cho live runtime ([core/scanner_order_policy.py](../../core/scanner_order_policy.py))
 đã được wire vào release (`run_pair(..., order_policy=...)`). **Nguồn duy nhất của các
 giá trị live là file [config/scanner_order_policy.json](../../config/scanner_order_policy.json)**
 — bảng dưới chỉ phản ánh file đó; đổi số thì sửa file, không sửa bảng này. Các giá trị

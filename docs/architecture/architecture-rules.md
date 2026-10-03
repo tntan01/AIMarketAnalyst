@@ -256,15 +256,19 @@ Bảng này là khuôn mẫu bắt buộc cho mọi tài liệu kiến trúc mi�
 | Đổi ảnh hưởng của sự kiện địa chính trị | sổ đăng ký sự kiện (chủ sở hữu tín hiệu) | một cửa thông tin (S6) |
 
 **Đối chiếu hiện trạng (đo mức vi phạm hôm nay):** "đổi công thức tính điểm vĩ
-mô" hiện chạm tối thiểu 4 tệp logic (`news_service.py`, `analysis_pipeline.py`,
-`scanner_controller.py`, `signal_engine.py`). Sau ca tách lớp, câu trả lời phải
-là 1 — đó là nghiệm thu của ca refactor đầu tiên theo luật này.
+mô" trước đây chạm tối thiểu 4 tệp logic (`news_service.py`,
+`analysis_pipeline.py`, `scanner_controller.py`, `signal_engine.py`). Sau ca tách
+lớp, câu trả lời phải là 1 — đó là nghiệm thu của ca refactor đầu tiên theo luật
+này. **Cập nhật 03/10/2026:** công thức chấm điểm vĩ mô nay nằm trọn ở
+`core/macro_tiers.py` (module thuần, cổng E2 + import-linter canh) — **đã đạt 1
+điểm chạm** cho thay đổi "đổi công thức" (nguồn dữ liệu tách sang
+`NewsMacroProvider`).
 
 ## Phụ lục B — Sổ nợ kiến trúc (vi phạm hiện hữu đã đặt tên)
 
 | # | Vi phạm | Quy tắc | Mốc xử lý |
 |---|---|---|---|
-| 1 | `NewsService` — 4 lý do thay đổi (khuôn tin/công thức điểm/nhà cung cấp AI/chính sách cổng tin) trong 3.080 dòng | M2, S1 | ca đập–xây lớp Tin tức (`docs/news/news-architecture.md`, Owner duyệt 20/09/2026) — đóng khi xóa `news_service.py` tại đấu nối vĩ mô theo §3.1 của ca (B7) |
+| 1 | ~~`NewsService` — 4 lý do thay đổi (khuôn tin/công thức điểm/nhà cung cấp AI/chính sách cổng tin) trong 3.080 dòng~~ **ĐÃ ĐÓNG 03/10/2026** — `news_service.py` xóa tại ca đấu nối vĩ mô (commit `d0175ff`); công thức điểm nay ở `core/macro_tiers.py` (thuần), nguồn dữ liệu ở `NewsMacroProvider`/`NewsRepository`, producer tách riêng | M2, S1 | ca đập–xây lớp Tin tức (`docs/news/news-architecture.md`, Owner duyệt 20/09/2026) — đóng khi xóa `news_service.py` tại đấu nối vĩ mô theo §3.1 của ca (B7) |
 | 2 | Tín hiệu risk-off bị chấm tại 4 điểm độc lập (lexicon tier3, AI stance, VIX score, correlation adjustment) | S1, S6 | sổ đăng ký sự kiện |
 | 3 | `correlation_check.py` trộn phép tính + chuỗi cảnh báo tiếng Việt | L3 | ca tách lớp macro |
 | 4 | `scanner_controller.py` moi ruột dict không kiểu + tự nhân hệ số freshness | S2, C3 | mô hình có kiểu cho snapshot |
@@ -277,7 +281,7 @@ là 1 — đó là nghiệm thu của ca refactor đầu tiên theo luật này.
 
 | Ngoại lệ | Quy tắc được miễn | Lý do | Phạm vi | Ngày duyệt | Ngày hết hạn |
 |---|---|---|---|---|---|
-| Ca "đập đi – xây mới" lớp Tin tức theo `docs/news/news-architecture.md`: thay thế toàn bộ `news_service.py` + `forex_factory_client.py` bằng bộ sản xuất (producer) + `news_repository` trong một ca, không tái cấu trúc tăng dần từng mảnh | B6 (cấm viết lại toàn bộ một lần) | Quyết định của Owner (V1 — phần mềm cá nhân, cutover trực tiếp theo tiền lệ Scanner 15/08/2026); an toàn nhờ B3: kiểm thử đặc trưng ghim đầu ra vĩ mô trên fixture **trước** khi xóa code cũ, đối chiếu tương đương sau khi chuyển sang đọc DB | Miền Tin tức (tầng dữ liệu); hành vi vĩ mô/gate giữ contract, chỉ đổi nguồn đọc | 20/09/2026 | khi đóng sổ nợ #1 (xóa `news_service.py` tại đấu nối vĩ mô theo §3.1 của `docs/news/news-architecture.md`) — ngoại lệ tự hết hiệu lực, không mở rộng phạm vi |
+| Ca "đập đi – xây mới" lớp Tin tức theo `docs/news/news-architecture.md`: thay thế toàn bộ `news_service.py` + `forex_factory_client.py` bằng bộ sản xuất (producer) + `news_repository` trong một ca, không tái cấu trúc tăng dần từng mảnh | B6 (cấm viết lại toàn bộ một lần) | Quyết định của Owner (V1 — phần mềm cá nhân, cutover trực tiếp theo tiền lệ Scanner 15/08/2026); an toàn nhờ B3: kiểm thử đặc trưng ghim đầu ra vĩ mô trên fixture **trước** khi xóa code cũ, đối chiếu tương đương sau khi chuyển sang đọc DB | Miền Tin tức (tầng dữ liệu); hành vi vĩ mô/gate giữ contract, chỉ đổi nguồn đọc | 20/09/2026 | **ĐÃ HẾT HIỆU LỰC 03/10/2026** — sổ nợ #1 đã đóng (`news_service.py`/`forex_factory_client.py`/`interest_rate_service.py` xóa cùng commit `d0175ff`); không mở rộng phạm vi |
 
 ## Phụ lục C — Án lệ tốt trong repo (khuôn mẫu để nhân bản)
 
