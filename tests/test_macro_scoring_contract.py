@@ -1,8 +1,9 @@
 """Phase 15A.2: macro scoring contract — production-path tests.
 
-Uses REAL production fixtures (test_signal_engine helpers) and extracts
-production scoring formulas for calendar/tier paths that cannot be
-instantiated without full NewsService dependencies.
+Uses REAL production fixtures (test_signal_engine helpers) for the composite
+scoring path, and the REAL pure formula `core.macro_tiers` for the tier paths
+(WI-7: trước đây các tier phải chép lại công thức/khởi tạo `NewsService` vì
+công thức nằm trong `services/`; nay gọi thẳng hàm thuần).
 
 Corrects all false-positives from Phase 15A.1.
 x-fails document confirmed production defects.
@@ -10,8 +11,11 @@ x-fails document confirmed production defects.
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+
 import pytest
 
+from core.macro_tiers import macro_tier1, macro_tier2, macro_tier3
 from core.signal_engine import (
     _detect_macro_status,
     compose_scenario_score,
@@ -153,31 +157,34 @@ class TestConfidenceMonotonic:
 class TestCalendarNeutrality:
     """Phase 15C.1: ALL calendar events are directional-neutral (buy=sell=5).
     actual/forecast only tracked as diagnostic.  Directional surprise scoring
-    is deferred to a future phase with standardized indicator engine."""
+    is deferred to a future phase with standardized indicator engine.
 
-    def _tier2(self, base_events, quote_events):
-        """Extracted production formula from NewsService._macro_tier2 (Phase 15C.1).
-        All events directional-neutral.  Risk is diagnostic only."""
-        base_quality = 0.0
-        quote_quality = 0.0
-        for e in base_events:
-            sev = {"high": 3, "medium": 2}.get(str(e.get("severity", "")).lower(), 1)
-            base_quality += sev * 2.0  # time_weight=2 (within 24h)
-        for e in quote_events:
-            sev = {"high": 3, "medium": 2}.get(str(e.get("severity", "")).lower(), 1)
-            quote_quality += sev * 2.0
+    WI-7: chạy trên công thức THẬT `core.macro_tiers.macro_tier2` (trước đây
+    test chép lại công thức vì nó nằm trong `services/`). Severity lấy qua
+    chính bảng `EVENT_SEVERITY` của module: "US CPI"→3, "Retail Sales"→2,
+    tiêu đề lạ→1; mọi event đặt +10h (time_weight 2.0) như bản chép cũ.
+    """
 
-        # Phase 15C.1: ALWAYS neutral directional
-        buy_cal = 5
-        sell_cal = 5
+    NOW = datetime(2026, 8, 13, 12, 0, tzinfo=timezone.utc)
+    _SEVERITY_TITLE = {"high": "US CPI", "medium": "Retail Sales"}
 
-        total_risk = base_quality + quote_quality
-        if total_risk >= 8:   risk_level = "high"
-        elif total_risk >= 4:  risk_level = "medium"
-        elif total_risk > 0:   risk_level = "low"
-        else:                  risk_level = "none"
-
-        return buy_cal, sell_cal, total_risk, risk_level
+    @classmethod
+    def _tier2(cls, base_events, quote_events):
+        """Gọi công thức thật; trả (buy, sell, event_risk_score, risk_level)."""
+        events = [
+            {
+                "currency": currency,
+                "event": cls._SEVERITY_TITLE.get(
+                    str(item.get("severity", "")).lower(), "Minor Release"
+                ),
+                "impact": "high",
+                "time_utc": (cls.NOW + timedelta(hours=10)).isoformat(),
+            }
+            for currency, bucket in (("EUR", base_events), ("USD", quote_events))
+            for item in bucket
+        ]
+        buy_cal, sell_cal, detail = macro_tier2("EUR", "USD", events, now=cls.NOW)
+        return buy_cal, sell_cal, detail["event_risk_score"], detail["event_risk_level"]
 
     def test_no_events_neutral_no_risk(self):
         b, s, risk, level = self._tier2([], [])
@@ -399,17 +406,11 @@ class TestPhase15EDedup:
     """AI stance and VIX must each contribute to numeric score exactly ONCE."""
 
     def test_tier3_ai_not_added_to_raw_sentiment(self):
-        from services.news_service import NewsService
-        svc = NewsService()
-        result = svc._macro_tier3(["EUR", "USD"], [], [], ai_service=None)
-        detail = result[2]
+        detail = macro_tier3(["EUR", "USD"], [], [])[2]
         assert detail["ai_applied_to_score"] is False
 
     def test_tier3_vix_not_added_to_raw_sentiment(self):
-        from services.news_service import NewsService
-        svc = NewsService()
-        result = svc._macro_tier3(["EUR", "USD"], [], [], ai_service=None)
-        detail = result[2]
+        detail = macro_tier3(["EUR", "USD"], [], [])[2]
         assert detail["vix_applied_to_score"] is False
 
     def test_vix_via_correlation_adjustment_only(self):
@@ -441,153 +442,66 @@ class TestPhase15EDedup:
         assert s1["signal_score"] == s2["signal_score"]
 
 # ===========================================================================
-# Phase 15F: data quality provenance breakdown
+# Phase 15F.2: yield spread naming
 # ===========================================================================
 
 
-class TestDataQualityDetail:
-    """macro_data_quality_detail must provide per-component provenance."""
-
-    def test_detail_present_in_latest_macro_context(self):
-        from services.news_service import NewsService
-        svc = NewsService()
-        ctx = svc.latest_macro_context("EUR/USD")
-        dq = ctx.get("macro_data_quality_detail")
-        assert dq is not None
-        for key in ("rates", "calendar", "headlines", "ai_stance", "market_proxies"):
-            assert key in dq, f"Missing {key}"
-        assert dq["rates"]["confidence"] <= 1.0
-        assert dq["calendar"]["confidence"] <= 1.0
-        hl = dq["headlines"]
-        assert "base_confidence" in hl
-        assert "quote_confidence" in hl
-        assert "global_count" in hl
-        assert hl["global_not_counted_for_coverage"] is True
-
-    def test_scalar_quality_unchanged(self):
-        from services.news_service import NewsService
-        svc = NewsService()
-        ctx = svc.latest_macro_context("EUR/USD")
-        scalar = ctx.get("macro_data_quality")
-        assert isinstance(scalar, float)
-        assert 0.0 <= scalar <= 1.0
-
-    def test_missing_data_low_confidence(self):
-        from services.news_service import NewsService
-        svc = NewsService()
-        detail = svc._macro_data_quality_detail(
-            base="EUR", quote="USD", headlines=[], events=[],
-            calendar_source="forex_factory", calendar_warning="",
-            tier1_detail={}, tier3_detail={}, ai_available=False,
-        )
-        assert detail["headlines"]["base_count"] == 0
-        assert detail["calendar"]["event_count"] == 0
-        # Calendar available via source, not event count
-        assert detail["headlines"]["base_count"] == 0
-
-    def test_backward_compat_no_detail_key(self):
-        ctx = {"macro_alignment_scores": {"buy": 15, "sell": 15}}
-        detail = ctx.get("macro_data_quality_detail")
-        assert detail is None  # old context, no crash
-
-
-class TestDataQualityDetailFixed:
-    """Phase 15F.1: provenance uses pre-fetched data, no re-fetch."""
-
-    def test_rates_fallback_detected(self):
-        from services.news_service import NewsService
-        svc = NewsService()
-        detail = svc._macro_data_quality_detail(
-            base="EUR", quote="USD", headlines=[], events=[],
-            calendar_source="forex_factory", calendar_warning="",
-            tier1_detail={}, tier3_detail={}, ai_available=False,
-        )
-        assert "is_fallback" in detail["rates"]
-        assert "last_updated" in detail["rates"]
-
-    def test_calendar_zero_events_available(self):
-        from services.news_service import NewsService
-        svc = NewsService()
-        detail = svc._macro_data_quality_detail(
-            base="EUR", quote="USD", headlines=[], events=[],
-            calendar_source="forex_factory", calendar_warning="",
-            tier1_detail={}, tier3_detail={}, ai_available=False,
-        )
-        assert detail["calendar"]["available"] is True, \
-            "Zero events from valid source must be available"
-        assert detail["calendar"]["event_count"] == 0
-
-    def test_ai_stance_actual_availability(self):
-        from services.news_service import NewsService
-        svc = NewsService()
-        d_ai = svc._macro_data_quality_detail(
-            base="EUR", quote="USD", headlines=[], events=[],
-            calendar_source="forex_factory", calendar_warning="",
-            tier1_detail={"base_stance": "hawkish"}, tier3_detail={},
-            ai_available=True,
-        )
-        assert d_ai["ai_stance"]["available"] is True
-        assert d_ai["ai_stance"]["is_fallback"] is False
-        assert d_ai["ai_stance"]["confidence"] == 1.0
-
-    def test_market_proxies_structured(self):
-        from services.news_service import NewsService
-        svc = NewsService()
-        detail = svc._macro_data_quality_detail(
-            base="EUR", quote="USD", headlines=[], events=[],
-            calendar_source="forex_factory", calendar_warning="",
-            tier1_detail={}, tier3_detail={"vix_level": 18.5},
-            ai_available=False,
-        )
-        vix = detail["market_proxies"]["vix"]
-        assert vix["available"] is True
-        assert vix["level"] == 18.5
-        yd = detail["market_proxies"]["yield_spread"]
-        assert "available" in yd
-
-    def test_no_duplicate_fetch(self):
-        from services.news_service import NewsService
-        svc = NewsService()
-        detail = svc._macro_data_quality_detail(
-            base="EUR", quote="USD", headlines=[], events=[],
-            calendar_source="forex_factory", calendar_warning="",
-            tier1_detail={}, tier3_detail={},
-            ai_available=False,
-        )
-        assert detail["market_proxies"]["vix"]["available"] is False
-
-
 class TestYieldSpreadNaming:
-    """Phase 15F.2: yield_spread_10y_5y canonical, 2s10s deprecated alias."""
+    """Phase 15F.2: yield_spread_10y_5y canonical, 2s10s deprecated alias.
+
+    WI-7: nhắm `core.macro_tiers.macro_tier1` với payload đường cong CỐ ĐỊNH
+    (bản cũ đọc `NewsService._fetch_yield_spread()` — tức gọi mạng Yahoo).
+    """
+
+    _RATES = {
+        "EUR": {"rate": 3.5, "trend": "hike", "rate_label": "3.50%"},
+        "USD": {"rate": 5.0, "trend": "hold", "rate_label": "5.00%"},
+    }
+    _YIELD_PAYLOAD = {
+        "spread": -0.35,
+        "tnx": 4.25,
+        "fvx": 4.60,
+        "steepening": False,
+        "ten_year_yield": 4.25,
+        "five_year_yield": None,
+    }
+
+    def _detail(self) -> dict:
+        _, _, detail = macro_tier1(
+            "EUR", "USD", "neutral", "neutral",
+            rates=self._RATES,
+            yield_payload=self._YIELD_PAYLOAD,
+        )
+        return detail
 
     def test_canonical_name_present(self):
-        from services.news_service import NewsService
-        data = NewsService._fetch_yield_spread()
-        if data.get("spread") is not None:
-            assert data["yield_spread_10y_5y"] == data["spread"]
-            assert data["ten_year_yield"] is not None
-            assert data["five_year_yield"] is not None
+        detail = self._detail()
+
+        assert detail["yield_spread_10y_5y"] == -0.35
+        assert detail["ten_year_yield"] == 4.25
+        assert "five_year_yield" in detail
 
     def test_deprecated_alias_matches_canonical(self):
-        from services.news_service import NewsService
-        data = NewsService._fetch_yield_spread()
-        if data.get("spread") is not None:
-            assert data["yield_spread_2s10s"] == data["yield_spread_10y_5y"]
-        assert "_deprecated_alias" in data or data["spread"] is None
+        detail = self._detail()
+
+        assert detail["yield_spread_2s10s"] == detail["yield_spread_10y_5y"]
 
     def test_tier1_detail_has_both_names(self):
-        from services.news_service import NewsService
-        svc = NewsService()
-        _, _, detail = svc._macro_tier1("EUR", "USD", "neutral", "neutral")
-        if detail.get("yield_spread_2s10s") is not None:
-            assert detail["yield_spread_10y_5y"] == detail["yield_spread_2s10s"]
-            assert "ten_year_yield" in detail
-            assert "five_year_yield" in detail
+        detail = self._detail()
+
+        assert detail["yield_spread_2s10s"] is not None
+        assert detail["yield_spread_10y_5y"] == detail["yield_spread_2s10s"]
+        assert "ten_year_yield" in detail
+        assert "five_year_yield" in detail
 
     def test_score_unchanged_by_rename(self):
-        from services.news_service import NewsService
-        svc = NewsService()
-        b1, s1, _ = svc._macro_tier1("EUR", "USD", "neutral", "neutral")
-        b2, s2, _ = svc._macro_tier1("EUR", "USD", "neutral", "neutral")
+        b1, s1, _ = macro_tier1(
+            "EUR", "USD", "neutral", "neutral",
+            rates=self._RATES, yield_payload=self._YIELD_PAYLOAD,
+        )
+        b2, s2, _ = macro_tier1(
+            "EUR", "USD", "neutral", "neutral",
+            rates=self._RATES, yield_payload=self._YIELD_PAYLOAD,
+        )
         assert b1 == b2 and s1 == s2, "Score unchanged by field rename"
 

@@ -34,14 +34,13 @@ from core.news_policy import (
     NewsPolicyLoadError,
     load_news_policy,
 )
-from services import interest_rate_service
 
 CONFIG_PATH = Path(__file__).resolve().parents[1] / "config" / "news_policy.json"
 
 # Values of the Owner-decided table (contract §7, Owner chốt 20/09/2026).
-# ``fred_refresh_hours`` is inherited from the running interest-rate service —
-# pinned separately against that service's live cadence (see
-# TestInheritedRuntimeValues).
+# ``fred_refresh_hours`` được kế thừa từ interest-rate service lúc chốt; service
+# đó đã xóa ở ca đấu nối (b) — 6h nay là giá trị Owner-decided đứng độc lập,
+# provenance lịch sử nằm ở ``_provenance`` của config.
 OWNER_DECIDED_VALUES = {
     "rss_poll_interval_minutes": 15,
     "rss_window_hours": 24,
@@ -133,15 +132,6 @@ class TestCommittedConfigValues:
 
 class TestInheritedRuntimeValues:
     """Values inherited from the current runtime carry an evidence label (B5/R4)."""
-
-    def test_fred_refresh_hours_matches_the_running_service_cadence(self):
-        # Evidence: services/interest_rate_service.py:42
-        # ``_CACHE_TTL = timedelta(hours=6)  # cập nhật tối đa 4 lần/ngày``
-        # (confirmed in docs/macro/macro_score_architecture.md §12: TTL 6 giờ).
-        inherited_hours = int(
-            interest_rate_service._CACHE_TTL.total_seconds() // 3600
-        )
-        assert load_news_policy().fred_refresh_hours == inherited_hours
 
     @pytest.mark.parametrize("key", ("rss_window_hours", "fred_refresh_hours"))
     def test_inherited_values_carry_the_evidence_label(self, key):

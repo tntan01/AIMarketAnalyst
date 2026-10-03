@@ -85,7 +85,7 @@ from services.journal_converters import _parse_utc
 from services.journal_service import JournalService
 from services.market_data_service import fetch_macro_correlation_context
 from services.mt5_service import MT5HistoryCacheIdentity, MT5Service
-from services.news_service import NewsService
+from services.news_macro_provider import NewsMacroProvider
 from services.observability_service import (
     StructuredObservabilityService,
     structured_observability,
@@ -422,7 +422,7 @@ class ScannerController:
         self,
         settings_service: SettingsService | None = None,
         mt5: MT5Service | None = None,
-        news_service: NewsService | None = None,
+        news_service: NewsMacroProvider | None = None,
         telegram_service: TelegramAlertService | None = None,
         journal_service: JournalService | None = None,
         orders_screen = None,
@@ -435,7 +435,9 @@ class ScannerController:
     ) -> None:
         self.settings_service = settings_service or SettingsService()
         self.mt5: MT5Service = mt5 or MT5Service()
-        self.news_service = news_service or NewsService()
+        # Tên thuộc tính giữ nguyên `news_service` (nhiều fixture test duck-type
+        # theo tên method); đối tượng là provider đọc `news.db` (ca đấu nối b).
+        self.news_service = news_service or NewsMacroProvider()
         self.telegram_service = telegram_service or TelegramAlertService()
         self.journal_service = journal_service or JournalService()
         self.order_management_service = order_management_service
@@ -781,6 +783,11 @@ class ScannerController:
         freshness_raw = self.news_service.macro_freshness_status()
         freshness = freshness_raw if isinstance(freshness_raw, dict) else {"confidence_multiplier": 1.0}
         freshness_multiplier = float(freshness.get("confidence_multiplier", 1.0))
+        # News sub-gate cần trạng thái RIÊNG của phạm vi sự kiện: `freshness` là
+        # worst-of 4 scope (multiplier confidence — giữ nguyên), còn "nguồn tin đã
+        # xác nhận" chỉ phụ thuộc scope `events` (plan §3.3, news-architecture §12).
+        # Đọc đúng MỘT lần mỗi scan; provider lỗi → "unavailable" (fail-closed).
+        freshness["events_scope"] = _news_events_scope(self.news_service)
         closed_trades = self.journal_service.list_closed_trades_for_account_guard() if self.journal_service else []
         account_guard_settings = {
             "max_daily_loss_pct": float(settings.trading.max_daily_loss_pct),
@@ -2987,7 +2994,7 @@ def _scan_one_symbol(
     available_symbols: list[str],
     bars_by_timeframe: dict[str, int],
     correlation_context: dict[str, Any],
-    news_service: NewsService,
+    news_service: Any,
     freshness: dict[str, Any],
     freshness_multiplier: float,
     contract_size_overrides: dict[str, float],
@@ -3011,6 +3018,23 @@ def _scan_one_symbol(
 
 # ---- Two-phase scan: Phase 1 fetches MT5 data on main thread,
 # Phase 2 runs analysis in parallel (no MT5 needed) ----
+
+def _news_events_scope(news_service: Any) -> str:
+    """Trạng thái phạm vi SỰ KIỆN của nguồn tin (`fresh`/`degraded`/`unavailable`).
+
+    Nguồn tin là seam duck-type: bản cũ (`NewsService`) không khai được scope nên
+    trả ``"unavailable"`` — fail-closed, không suy đoán từ worst-of-4 scope của
+    ``macro_freshness_status()`` (sai nguồn: scope rates/yields/items chưa từng
+    ingest sẽ khóa nhầm news gate dù dữ liệu sự kiện hoàn toàn tươi).
+    """
+    probe = getattr(news_service, "news_events_scope", None)
+    if not callable(probe):
+        return "unavailable"
+    try:
+        return str(probe()).strip().lower() or "unavailable"
+    except Exception:
+        return "unavailable"
+
 
 def _fetch_one_symbol_mt5(
     symbol: str,
@@ -3118,11 +3142,26 @@ def _fetch_one_symbol_mt5(
     spread_points = data_quality.get("spread_points") if isinstance(data_quality, dict) else None
     terminal_connected = data_quality.get("terminal_connected") if isinstance(data_quality, dict) else None
     broker_logged_in = data_quality.get("broker_logged_in") if isinstance(data_quality, dict) else None
-    # News-source verification: only mark verified when the macro context carries a
-    # real fetch scope; otherwise fail closed (None -> NewsSource MISSING).
-    news_verified = (
-        bool(macro_context)
-        and "macro_tier_detail" in (macro_context if isinstance(macro_context, dict) else {})
+    # News sub-gate (Gap 1 — ca đấu nối b): nguồn tin được coi là XÁC NHẬN khi
+    # phạm vi dữ liệu SỰ KIỆN không ở trạng thái `unavailable` (scan-level đọc một
+    # lần qua `_news_events_scope`), và chính events thật của cặp được truyền vào
+    # safety context để sub-gate chặn được event high-impact trong cửa sổ 0-30'
+    # (BLOCK) / 30-180' (CAUTION). Trước đây chỉ có `news_source_verified` suy từ
+    # hình dạng context nên sub-gate không thấy event nào để chặn.
+    _events_scope = (
+        str(freshness.get("events_scope", "")).strip().lower()
+        if isinstance(freshness, dict)
+        else ""
+    )
+    news_verified = _events_scope not in {"", "unavailable"}
+    news_events = tuple(
+        event
+        for event in (
+            macro_context.get("events")
+            if isinstance(macro_context, dict)
+            else None
+        ) or []
+        if isinstance(event, Mapping)
     )
     v4_safety = build_live_market_safety_context(
         symbol,
@@ -3139,6 +3178,7 @@ def _fetch_one_symbol_mt5(
         spread_checked_at=spread_checked_at,
         news_source_verified=bool(news_verified),
         news_checked_at=observed_at,
+        news_events=news_events,
         volatility_ratio=compute_live_volatility_ratio(
             all_candles.get("D1"), all_candles.get("H4")
         ),
@@ -3171,6 +3211,14 @@ def _fetch_one_symbol_mt5(
         "m15_candles": all_candles["M15"],
         "data_quality": data_quality,
         "macro_context": macro_context,
+        # Gap 2 (ca đấu nối b): cờ "có event high-impact trong 3h tới" do provider
+        # trả về (data_quality_flags) — `_analyze_one_symbol` đọc key này thay vì
+        # hardcode False, để regime thấy được tin gần.
+        "news_in_3h": bool(
+            data_quality.get("news_in_3h", False)
+            if isinstance(data_quality, dict)
+            else False
+        ),
         "quote_to_usd": quote_to_usd,
         "input_timestamps": input_timestamps_from_candles(all_candles),
         "mt5_history_cache": history_cache_result,
@@ -3359,6 +3407,9 @@ def _analyze_one_symbol(
             if isinstance(pkt.get("data_quality"), dict)
             else {}
         )
+        # Gap 2: cờ tin gần đi từ packet (producer `data_quality_flags` của provider)
+        # vào regime; packet cũ/thiếu key giữ nguyên hành vi cũ (False).
+        news_in_3h = bool(pkt.get("news_in_3h", False))
         _policy_min_rr = (
             order_policy.threshold.min_risk_reward
             if order_policy is not None
@@ -3371,7 +3422,7 @@ def _analyze_one_symbol(
             h1,
             symbol=symbol,
             captured_at=analysis_cutoff,
-            news_in_3h=False,
+            news_in_3h=news_in_3h,
             m15_candles=pkt.get("m15_candles"),
             m15_as_of=analysis_cutoff,
             tick_size=data_quality_packet.get("tick_size"),
@@ -3387,7 +3438,7 @@ def _analyze_one_symbol(
             safety,
             now=now,
             captured_at=analysis_cutoff,
-            news_in_3h=False,
+            news_in_3h=news_in_3h,
             analysis=analysis,
             macro_raw_buy=macro_raw_buy,
             macro_raw_sell=macro_raw_sell,
@@ -3502,6 +3553,24 @@ def _analyze_one_symbol(
     macro_bucket["macro_data_quality"] = macro_context.get(
         "macro_data_quality", 1.0
     )
+    # Reason code DISPLAY-ONLY của độ tươi lịch kinh tế (ca đấu nối b, §3.5):
+    # `MACRO_CALENDAR_STALE` không bao giờ vào MacroGate/decision reason_codes —
+    # nó đi từ `macro_freshness` của packet sang bucket hiển thị của row.
+    # Packet/fixture cũ thiếu key → [] (không lỗi, không bịa).
+    _freshness_packet = data_quality_packet.get("macro_freshness")
+    _freshness_codes = (
+        _freshness_packet.get("reason_codes")
+        if isinstance(_freshness_packet, dict)
+        else None
+    )
+    macro_bucket["freshness_reason_codes"] = [
+        str(code)
+        for code in (
+            _freshness_codes
+            if isinstance(_freshness_codes, (list, tuple))
+            else []
+        )
+    ]
     row["macro"] = macro_bucket
     return row
 

@@ -79,6 +79,10 @@ MACRO_LOW_CONFIDENCE = "MACRO_LOW_CONFIDENCE"
 MACRO_CONFLICT_CAP_UNSET = "MACRO_CONFLICT_CAP_UNSET"
 MACRO_UNKNOWN_CAP_UNSET = "MACRO_UNKNOWN_CAP_UNSET"
 MACRO_SIDE_MISSING = "MACRO_SIDE_MISSING"
+# Display-only (ca đấu nối b, §3.5): phạm vi lịch kinh tế không tươi. KHÔNG phải
+# gate code — không bao giờ vào MacroGate/decision reason_codes; chỉ nằm trong
+# `macro_freshness["reason_codes"]` → `row["macro"]["freshness_reason_codes"]`.
+MACRO_CALENDAR_STALE = "MACRO_CALENDAR_STALE"
 
 # ---------------------------------------------------------------------------
 # Score gap
@@ -340,6 +344,7 @@ REASON_CODE_MESSAGES: dict[str, str] = {
     MACRO_CONFLICT_CAP_UNSET: "Chưa chốt conflict cap — xung đột vĩ mô chưa có chính sách xử lý (fail-closed UNKNOWN).",
     MACRO_UNKNOWN_CAP_UNSET: "Chưa chốt unknown cap — trạng thái chưa rõ chưa có chính sách xử lý (fail-closed UNKNOWN).",
     MACRO_SIDE_MISSING: "Thiếu assessed side — không thể đánh giá hướng vĩ mô (fail-closed UNKNOWN).",
+    MACRO_CALENDAR_STALE: "Lịch kinh tế không tươi — cần dán mã nguồn trang ForexFactory (màn Quản lý tin).",
     # Score gap
     BUY_SELL_SCORE_GAP_LOW: "Điểm Buy và Sell quá sát nhau, thị trường chưa rõ hướng.",
     # Statistical edge

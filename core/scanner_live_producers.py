@@ -252,7 +252,7 @@ def build_live_market_safety_context(
         availability=_mark_availability(
             news_source_verified, news_checked_at, now, None
         ),
-        source="news_service",
+        source="news_repository",
         checked_at=news_checked_at,
         provenance=PROVENANCE,
         source_verified=news_source_verified,

@@ -3,9 +3,11 @@
 Ba nhóm:
 
 * **Đơn vị** — fixture thuần, `now` ghim: từng tier, data quality, shape tổng hợp.
-* **Đối chiếu Pin B** — cùng input với `tests/test_macro_cutover_b3_pin.py`:
-  `compute_macro_tiers` phải ra **giá trị bằng hệt** path cũ
-  (`NewsService._compute_macro_tiers`, AI-off) và bằng đúng hằng số đã ghim.
+* **Pin B** — bộ số liệu ghim giá trị tuyệt đối (tier1 9/0, tier2 5/5, tier3 6/4,
+  raw_total 20/9) + detail số học, chạy THUẦN trên `core.macro_tiers`. Bộ hằng số
+  `_PIN_B_*` được chuyển về đây ở WI-7 cùng lúc gỡ path cũ; hai cụm đối chiếu
+  path cũ (`TestPinBEquivalence`, `TestPortEquivalenceSweep`) đã hoàn thành sứ
+  mệnh oracle trước cutover và được gỡ theo.
 * **Độ thuần** — `core/macro_tiers` không import `services`/`ui`/`controllers`/PyQt6,
   không đọc đồng hồ (quét AST trên mã nguồn module).
 """
@@ -32,20 +34,86 @@ from core.macro_tiers import (
     matches_currency,
     stance_value,
 )
-from services.news_service import NewsService
+# ===========================================================================
+# Fixture Pin B — bộ số liệu ghim giá trị công thức.
+#
+# WI-7: chuyển từ `tests/test_macro_cutover_b3_pin.py` về đây (bản gốc ghim
+# trên path cũ `NewsService` đã xóa); nay chạy thẳng trên `core.macro_tiers`.
+# ===========================================================================
 
-# Fixture Pin B (nguồn duy nhất của bộ số liệu đối chiếu — không chép lại).
-from tests.test_macro_cutover_b3_pin import (
-    _PIN_B_CURRENCIES,
-    _PIN_B_HEADLINES,
-    _PIN_B_RAW_TOTAL,
-    _PIN_B_RATES,
-    _PIN_B_TIER1,
-    _PIN_B_TIER2,
-    _PIN_B_TIER3,
-    _pin_b_events,
-    _pin_b_snapshot,
-)
+_PIN_B_CURRENCIES = ["EUR", "USD"]
+
+# Rate cố định: EUR hike 3.5% / USD hold 5.0%.
+# rate_diff = -1.5 → diff 0/1; trend hike(4) - hold(2) = 2 → 3/1;
+# stance hawkish(1) - dovish(-1) = 2 → 4/0; yield spread -0.35 < 0 và cặp có USD,
+# base không phải USD → ±2. Tier 1 = 9 / 0.
+_PIN_B_RATES = {
+    "EUR": {"rate": 3.5, "trend": "hike", "rate_label": "3.50%"},
+    "USD": {"rate": 5.0, "trend": "hold", "rate_label": "5.00%"},
+}
+
+# Headline cố định: EUR hawkish, USD dovish (keyword stance).
+# Lexicon Tier 3 trên toàn bộ title: "rate cut" +2, "optimism" +2, "slowdown" -1,
+# "hawkish" -2, "rally" +1 → raw_sentiment +2 → sentiment 5/8 → risk_on.
+_PIN_B_HEADLINES = [
+    {
+        "title": "ECB signals hawkish stance as inflation above target",
+        "published_utc": "2026-08-13T10:00:00+00:00",
+        "currencies": ["EUR"],
+    },
+    {
+        "title": "Fed officials signal rate cut as slowdown deepens",
+        "published_utc": "2026-08-13T09:00:00+00:00",
+        "currencies": ["USD"],
+    },
+    {
+        "title": "Global markets rally as optimism returns",
+        "published_utc": "2026-08-13T11:00:00+00:00",
+        "currencies": [],
+    },
+]
+
+# Event đặt lệch hẳn khỏi biên bucket time_weight (6/24/48h) để pin không phụ
+# thuộc thời điểm chạy: +20h → weight 2.0; +50h → weight 1.0 (và < cutoff 72h).
+_PIN_B_EVENT_OFFSETS_HOURS = (20, 50)
+
+# Đường cong USD cố định (thay fetch ^TNX/^FVX): spread 2y-10y = -0.35.
+_PIN_B_YIELD_PAYLOAD = {
+    "spread": -0.35,
+    "steepening": False,
+    "ten_year_yield": 4.25,
+    "five_year_yield": None,
+    "tnx": 4.25,
+    "fvx": 4.60,
+}
+
+# Giá trị ghim (đo trên path cũ tại HEAD 02/10/2026 — WI-1; phải khớp tuyệt đối
+# sau khi port sang `core.macro_tiers`).
+_PIN_B_TIER1 = {"buy": 9, "sell": 0}
+_PIN_B_TIER2 = {"buy": 5, "sell": 5}  # Phase 15C: calendar luôn trung lập
+_PIN_B_TIER3 = {"buy": 6, "sell": 4}
+_PIN_B_RAW_TOTAL = {"buy": 20, "sell": 9}
+
+
+def _pin_b_events(now: datetime) -> list[dict]:
+    return [
+        {
+            "currency": "EUR",
+            "event": "ECB Interest Rate Decision",
+            "impact": "high",
+            "time_utc": (
+                now + timedelta(hours=_PIN_B_EVENT_OFFSETS_HOURS[0])
+            ).isoformat(),
+        },
+        {
+            "currency": "USD",
+            "event": "US CPI",
+            "impact": "high",
+            "time_utc": (
+                now + timedelta(hours=_PIN_B_EVENT_OFFSETS_HOURS[1])
+            ).isoformat(),
+        },
+    ]
 
 NOW = datetime(2026, 8, 13, 12, 0, tzinfo=timezone.utc)
 
@@ -410,7 +478,7 @@ def _compute_pin_b(now: datetime, *, vix_level: float = 18.0) -> dict:
         _pin_b_events(now),
         [],
         rates=_PIN_B_RATES,
-        yield_payload=_pin_b_snapshot(now).yield_spread_payload(),
+        yield_payload=_PIN_B_YIELD_PAYLOAD,
         now=now,
         vix_level=vix_level,
     )
@@ -469,197 +537,79 @@ class TestComputeMacroTiers:
 
 
 # ===========================================================================
-# Đối chiếu Pin B — path cũ ↔ module thuần, CÙNG input
+# Pin B — giá trị công thức đã ghim (WI-1), nay chạy THUẦN trên `core.macro_tiers`
 # ===========================================================================
 
 
-class TestPinBEquivalence:
-    """Oracle của WI-2: port phải ra giá trị bằng hệt đường cũ (AI-off)."""
+class TestPinBPinnedValues:
+    """Bộ số liệu ghim của Pin B phải giữ nguyên giá trị tuyệt đối.
 
-    def _both(self, monkeypatch) -> tuple[dict, dict]:
-        now = datetime.now(timezone.utc)
-        events = _pin_b_events(now)
-        monkeypatch.setattr(
-            NewsService,
-            "_load_interest_rates",
-            classmethod(lambda cls: _PIN_B_RATES),
-        )
-        old = NewsService()._compute_macro_tiers(
-            "EURUSD",
-            _PIN_B_CURRENCIES,
-            _PIN_B_HEADLINES,
-            events,
-            [],  # themes: bản cũ nhận nhưng không đọc
-            [],
-            ai_service=None,
-            global_snapshot=_pin_b_snapshot(now),
-        )
-        new = compute_macro_tiers(
-            _PIN_B_CURRENCIES,
-            _PIN_B_HEADLINES,
-            events,
-            [],
-            rates=_PIN_B_RATES,
-            yield_payload=_pin_b_snapshot(now).yield_spread_payload(),
-            now=now,
-            vix_level=_pin_b_snapshot(now).vix,
-        )
-        return old, new
-
-    def test_pinned_numbers_hold(self, monkeypatch):
-        _, new = self._both(monkeypatch)
-
-        assert (new["tier1"]["buy"], new["tier1"]["sell"]) == (
-            _PIN_B_TIER1["buy"], _PIN_B_TIER1["sell"],
-        ) == (9, 0)
-        assert (new["tier2"]["buy"], new["tier2"]["sell"]) == (
-            _PIN_B_TIER2["buy"], _PIN_B_TIER2["sell"],
-        ) == (5, 5)
-        assert (new["tier3"]["buy"], new["tier3"]["sell"]) == (
-            _PIN_B_TIER3["buy"], _PIN_B_TIER3["sell"],
-        ) == (6, 4)
-        assert dict(new["raw_total"]) == _PIN_B_RAW_TOTAL == {"buy": 20, "sell": 9}
-
-    def test_tiers_and_raw_match_the_old_path(self, monkeypatch):
-        old, new = self._both(monkeypatch)
-
-        for tier in ("tier1", "tier2", "tier3"):
-            assert new[tier]["buy"] == old[tier]["buy"], tier
-            assert new[tier]["sell"] == old[tier]["sell"], tier
-        assert dict(new["raw_total"]) == dict(old["raw_total"])
-        assert dict(new["alignment"]) == dict(old["alignment"])
-
-    def test_numeric_details_match_the_old_path(self, monkeypatch):
-        old, new = self._both(monkeypatch)
-
-        assert new["tier1"]["detail"] == old["tier1"]["detail"]
-        assert new["tier2"]["detail"] == old["tier2"]["detail"]
-        # Tier 3 detail: ba khóa AI đóng băng ở giá trị AI-off của bản cũ.
-        assert new["tier3"]["detail"] == old["tier3"]["detail"]
-
-    def test_reasons_match_the_old_path(self, monkeypatch):
-        old, new = self._both(monkeypatch)
-
-        assert new["reasons"] == old["reasons"]
-
-    def test_only_the_stance_source_differs(self, monkeypatch):
-        """Chênh lệch ĐƯỢC DUYỆT: stance_journal "fallback" → stance_detail "keyword"."""
-        old, new = self._both(monkeypatch)
-
-        assert new["stance_detail"]["base"]["stance"] == old["stance_journal"]["base"]["stance"]
-        assert new["stance_detail"]["quote"]["stance"] == old["stance_journal"]["quote"]["stance"]
-        assert old["stance_journal"]["base"]["source"] == "fallback"
-        assert new["stance_detail"]["base"]["source"] == "keyword"
-
-
-class TestPortEquivalenceSweep:
-    """Quét rộng path cũ ↔ module thuần trên các NHÁNH mà Pin B không chạm.
-
-    Pin B chỉ đi một tổ hợp (EUR/USD, risk-on, không hotspot). Sweep này phủ các
-    nhánh còn lại của công thức — safe-haven/risk-currency, risk_off, phủ định
-    lexicon, hotspot nặng, VIX, cặp không USD, event ngoài cửa sổ 72h/surprise —
-    để một lỗi chép tay ở nhánh hiếm cũng lộ ra.
+    Đây là bản kế thừa của cụm `TestPinBFormula` trong `tests/test_macro_cutover_b3_pin.py`
+    (đo trên path cũ `NewsService` trước cutover, đã gỡ cùng `news_service.py` ở
+    WI-7). Cùng input, cùng hằng số — nay tính bằng module thuần.
     """
 
-    # Cặp phủ đủ các nhánh phân bổ safe-haven/risk-currency của Tier 3:
-    # risk↔safe, safe↔safe, risk↔risk-adjacent, và safe↔trung tính (GBP).
-    PAIRS = (
-        ("EUR", "USD"), ("USD", "JPY"), ("AUD", "USD"), ("EUR", "AUD"),
-        ("XAU", "USD"), ("USD", "EUR"), ("XAU", "GBP"), ("NZD", "CHF"),
-    )
+    def test_tier_values_match_the_pinned_constants(self):
+        result = _compute_pin_b(NOW)
 
-    RATES = {
-        "EUR": {"rate": 3.5, "trend": "hike", "rate_label": "3.50%"},
-        "USD": {"rate": 5.0, "trend": "hold", "rate_label": "5.00%"},
-        "JPY": {"rate": -0.1, "trend": "hold", "rate_label": "-0.10%"},
-        "AUD": {"rate": 4.35, "trend": "cut", "rate_label": "4.35%"},
-        "XAU": {"rate": 0.0, "trend": "hold", "rate_label": "0.00%"},
-    }
+        for tier_name, expected in (
+            ("tier1", _PIN_B_TIER1),
+            ("tier2", _PIN_B_TIER2),
+            ("tier3", _PIN_B_TIER3),
+        ):
+            assert result[tier_name]["buy"] == expected["buy"], tier_name
+            assert result[tier_name]["sell"] == expected["sell"], tier_name
 
-    HEADLINE_SETS = {
-        "risk_on": [
-            "Global markets rally as optimism returns",
-            "ECB signals hawkish stance as inflation above target",
-            "Fed officials signal rate cut as slowdown deepens",
-        ],
-        "risk_off": [
-            "Markets fear contagion as crash deepens",
-            "BOJ hints at hawkish tightening",
-            "RBA sees slowdown and cuts stimulus",
-        ],
-        "neutral": [
-            "Markets steady ahead of data",
-            "ECB holds policy unchanged",
-            "BOJ keeps policy steady",
-        ],
-        "negated": [
-            "Fed says no rate cut on the table",
-            "ECB denies dovish pivot talk",
-            "Global markets see no rally",
-        ],
-    }
+        assert dict(result["raw_total"]) == _PIN_B_RAW_TOTAL == {"buy": 20, "sell": 9}
 
-    HOTSPOT_SETS = {
-        "none": [],
-        "mild": ["Oil tariff talks resume"],
-        "severe": ["War escalates as strike hits port", "New sanction package agreed"],
-    }
+    def test_pinned_numbers_are_literal(self):
+        """Ghim thẳng số, không chỉ so với hằng số (bắt lỗi sửa hằng số theo code)."""
+        result = _compute_pin_b(NOW)
 
-    def _events(self, now: datetime) -> list[dict]:
-        return [
-            _event("EUR", "US CPI", hours_until=10.0, actual="3.1%", forecast="3.0%"),
-            _event("USD", "FOMC Interest Rate Decision", hours_until=30.0),
-            _event("JPY", "Tokyo CPI", hours_until=55.0),
-            _event("EUR", "Retail Sales", hours_until=80.0),  # ngoài cửa sổ 72h
-        ]
+        assert (result["tier1"]["buy"], result["tier1"]["sell"]) == (9, 0)
+        assert (result["tier2"]["buy"], result["tier2"]["sell"]) == (5, 5)
+        assert (result["tier3"]["buy"], result["tier3"]["sell"]) == (6, 4)
+        assert result["raw_total"] == {"buy": 20, "sell": 9}
 
-    def _old_path(self, currencies, headlines, hotspots, events, now, vix):
-        from dataclasses import replace
+    def test_detail_numbers_match_the_pinned_paths(self):
+        """Chi tiết đủ để chứng minh fixture chạm đúng các nhánh công thức."""
+        result = _compute_pin_b(NOW)
 
-        snapshot = replace(_pin_b_snapshot(now), vix=vix)
-        return NewsService()._compute_macro_tiers(
-            "/".join(currencies),
-            list(currencies),
-            [{"title": title} for title in headlines],
-            events,
-            [],
-            [{"title": title} for title in hotspots],
-            ai_service=None,
-            global_snapshot=snapshot,
-        )
+        tier1 = result["tier1"]["detail"]
+        assert tier1["rate_differential"] == pytest.approx(-1.5)
+        assert tier1["base_stance"] == "hawkish"
+        assert tier1["quote_stance"] == "dovish"
+        assert tier1["yield_spread_adj"] == {"buy": 2, "sell": -2}
+        assert tier1["components"]["rate_diff"] == {"buy": 0, "sell": 1}
+        assert tier1["components"]["rate_trend"] == {"buy": 3, "sell": 1}
+        assert tier1["components"]["stance"] == {"buy": 4, "sell": 0}
 
-    @pytest.mark.parametrize("pair", PAIRS)
-    @pytest.mark.parametrize("headline_set", sorted(HEADLINE_SETS))
-    @pytest.mark.parametrize("hotspot_set", sorted(HOTSPOT_SETS))
-    @pytest.mark.parametrize("vix", [None, 27.0])
-    def test_sweep_matches_the_old_path(
-        self, monkeypatch, pair, headline_set, hotspot_set, vix
-    ):
-        now = datetime.now(timezone.utc)
-        events = self._events(now)
-        headlines = self.HEADLINE_SETS[headline_set]
-        hotspots = self.HOTSPOT_SETS[hotspot_set]
-        monkeypatch.setattr(
-            NewsService, "_load_interest_rates", classmethod(lambda cls: self.RATES)
-        )
+        tier2 = result["tier2"]["detail"]
+        assert tier2["base_event_count"] == 1
+        assert tier2["quote_event_count"] == 1
+        assert tier2["event_risk_score"] == 9
+        assert tier2["event_risk_level"] == "high"
+        assert [event["time_weight"] for event in tier2["base_events"]] == [2.0]
+        assert [event["time_weight"] for event in tier2["quote_events"]] == [1.0]
 
-        old = self._old_path(pair, headlines, hotspots, events, now, vix)
-        new = compute_macro_tiers(
-            list(pair),
-            [{"title": title, "published_utc": now.isoformat(), "currencies": []} for title in headlines],
-            events,
-            [{"title": title} for title in hotspots],
-            rates=self.RATES,
-            yield_payload=_pin_b_snapshot(now).yield_spread_payload(),
-            now=now,
-            vix_level=vix,
-        )
+        tier3 = result["tier3"]["detail"]
+        assert tier3["raw_sentiment"] == 2
+        assert tier3["sentiment_score_0_8"] == 5
+        assert tier3["risk_sentiment"] == "risk_on"
+        assert tier3["components"]["risk_sentiment"] == {"buy": 4, "sell": 2}
+        assert tier3["components"]["geopolitical"] == {"buy": 2, "sell": 2}
 
-        for tier in ("tier1", "tier2", "tier3"):
-            assert (new[tier]["buy"], new[tier]["sell"]) == (old[tier]["buy"], old[tier]["sell"]), tier
-            assert new[tier]["detail"] == old[tier]["detail"], tier
-        assert dict(new["raw_total"]) == dict(old["raw_total"])
-        assert new["reasons"] == old["reasons"]
+    def test_ai_off_is_the_pinned_behaviour(self):
+        """Đường AI-off: stance keyword, không verdict AI nào vào điểm."""
+        result = _compute_pin_b(NOW)
+
+        assert result["tier3"]["detail"]["ai_sentiment_used"] is False
+        assert result["tier3"]["detail"]["ai_applied_to_score"] is False
+        assert result["tier3"]["detail"]["ai_sentiment_score"] is None
+        assert result["stance_detail"]["base"]["source"] == "keyword"
+        assert result["stance_detail"]["base"]["stance"] == "hawkish"
+        assert result["stance_detail"]["quote"]["stance"] == "dovish"
+        assert result["stance_detail"]["base"]["strength"] is None
 
 
 # ===========================================================================

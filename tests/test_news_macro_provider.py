@@ -14,6 +14,7 @@ from types import SimpleNamespace
 import pytest
 
 from core.news_models import StoreState, StoreStatus
+from core.reason_codes import MACRO_CALENDAR_STALE
 from services.news_macro_provider import NEWS_STATUS_UNAVAILABLE, NewsMacroProvider
 
 NOW = datetime(2026, 8, 13, 12, 0, tzinfo=timezone.utc)
@@ -226,8 +227,13 @@ class TestMethodShapes:
     def test_macro_freshness_status_shape(self):
         status = _provider(_FakeRepository()).macro_freshness_status()
 
-        assert set(status) == {"status", "age_minutes", "confidence_multiplier"}
-        assert status == {"status": "fresh", "age_minutes": 10, "confidence_multiplier": 1.0}
+        assert set(status) == {"status", "age_minutes", "confidence_multiplier", "reason_codes"}
+        assert status == {
+            "status": "fresh",
+            "age_minutes": 10,
+            "confidence_multiplier": 1.0,
+            "reason_codes": [],
+        }
 
     def test_execution_news_status_shape(self):
         result = _provider(_FakeRepository()).execution_news_status("EUR/USD", now=NOW)
@@ -676,6 +682,7 @@ class TestFailClosed:
             "status": "expired",
             "age_minutes": 9999,
             "confidence_multiplier": 0.6,
+            "reason_codes": [MACRO_CALENDAR_STALE],
         }
 
     def test_execution_status_fails_closed_on_read_failure(self):
@@ -698,6 +705,48 @@ class TestFreshnessStatus:
         status = _provider(_FakeRepository(state=_store_state())).macro_freshness_status()
 
         assert status["status"] == "fresh" and status["confidence_multiplier"] == 1.0
+
+    def test_three_original_keys_are_untouched(self):
+        """WI-6 chỉ THÊM `reason_codes`; shape 3 key cũ giữ nguyên."""
+        status = _provider(_FakeRepository(state=_store_state())).macro_freshness_status()
+
+        assert set(status) == {"status", "age_minutes", "confidence_multiplier", "reason_codes"}
+
+    def test_events_degraded_reports_calendar_stale(self):
+        """(a) scope events degraded (các scope khác fresh) → cờ nhắc dán lịch FF."""
+        state = _store_state(events="degraded")
+
+        status = _provider(_FakeRepository(state=state)).macro_freshness_status()
+
+        assert status["reason_codes"] == [MACRO_CALENDAR_STALE]
+        assert status["status"] == "stale"  # worst-of-4 không đổi
+
+    def test_events_unavailable_reports_calendar_stale(self):
+        """(a) scope events chưa từng ingest → cùng cờ."""
+        state = _store_state(events="unavailable")
+
+        status = _provider(_FakeRepository(state=state)).macro_freshness_status()
+
+        assert status["reason_codes"] == [MACRO_CALENDAR_STALE]
+        assert status["status"] == "expired"
+
+    def test_events_fresh_with_other_scopes_unavailable_reports_nothing(self):
+        """(b) nguồn lịch tươi thì KHÔNG nhắc — dù scope khác chưa từng ingest."""
+        state = _store_state(events="fresh", items="unavailable", rates="unavailable",
+                             yields="unavailable")
+
+        status = _provider(_FakeRepository(state=state)).macro_freshness_status()
+
+        assert status["reason_codes"] == []
+        assert status["status"] == "expired"  # multiplier vẫn worst-of-4
+
+    def test_store_state_failure_also_reports_calendar_stale(self):
+        repo = _FakeRepository(fail=("store_state",))
+
+        status = _provider(repo).macro_freshness_status()
+
+        assert status["reason_codes"] == [MACRO_CALENDAR_STALE]
+        assert status["status"] == "expired"
 
     def test_any_degraded_is_stale(self):
         state = _store_state(items="degraded")
@@ -731,6 +780,46 @@ class TestFreshnessStatus:
         status = _provider(_FakeRepository(state=state)).macro_freshness_status()
 
         assert status["age_minutes"] == 9999
+
+
+class TestNewsEventsScope:
+    """WI-4b: trạng thái RIÊNG của scope sự kiện (News sub-gate đọc nguồn này)."""
+
+    def test_returns_the_events_scope_status(self):
+        for value in ("fresh", "degraded", "unavailable"):
+            state = _store_state(events=value)
+
+            assert _provider(_FakeRepository(state=state)).news_events_scope() == value
+
+    def test_other_scopes_do_not_leak_into_the_events_scope(self):
+        """rates/yields/items chưa từng ingest KHÔNG được kéo scope events xuống."""
+        state = _store_state(events="fresh", items="unavailable", rates="unavailable",
+                             yields="unavailable")
+
+        assert _provider(_FakeRepository(state=state)).news_events_scope() == "fresh"
+
+    def test_store_state_failure_fails_closed(self):
+        repo = _FakeRepository(fail=("store_state",))
+
+        assert _provider(repo).news_events_scope() == "unavailable"
+
+    def test_method_does_not_change_the_five_duck_typed_methods(self):
+        """Thêm method mới KHÔNG được đổi shape 5 method cũ."""
+        provider = NewsMacroProvider(
+            _FakeRepository(),
+            observability=SimpleNamespace(emit=lambda *a, **k: None),
+            clock=lambda: NOW,
+        )
+
+        assert callable(provider.news_events_scope)
+        for name in (
+            "preload_macro_contexts",
+            "latest_macro_context",
+            "data_quality_flags",
+            "macro_freshness_status",
+            "execution_news_status",
+        ):
+            assert callable(getattr(provider, name))
 
 
 # ===========================================================================

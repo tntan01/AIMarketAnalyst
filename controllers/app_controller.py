@@ -17,7 +17,7 @@ from services.ai_provider_catalog_service import AIProviderCatalogService
 from services.ai_service import AIProviderConfig, AIService
 from services.journal_service import JournalService
 from services.mt5_service import MT5Service
-from services.news_service import NewsService
+from services.news_macro_provider import NewsMacroProvider
 from services.order_management_service import OrderManagementService
 from services.settings_service import SettingsService
 from services.telegram_alert_service import TelegramAlertService
@@ -41,7 +41,7 @@ class AppController:
         # Lazy-initialised singletons
         self._settings_service: SettingsService | None = None
         self._mt5: MT5Service | None = None
-        self._news_service: NewsService | None = None
+        self._news_macro_provider: NewsMacroProvider | None = None
         self._journal_service: JournalService | None = None
         self._ai_catalog_service: AIProviderCatalogService | None = None
         self._telegram_service: TelegramAlertService | None = None
@@ -71,10 +71,15 @@ class AppController:
         return self._mt5
 
     @property
-    def news_service(self) -> NewsService:
-        if self._news_service is None:
-            self._news_service = NewsService()
-        return self._news_service
+    def news_macro_provider(self) -> NewsMacroProvider:
+        """Nguồn dữ liệu vĩ mô của Scanner — đọc `news.db` (ca đấu nối b).
+
+        Lazy như mọi service khác: tạo `NewsRepository` (chạy migration) chỉ xảy
+        ra ở lần đọc đầu tiên, không phải lúc khởi tạo app.
+        """
+        if self._news_macro_provider is None:
+            self._news_macro_provider = NewsMacroProvider()
+        return self._news_macro_provider
 
     @property
     def journal_service(self) -> JournalService:
@@ -133,7 +138,7 @@ class AppController:
             self._scanner_controller = ScannerController(
                 settings_service=self.settings_service,
                 mt5=self.mt5,
-                news_service=self.news_service,
+                news_service=self.news_macro_provider,
                 telegram_service=self.telegram_service,
                 journal_service=self.journal_service,
                 order_management_service=self.order_management_service,

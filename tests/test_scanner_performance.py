@@ -11,7 +11,6 @@ from types import SimpleNamespace
 import pytest
 
 import controllers.scanner_controller as scanner_module
-import services.market_data_service as market_data_module
 from controllers.scanner_controller import ScannerController
 from core.scanner import ScannerRequest, blocked_scanner_row
 from core.scanner_observability import create_scan_context
@@ -25,8 +24,6 @@ from core.scanner_performance import (
 )
 from services.data_provider import ConnectionStatus
 from services.mt5_service import MT5Service
-from services.news_service import NewsService
-from services.market_data_service import fetch_macro_correlation_context
 from services.runtime_retention_service import RuntimeRetentionService
 from services.storage_service import JsonStorage
 from services.telegram_alert_service import (
@@ -469,139 +466,6 @@ def test_real_counter_call_sites_record_actual_attempts(
     assert summary["counters"]["mt5_copy_rates_calls"] == 4
     assert summary["counters"]["mt5_full_history_calls"] == 4
     assert summary["counters"]["mt5_tail_calls"] == 0
-
-
-def test_macro_counter_call_sites_record_cache_network_and_ai_attempts(
-    monkeypatch,
-) -> None:
-    tracker = ScanPerformanceTracker()
-    downloads: list[str] = []
-
-    def downloader(ticker, **_kwargs):
-        downloads.append(ticker)
-        return SimpleNamespace(empty=True)
-
-    monkeypatch.setattr(
-        market_data_module,
-        "_fetch_via_requests",
-        lambda *_args, **_kwargs: None,
-    )
-    fetch_macro_correlation_context(
-        downloader=downloader,
-        force_refresh=True,
-        performance_tracker=tracker,
-    )
-
-    news = NewsService()
-    cached_context = {"events": []}
-    news._tier_scores_cache["EUR/USD_True"] = cached_context
-    assert news.latest_macro_context(
-        "EUR/USD",
-        performance_tracker=tracker,
-    ) is cached_context
-
-    news._tier_scores_cache.clear()
-    monkeypatch.setattr(
-        news._ff_client,
-        "calendar_events",
-        lambda _currencies: {
-            "events": [],
-            "source": "fixture",
-            "warning": "",
-        },
-    )
-    monkeypatch.setattr(news, "_get_headlines", lambda *_args: [])
-    monkeypatch.setattr(news, "_latest_official_statements", lambda: [])
-    monkeypatch.setattr(news, "_macro_themes", lambda *_args: [])
-    monkeypatch.setattr(news, "_geopolitical_hotspots", lambda *_args: [])
-    monkeypatch.setattr(
-        news,
-        "_compute_macro_tiers",
-        lambda *_args, **_kwargs: {
-            "alignment": {"buy": 15, "sell": 15},
-            "reasons": {"buy": [], "sell": []},
-            "tier1": {"detail": {}},
-            "tier2": {},
-            "tier3": {"detail": {}},
-            "raw_total": {"buy": 15, "sell": 15},
-        },
-    )
-    monkeypatch.setattr(news, "_macro_data_quality", lambda *_args: 1.0)
-    monkeypatch.setattr(
-        news,
-        "_macro_data_quality_detail",
-        lambda **_kwargs: {},
-    )
-    news.latest_macro_context(
-        "EUR/USD",
-        performance_tracker=tracker,
-    )
-
-    ai = SimpleNamespace(
-        analyze=lambda *_args, **_kwargs: json.dumps(
-            {"stance": "hawkish", "strength": 8, "confidence": 0.9, "drivers": ["tighter policy"]}
-        )
-    )
-    assert news._ai_currency_stance(
-        "CHF",
-        ["SNB signals tighter policy"],
-        ai,
-        performance_tracker=tracker,
-    ) == "hawkish"
-
-    summary = tracker.finalize()
-    counters = summary["counters"]
-    assert len(downloads) == 4
-    assert counters["yfinance_download_calls"] == 4
-    assert counters["macro_global_fetches"] == 4
-    assert counters["macro_context_cache_hits"] == 1
-    assert counters["macro_context_cache_misses"] == 1
-    assert counters["ai_stance_calls"] == 1
-
-
-def test_news_phase_call_sites_close_when_provider_raises(
-    monkeypatch,
-) -> None:
-    pair_tracker = _SpyTracker()
-    news = NewsService()
-    monkeypatch.setattr(
-        news._ff_client,
-        "calendar_events",
-        lambda _currencies: (_ for _ in ()).throw(
-            RuntimeError("calendar unavailable")
-        ),
-    )
-
-    context = news.latest_macro_context(
-        "EUR/USD",
-        performance_tracker=pair_tracker,
-    )
-
-    assert pair_tracker.started_phases.count("macro_pair_build") == 1
-    assert pair_tracker.ended_phases.count("macro_pair_build") == 1
-    source_freshness = context["macro_cache"]["source_freshness"]
-    assert source_freshness["source_status"]["calendar"]["status"] == (
-        "unavailable"
-    )
-
-    preload_tracker = _SpyTracker()
-    preload_news = NewsService()
-    monkeypatch.setattr(
-        preload_news,
-        "_get_global_macro_snapshot",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(
-            RuntimeError("news unavailable")
-        ),
-    )
-
-    with pytest.raises(RuntimeError, match="news unavailable"):
-        preload_news.preload_macro_contexts(
-            ["EUR/USD"],
-            performance_tracker=preload_tracker,
-        )
-
-    assert preload_tracker.started_phases.count("macro_global_fetch") == 1
-    assert preload_tracker.ended_phases.count("macro_global_fetch") == 1
 
 
 def test_telegram_counters_follow_actual_http_attempts(monkeypatch) -> None:

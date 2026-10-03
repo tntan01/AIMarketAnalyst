@@ -9,7 +9,7 @@ from core.symbol_scan_config import (
     is_scan_enabled,
 )
 from core.risk_engine import AnalysisInput, position_sizing, recalc_execution_lot
-from core.reason_codes import codes_to_messages
+from core.reason_codes import MACRO_CALENDAR_STALE, codes_to_messages
 from core.scanner_zone_origin import zone_origin_from_row
 from PyQt6 .QtCore import QAbstractTableModel ,QEvent ,QModelIndex ,QPoint ,QRect ,QSize ,Qt ,QTimer
 from PyQt6 .QtGui import QColor ,QIcon
@@ -1085,9 +1085,35 @@ class ScannerScreen (QWidget ):
     def _update_status_summary (self )->None :
         scanned =self .status_labels .get ("Đã quét",QLabel ("--")).text ()
         last =self .status_labels .get ("Lần quét gần nhất",QLabel ("--")).text ()
-        self .status_summary_label .setText (
-            f"Đã quét: {scanned}  •  Lần quét gần nhất: {last}"
-        )
+        summary = f"Đã quét: {scanned}  •  Lần quét gần nhất: {last}"
+        hint = self._calendar_stale_hint()
+        if hint:
+            summary += f"  •  {hint}"
+        self .status_summary_label .setText (summary)
+
+    def _calendar_stale_hint(self) -> str:
+        """Một dòng nhắc khi phạm vi lịch kinh tế không tươi (display-only, §3.5).
+
+        Đọc cờ `MACRO_CALENDAR_STALE` trên bucket hiển thị của row
+        (`row["macro"]["freshness_reason_codes"]`) — cờ này KHÔNG bao giờ là gate
+        code. Không có cờ (hoặc chưa quét) → chuỗi rỗng, nên mỗi lần
+        `_update_status_summary` chạy là hint cũ được xóa/thay đúng theo scan mới.
+        """
+        scan_result = getattr(self, "scan_result", None)
+        rows = scan_result.get("rows") if isinstance(scan_result, dict) else None
+        if not isinstance(rows, list):
+            return ""
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            macro = row.get("macro")
+            codes = macro.get("freshness_reason_codes") if isinstance(macro, dict) else None
+            if isinstance(codes, (list, tuple)) and MACRO_CALENDAR_STALE in codes:
+                return (
+                    "Cần dán lịch ForexFactory (màn Quản lý tin) — "
+                    "phạm vi lịch kinh tế không tươi."
+                )
+        return ""
 
     def _auto_trade_enabled (self )->bool :
         return bool (

@@ -13,6 +13,10 @@ từ mạng (ForexFactory/FRED/RSS/Yahoo) sang SQLite local qua `NewsRepository`
 | `macro_freshness_status` | `store_state()` → worst-of 4 scope |
 | `execution_news_status` | `events_in_range` cửa sổ blackout, đã lọc currency |
 
+Ngoài 5 method duck-type trên, provider còn một **probe bổ sung** cho Scanner:
+`news_events_scope()` — trạng thái riêng của phạm vi sự kiện, để News sub-gate
+fail-closed đúng nguồn (không dùng worst-of-4 scope của `macro_freshness_status`).
+
 Nguyên tắc:
 
 * **Không HTTP.** Mọi dữ liệu đi qua `NewsRepository` (S1 — một nguồn chân lý);
@@ -48,6 +52,7 @@ from core.macro_tiers import (
     macro_themes,
 )
 from core.news_models import NewsItemKind, StoreState
+from core.reason_codes import MACRO_CALENDAR_STALE
 from services.calendar_helpers import _event_time, _is_high_impact
 from services.news_repository import NewsRepository
 
@@ -357,6 +362,11 @@ class NewsMacroProvider:
         `age_minutes` = phút kể từ lượt ingest thành công **mới nhất** trong các
         scope có dữ liệu; không scope nào có → 9999.
 
+        `reason_codes` (display-only, KHÔNG phải gate code): scope `events`
+        `degraded`/`unavailable` → `[MACRO_CALENDAR_STALE]` để UI nhắc dán lịch
+        FF; scope events tươi → `[]` kể cả khi scope khác chưa từng ingest
+        (worst-of-4 chỉ áp cho `status`/`confidence_multiplier`).
+
         Đọc thẳng mỗi lần gọi (một truy vấn aggregate) thay vì cache: cache sẽ
         đóng băng `confidence_multiplier` mà Scanner dùng làm hệ số confidence.
         """
@@ -368,12 +378,19 @@ class NewsMacroProvider:
                 "status": _STORE_EXPIRED[0],
                 "age_minutes": _AGE_UNKNOWN_MINUTES,
                 "confidence_multiplier": _STORE_EXPIRED[1],
+                "reason_codes": [MACRO_CALENDAR_STALE],
             }
         status, multiplier = _freshness_status(state)
+        events_scope = str(getattr(state.events_state, "value", state.events_state))
         return {
             "status": status,
             "age_minutes": self._freshness_age_minutes(state, self._now()),
             "confidence_multiplier": multiplier,
+            "reason_codes": (
+                [MACRO_CALENDAR_STALE]
+                if events_scope in {"degraded", "unavailable"}
+                else []
+            ),
         }
 
     @staticmethod
@@ -391,6 +408,25 @@ class NewsMacroProvider:
         if not stamps:
             return _AGE_UNKNOWN_MINUTES
         return int((now - max(stamps)).total_seconds() / 60)
+
+    def news_events_scope(self) -> str:
+        """Trạng thái RIÊNG của phạm vi dữ liệu sự kiện (``events``).
+
+        Trả ``StoreStatus`` của scope ``events`` (``"fresh"`` / ``"degraded"`` /
+        ``"unavailable"``). Tách khỏi ``macro_freshness_status()`` (worst-of 4
+        scope) vì News sub-gate chỉ được fail-closed theo phạm vi SỰ KIỆN: một
+        scope khác chưa từng ingest (rates/yields/items) không được phép khóa
+        news gate — dữ liệu sự kiện có thể hoàn toàn tươi (plan §3.3 + news
+        architecture §12).
+
+        Lỗi đọc → ``"unavailable"`` (fail-closed) + log qua seam observability.
+        """
+        try:
+            state = self.repository.store_state()
+        except Exception as exc:
+            self._note_read_failure("", "store_state:events_scope", exc)
+            return "unavailable"
+        return str(getattr(state.events_state, "value", state.events_state))
 
     # ------------------------------------------------------------------
     # 5. execution_news_status

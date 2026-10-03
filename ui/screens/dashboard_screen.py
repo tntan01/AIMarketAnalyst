@@ -59,31 +59,60 @@ def _display_timezone(settings_service) -> ZoneInfo:
         return ZoneInfo("Asia/Ho_Chi_Minh")
 
 
+def _iso_utc_seconds(moment: datetime) -> str:
+    """Khuôn ISO-8601 UTC mà producer ghi (``YYYY-MM-DDTHH:MM:SSZ``).
+
+    ``NewsRepository.events_in_range`` so sánh ``event_time_utc`` dạng CHUỖI, nên
+    biên cửa sổ phải cùng khuôn mới đúng thứ tự thời gian (cùng helper với
+    ``services/news_macro_provider._utc_iso``).
+    """
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    return moment.astimezone(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
 def _fetch_upcoming_red_events(*, limit: int = 4, hours_ahead: int = 72) -> list[dict]:
-    """Sự kiện impact cao trong ``hours_ahead`` giờ tới (Forex Factory)."""
+    """Sự kiện impact cao trong ``hours_ahead`` giờ tới (đọc ``news.db``).
+
+    Nguồn: ``NewsRepository.events_in_range`` (một nguồn chân lý của miền Tin tức).
+    Đây là giao-tạm cho ca đấu nối (a): Dashboard chưa có đặc tả riêng nên hàm giữ
+    NGUYÊN hành vi cũ (không lọc currency, cap ``limit``, sắp ASC) chỉ đổi nguồn
+    dữ liệu; ca (a) sẽ thẩm định lại đúng quy cách.
+    """
     from services.calendar_helpers import _is_high_impact, parse_event_time
-    from services.forex_factory_client import ForexFactoryClient
+    from services.news_repository import NewsRepository
 
     now = datetime.now(timezone.utc)
     try:
-        result = ForexFactoryClient().calendar_events_window(
-            [], now, now + timedelta(hours=hours_ahead)
+        events = NewsRepository().events_in_range(
+            _iso_utc_seconds(now),
+            _iso_utc_seconds(now + timedelta(hours=hours_ahead)),
         )
     except Exception:
         return []
-    events = result.get("events", []) if isinstance(result, dict) else []
-    if not isinstance(events, list):
-        return []
     upcoming: list[tuple[datetime, dict]] = []
-    for ev in events:
-        if not isinstance(ev, dict):
+    for event in events:
+        impact = getattr(getattr(event, "impact", ""), "value", getattr(event, "impact", ""))
+        if not _is_high_impact(str(impact)):
             continue
-        if not _is_high_impact(str(ev.get("impact", ""))):
-            continue
-        dt = parse_event_time(str(ev.get("time_utc", "")))
+        time_utc = str(getattr(event, "event_time_utc", ""))
+        dt = parse_event_time(time_utc)
         if dt is None or dt < now:
             continue
-        upcoming.append((dt, {**ev, "display_time": dt}))
+        upcoming.append(
+            (
+                dt,
+                {
+                    "currency": str(getattr(event, "currency", "")),
+                    "event": str(getattr(event, "title", "")),
+                    "impact": str(impact),
+                    "forecast": getattr(event, "forecast", None),
+                    "previous": getattr(event, "previous", None),
+                    "time_utc": time_utc,
+                    "display_time": dt,
+                },
+            )
+        )
     upcoming.sort(key=lambda pair: pair[0])
     return [ev for _dt, ev in upcoming[:limit]]
 
