@@ -901,7 +901,7 @@ class NewsController:
         error_type, error_detail = _run_error_fields(upsert.conflicts)
         run_id = self._repo.record_run(
             IngestRun(
-                producer=IngestProducer.USER,
+                producer=IngestProducer.FF_PASTE,
                 started_at=started_at,
                 finished_at=_utc_now(),
                 status=IngestRunStatus.OK,
@@ -965,7 +965,7 @@ class NewsController:
         lỗi có kiểu, không ghi dữ liệu nào, all-or-nothing)."""
         self._repo.record_run(
             IngestRun(
-                producer=IngestProducer.USER,
+                producer=IngestProducer.FF_PASTE,
                 started_at=started_at,
                 finished_at=_utc_now(),
                 status=IngestRunStatus.FAILED,

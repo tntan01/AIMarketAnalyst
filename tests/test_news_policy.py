@@ -48,6 +48,8 @@ OWNER_DECIDED_VALUES = {
     "bond_yield_refresh_hours": 6,
     "event_stale_grace_minutes": 15,
     "ingest_freshness_hours": 2,
+    "event_freshness_hours": 24,
+    "event_coverage_hours": 24,
     "ingest_runs_retention_days": 30,
     "ai_window_days": 7,
     "ai_long_window_max_rows": 50,
@@ -148,6 +150,22 @@ class TestInheritedRuntimeValues:
         provenance = _config_data()["_provenance"]
         assert "fred_refresh_hours" in provenance["bond_yield_refresh_hours"]
         assert "Owner chốt đợt 5" in provenance["bond_yield_refresh_hours"]
+
+    @pytest.mark.parametrize("key", ("event_freshness_hours", "event_coverage_hours"))
+    def test_event_freshness_keys_carry_the_owner_provenance(self, key):
+        # Phương án 3 (tuổi HOẶC độ phủ) — Owner chốt 03/10/2026.
+        provenance = _config_data()["_provenance"]
+        assert "Owner chốt 03/10/2026" in provenance[key]
+        assert "phương án 3" in provenance[key]
+        assert "dán tay" in provenance[key]
+
+    def test_event_freshness_keys_are_loaded_as_positive_int_hours(self):
+        policy = load_news_policy()
+
+        assert policy.event_freshness_hours == 24
+        assert policy.event_coverage_hours == 24
+        # Không dùng chung nhịp RSS (2h) — lý do tồn tại của 2 khóa này.
+        assert policy.event_freshness_hours != policy.ingest_freshness_hours
 
 
 class TestFailClosedLoad:

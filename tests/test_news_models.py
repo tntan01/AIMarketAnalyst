@@ -114,7 +114,7 @@ ENUM_EXPECTED_VALUES: dict[type, dict[str, str]] = {
     },
     BondYieldSource: {"FRED": "fred", "YAHOO": "yahoo"},
     IngestProducer: {
-        "FF_CRAWLER": "ff_crawler",
+        "FF_PASTE": "ff_paste",
         "RSS": "rss",
         "FRED": "fred",
         "USER": "user",
@@ -266,7 +266,7 @@ MODEL_KWARGS: dict[type, dict[str, object]] = {
         "prompt_hash": "abcdef123456",
     },
     IngestRun: {
-        "producer": IngestProducer.FF_CRAWLER,
+        "producer": IngestProducer.FF_PASTE,
         "started_at": "2026-09-21T01:00:00Z",
         "finished_at": "2026-09-21T01:00:30Z",
         "status": IngestRunStatus.OK,

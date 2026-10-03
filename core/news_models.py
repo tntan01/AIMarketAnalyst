@@ -338,7 +338,7 @@ class TrendVerdict:
 class IngestProducer(_StringEnum):
     """The producer identity logging an ingest run (section 4.6)."""
 
-    FF_CRAWLER = "ff_crawler"
+    FF_PASTE = "ff_paste"
     RSS = "rss"
     FRED = "fred"
     USER = "user"

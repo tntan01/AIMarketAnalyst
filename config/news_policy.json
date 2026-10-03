@@ -7,6 +7,8 @@
   "bond_yield_refresh_hours": 6,
   "event_stale_grace_minutes": 15,
   "ingest_freshness_hours": 2,
+  "event_freshness_hours": 24,
+  "event_coverage_hours": 24,
   "ingest_runs_retention_days": 30,
   "ai_window_days": 7,
   "ai_horizon_windows": {
@@ -45,6 +47,8 @@
     "bond_yield_refresh_hours": "= giá trị khóa fred_refresh_hours (Owner chốt đợt 5 28/09/2026 — không sinh số mới; contract §7)",
     "ai_horizons": "nguyên văn contract §7 — ngắn: trong ngày–3 ngày (day 0–3); trung: 1–4 tuần (week 1–4); dài: 1–6 tháng (month 1–6). Giữ nguyên đơn vị gốc Owner viết, không quy đổi ra ngày.",
     "ai_horizon_windows": "Owner chốt đợt 6 29/09/2026 — mid 42 ngày chứa ≥1 chu kỳ CPI; long 180 ngày phủ horizon 1–6 tháng (contract §7); short = ai_window_days (floor giữ nguyên).",
-    "ai_long_window_max_rows": "Owner chốt đợt 6 29/09/2026 — số dòng dữ kiện tối đa của cửa sổ long (ưu tiên impact cao trước, rồi gần đây trước; contract §7/§9.1 bước 2)."
+    "ai_long_window_max_rows": "Owner chốt đợt 6 29/09/2026 — số dòng dữ kiện tối đa của cửa sổ long (ưu tiên impact cao trước, rồi gần đây trước; contract §7/§9.1 bước 2).",
+    "event_freshness_hours": "Owner chốt 03/10/2026 — phương án 3 (tuổi HOẶC độ phủ); events là tín hiệu dán tay cả ngày, không áp nhịp RSS",
+    "event_coverage_hours": "Owner chốt 03/10/2026 — phương án 3 (tuổi HOẶC độ phủ); events là tín hiệu dán tay cả ngày, không áp nhịp RSS"
   }
 }

@@ -56,6 +56,8 @@ MANDATORY_KEYS: Final[frozenset[str]] = frozenset(
         "bond_yield_refresh_hours",
         "event_stale_grace_minutes",
         "ingest_freshness_hours",
+        "event_freshness_hours",
+        "event_coverage_hours",
         "ingest_runs_retention_days",
         "ai_window_days",
         "ai_horizon_windows",
@@ -73,6 +75,8 @@ POSITIVE_INT_FIELDS: Final[tuple[str, ...]] = (
     "bond_yield_refresh_hours",
     "event_stale_grace_minutes",
     "ingest_freshness_hours",
+    "event_freshness_hours",
+    "event_coverage_hours",
     "ingest_runs_retention_days",
     "ai_window_days",
     "ai_long_window_max_rows",
@@ -233,6 +237,8 @@ class NewsPolicy:
     bond_yield_refresh_hours: int
     event_stale_grace_minutes: int
     ingest_freshness_hours: int
+    event_freshness_hours: int
+    event_coverage_hours: int
     ingest_runs_retention_days: int
     ai_window_days: int
     ai_horizon_windows: Mapping[str, HorizonWindow]
@@ -291,6 +297,14 @@ class NewsPolicy:
             ingest_freshness_hours=_require_positive_int(
                 _require_key(data, "ingest_freshness_hours"),
                 "ingest_freshness_hours",
+            ),
+            event_freshness_hours=_require_positive_int(
+                _require_key(data, "event_freshness_hours"),
+                "event_freshness_hours",
+            ),
+            event_coverage_hours=_require_positive_int(
+                _require_key(data, "event_coverage_hours"),
+                "event_coverage_hours",
             ),
             ingest_runs_retention_days=_require_positive_int(
                 _require_key(data, "ingest_runs_retention_days"),

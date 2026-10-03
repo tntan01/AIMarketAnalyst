@@ -180,6 +180,9 @@ class NewsRepository:
         self._ingest_freshness_max_age = timedelta(
             hours=policy.ingest_freshness_hours
         )
+        # Events: luật lai "tuổi HOẶC độ phủ" (Owner chốt 03/10/2026 — §6.5).
+        self._event_freshness_max_age = timedelta(hours=policy.event_freshness_hours)
+        self._event_coverage_min = timedelta(hours=policy.event_coverage_hours)
         # Window used by the read-time yield derivation (R4 - the value is the
         # policy key ``ai_window_days``, never a number hard-coded here).
         self._ai_window_days = policy.ai_window_days
@@ -823,11 +826,17 @@ class NewsRepository:
         return result
 
     def store_state(self) -> StoreState:
-        """Freshness of the whole store (contract §8/6.5): the last successful
-        ingest (``status`` ``ok`` or ``partial``) per producer by ``finished_at``
-        is mapped to ``core/news_freshness.classify_store_state`` with
-        ``max_age`` read from the policy ``ingest_freshness_hours`` key.  The
-        repository does not classify — it only feeds the core owner."""
+        """Freshness of the whole store (contract §8/6.5).
+
+        ``items``/``rates``/``yields`` follow the last successful ingest
+        (``status`` ``ok`` or ``partial``) per producer by ``finished_at``.
+        ``events`` follows the DATA: its age is ``MAX(news_events.fetched_at)``
+        and its future coverage is ``MAX(news_events.event_time_utc)`` - the
+        classifier applies the hybrid rule "tuổi HOẶC độ phủ" with the policy's
+        ``event_freshness_hours``/``event_coverage_hours`` (03/10/2026: run
+        labels proved brittle, see ``core/news_freshness.classify_store_state``).
+        ``max_age`` (items/rates/yields) comes from ``ingest_freshness_hours``.
+        The repository does not classify — it only feeds the core owner."""
         last_success_by_producer: dict[IngestProducer, datetime] = {}
         with self._connect() as conn:
             rows = conn.execute(
@@ -835,14 +844,24 @@ class NewsRepository:
                 "FROM ingest_runs WHERE status IN ('ok', 'partial') "
                 "GROUP BY producer"
             ).fetchall()
+            events_row = conn.execute(
+                "SELECT MAX(fetched_at) AS latest, "
+                "MAX(event_time_utc) AS coverage FROM news_events"
+            ).fetchone()
         for row in rows:
             last_success_by_producer[IngestProducer(row["producer"])] = _parse_utc_iso(
                 row["last_success"]
             )
+        events_latest_raw = events_row["latest"] if events_row is not None else None
+        coverage_raw = events_row["coverage"] if events_row is not None else None
         return classify_store_state(
             last_success_by_producer,
+            _parse_utc_iso(events_latest_raw) if events_latest_raw else None,
             datetime.now(timezone.utc),
             self._ingest_freshness_max_age,
+            events_coverage_latest=_parse_utc_iso(coverage_raw) if coverage_raw else None,
+            event_freshness_max_age=self._event_freshness_max_age,
+            event_coverage_min=self._event_coverage_min,
         )
 
     def verdicts_for(

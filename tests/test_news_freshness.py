@@ -13,7 +13,7 @@ classification (contract §11b).  Its contract, verified here:
   ``degraded`` (had a success but past ``max_age``), ``unavailable`` (never
   had one - missing producer key) - with the ``*_last_success_at`` fields
   carrying the exact last successful ingest time (``None`` only when never);
-* the producer-only signal registry of §6 is honored: ``ff_crawler`` →
+* the producer-only signal registry of §6 is honored: ``ff_paste`` →
   ``events``, ``rss`` → ``items``, ``fred`` → ``rates``, ``bond_yield`` →
   ``yields`` (đợt 5); any other producer key (``user``,
   ``on_demand_lookup``) in the mapping is ignored;
@@ -47,6 +47,8 @@ from core.news_models import (
 
 _GRACE = timedelta(minutes=15)
 _MAX_AGE = timedelta(hours=2)
+_EVENT_FRESHNESS = timedelta(hours=24)
+_EVENT_COVERAGE_MIN = timedelta(hours=24)
 _NOW = datetime(2026, 9, 21, 12, 0, 0, tzinfo=timezone.utc)
 _NEWS_FRESHNESS_PY = (
     Path(__file__).resolve().parents[1] / "core" / "news_freshness.py"
@@ -153,18 +155,169 @@ class TestClassifyEventStatus:
 class TestClassifyStoreState:
     """Fresh/degraded/unavailable per signal - one call covers all three.
 
-    ``_NOW`` = 12:00Z, ``_MAX_AGE`` = 2h  ->  freshness window edge 10:00Z.
+    ``_NOW`` = 12:00Z, ``_MAX_AGE`` (items/rates/yields) = 2h.
+
+    Fix 03/10/2026 vòng 3 (phương án 3, Owner duyệt): ``events`` theo luật LAI
+    "tuổi HOẶC độ phủ" — fresh khi dữ liệu mới (≤ ``event_freshness_hours``)
+    HOẶC lịch còn phủ tương lai ≥ ``event_coverage_hours``; bảng rỗng →
+    unavailable (B4); còn lại → degraded. Nhãn producer không tham gia.
     """
 
-    def test_three_signals_are_classified_independently_in_one_call(self):
-        state = classify_store_state(
+    def _state(
+        self,
+        producers=None,
+        data_latest=None,
+        *,
+        coverage=None,
+        now=_NOW,
+        max_age=_MAX_AGE,
+        event_freshness=_EVENT_FRESHNESS,
+        coverage_min=_EVENT_COVERAGE_MIN,
+    ):
+        return classify_store_state(
+            producers if producers is not None else {},
+            data_latest,
+            now=now,
+            max_age=max_age,
+            events_coverage_latest=coverage,
+            event_freshness_max_age=event_freshness,
+            event_coverage_min=coverage_min,
+        )
+
+    # --- (a) nhánh TUỔI -----------------------------------------------------
+
+    def test_events_fresh_by_age_within_the_event_window(self):
+        state = self._state(None, _utc("2026-09-21T11:30:00Z"))
+
+        assert state.events_state is StoreStatus.FRESH
+        assert state.events_last_success_at == _utc("2026-09-21T11:30:00Z").isoformat()
+
+    def test_events_fresh_exactly_at_the_event_freshness_boundary(self):
+        state = self._state(
+            None, _utc("2026-09-20T12:00:00Z")  # đúng 24h trước _NOW
+        )
+
+        assert state.events_state is StoreStatus.FRESH
+
+    # --- (b) nhánh ĐỘ PHỦ --------------------------------------------------
+
+    def test_stale_paste_still_fresh_when_it_covers_days_ahead(self):
+        """(b) dán 30h trước nhưng lịch còn phủ 3 ngày → fresh (nhánh phủ)."""
+        state = self._state(
+            None,
+            _utc("2026-09-20T06:00:00Z"),  # 30h trước _NOW
+            coverage=_utc("2026-09-24T12:00:00Z"),  # +3 ngày
+        )
+
+        assert state.events_state is StoreStatus.FRESH
+        # Mốc báo cáo vẫn là timestamp DỮ LIỆU, không phải mốc phủ.
+        assert state.events_last_success_at == _utc("2026-09-20T06:00:00Z").isoformat()
+
+    def test_coverage_exactly_at_the_minimum_is_fresh(self):
+        state = self._state(
+            None,
+            _utc("2026-09-20T06:00:00Z"),
+            coverage=_utc("2026-09-22T12:00:00Z"),  # đúng 24h tới
+        )
+
+        assert state.events_state is StoreStatus.FRESH
+
+    # --- (c)/(d) cả hai nhánh đều trượt → degraded -------------------------
+
+    def test_stale_paste_with_short_coverage_is_degraded(self):
+        """(c) dán 30h trước + lịch chỉ phủ 2h → degraded."""
+        state = self._state(
+            None,
+            _utc("2026-09-20T06:00:00Z"),
+            coverage=_utc("2026-09-21T14:00:00Z"),  # +2h
+        )
+
+        assert state.events_state is StoreStatus.DEGRADED
+        assert state.events_last_success_at == _utc("2026-09-20T06:00:00Z").isoformat()
+
+    def test_stale_paste_with_exhausted_calendar_is_degraded(self):
+        """(d) dán 30h trước + lịch đã cạn (mốc cuối ≤ now) → degraded."""
+        state = self._state(
+            None,
+            _utc("2026-09-20T06:00:00Z"),
+            coverage=_utc("2026-09-21T09:00:00Z"),  # đã qua
+        )
+
+        assert state.events_state is StoreStatus.DEGRADED
+
+    def test_missing_coverage_with_stale_paste_is_degraded(self):
+        state = self._state(None, _utc("2026-09-20T06:00:00Z"), coverage=None)
+
+        assert state.events_state is StoreStatus.DEGRADED
+
+    # --- (e) bảng rỗng → unavailable (B4) ---------------------------------
+
+    def test_events_unavailable_when_the_table_is_empty(self):
+        state = self._state(None, None, coverage=None)
+
+        assert state.events_state is StoreStatus.UNAVAILABLE
+        assert state.events_last_success_at is None
+
+    def test_events_unavailable_even_when_a_run_exists(self):
+        """Run `ok` không cứu được events khi bảng dữ liệu rỗng."""
+        state = self._state(
+            {IngestProducer.FF_PASTE: _utc("2026-09-21T11:59:00Z")}, None
+        )
+
+        assert state.events_state is StoreStatus.UNAVAILABLE
+        assert state.events_last_success_at is None
+
+    # --- (f) nhãn run không tham gia ---------------------------------------
+
+    def test_events_ignore_every_producer_run_label(self):
+        for producers in (
+            {},
+            {IngestProducer.FF_PASTE: _utc("2026-09-21T11:59:00Z")},
+            {IngestProducer.USER: _utc("2026-09-21T11:59:00Z")},
+            {IngestProducer.RSS: _utc("2026-09-21T11:59:00Z")},
+        ):
+            state = self._state(
+                producers,
+                _utc("2026-09-20T06:00:00Z"),  # 30h, không phủ → degraded
+                coverage=_utc("2026-09-21T09:00:00Z"),
+            )
+            assert state.events_state is StoreStatus.DEGRADED, producers
+
+    # --- (g) tín hiệu còn lại vẫn theo run ---------------------------------
+
+    def test_run_based_signals_stay_fresh_from_their_runs(self):
+        state = self._state(
             {
-                IngestProducer.FF_CRAWLER: _utc("2026-09-21T11:30:00Z"),  # fresh
-                IngestProducer.RSS: _utc("2026-09-21T07:00:00Z"),  # degraded
-                # no FRED key -> unavailable
+                IngestProducer.RSS: _utc("2026-09-21T11:15:00Z"),
+                IngestProducer.FRED: _utc("2026-09-21T11:00:00Z"),
+                IngestProducer.BOND_YIELD: _utc("2026-09-21T11:45:00Z"),
             },
-            now=_NOW,
-            max_age=_MAX_AGE,
+            None,
+        )
+
+        assert (state.items_state, state.rates_state, state.yields_state) == (
+            StoreStatus.FRESH,
+            StoreStatus.FRESH,
+            StoreStatus.FRESH,
+        )
+        assert state.items_last_success_at == _utc("2026-09-21T11:15:00Z").isoformat()
+        assert state.rates_last_success_at == _utc("2026-09-21T11:00:00Z").isoformat()
+        assert state.yields_last_success_at == _utc("2026-09-21T11:45:00Z").isoformat()
+
+    def test_run_based_signals_use_the_shared_max_age_not_the_event_window(self):
+        """`ingest_freshness_hours` (2h) vẫn áp cho items/rates/yields."""
+        state = self._state(
+            {IngestProducer.RSS: _utc("2026-09-21T08:00:00Z")},  # 4h trước _NOW
+            None,
+        )
+
+        assert state.items_state is StoreStatus.DEGRADED
+
+    def test_three_signals_are_classified_independently_in_one_call(self):
+        state = self._state(
+            {IngestProducer.RSS: _utc("2026-09-21T07:00:00Z")},  # degraded
+            _utc("2026-09-21T11:30:00Z"),  # events: fresh theo tuổi
+            # no FRED key -> unavailable
         )
         assert isinstance(state, StoreState)
         assert state.events_state is StoreStatus.FRESH
@@ -174,43 +327,25 @@ class TestClassifyStoreState:
         assert state.items_last_success_at == _utc("2026-09-21T07:00:00Z").isoformat()
         assert state.rates_last_success_at is None
 
-    def test_all_signals_fresh(self):
-        state = classify_store_state(
-            {
-                IngestProducer.FF_CRAWLER: _utc("2026-09-21T11:30:00Z"),
-                IngestProducer.RSS: _utc("2026-09-21T11:15:00Z"),
-                IngestProducer.FRED: _utc("2026-09-21T11:00:00Z"),
-            },
-            now=_NOW,
-            max_age=_MAX_AGE,
-        )
-        assert (state.events_state, state.items_state, state.rates_state) == (
-            StoreStatus.FRESH,
-            StoreStatus.FRESH,
-            StoreStatus.FRESH,
-        )
-
     def test_all_signals_degraded_keep_their_last_success_time(self):
-        state = classify_store_state(
+        state = self._state(
             {
-                IngestProducer.FF_CRAWLER: _utc("2026-09-21T08:00:00Z"),
                 IngestProducer.RSS: _utc("2026-09-21T08:00:00Z"),
                 IngestProducer.FRED: _utc("2026-09-21T08:00:00Z"),
             },
-            now=_NOW,
-            max_age=_MAX_AGE,
+            _utc("2026-09-19T08:00:00Z"),  # events 52h, không phủ → degraded
         )
         assert (state.events_state, state.items_state, state.rates_state) == (
             StoreStatus.DEGRADED,
             StoreStatus.DEGRADED,
             StoreStatus.DEGRADED,
         )
-        assert state.events_last_success_at == _utc("2026-09-21T08:00:00Z").isoformat()
+        assert state.events_last_success_at == _utc("2026-09-19T08:00:00Z").isoformat()
         assert state.items_last_success_at == _utc("2026-09-21T08:00:00Z").isoformat()
         assert state.rates_last_success_at == _utc("2026-09-21T08:00:00Z").isoformat()
 
-    def test_empty_mapping_is_unavailable_with_none_times(self):
-        state = classify_store_state({}, now=_NOW, max_age=_MAX_AGE)
+    def test_empty_inputs_are_unavailable_with_none_times(self):
+        state = self._state()
         assert state.events_state is StoreStatus.UNAVAILABLE
         assert state.items_state is StoreStatus.UNAVAILABLE
         assert state.rates_state is StoreStatus.UNAVAILABLE
@@ -219,78 +354,60 @@ class TestClassifyStoreState:
         assert state.rates_last_success_at is None
 
     def test_success_exactly_at_max_age_boundary_is_still_fresh(self):
-        state = classify_store_state(
+        state = self._state(
             {IngestProducer.FRED: _utc("2026-09-21T10:00:00Z")},
-            now=_NOW,
-            max_age=_MAX_AGE,
+            _utc("2026-09-21T10:00:00Z"),
         )
         assert state.rates_state is StoreStatus.FRESH
-        assert state.events_state is StoreStatus.UNAVAILABLE
+        assert state.events_state is StoreStatus.FRESH
         assert state.items_state is StoreStatus.UNAVAILABLE
 
     def test_success_just_past_max_age_is_degraded(self):
-        state = classify_store_state(
+        state = self._state(
             {IngestProducer.RSS: _utc("2026-09-21T09:59:59Z")},
-            now=_NOW,
-            max_age=_MAX_AGE,
+            _utc("2026-09-21T09:59:59Z"),
         )
         assert state.items_state is StoreStatus.DEGRADED
+        assert state.events_state is StoreStatus.FRESH  # trong cửa sổ 24h
 
     def test_producer_keys_outside_the_signal_registry_are_ignored(self):
         # ``user`` / ``on_demand_lookup`` feed no signal (§6.5 has no clause
         # for them); they must not turn a missing signal fresh.
-        state = classify_store_state(
+        state = self._state(
             {
                 IngestProducer.USER: _utc("2026-09-21T11:59:00Z"),
                 IngestProducer.ON_DEMAND_LOOKUP: _utc("2026-09-21T11:59:00Z"),
             },
-            now=_NOW,
-            max_age=_MAX_AGE,
+            None,
         )
         assert state.events_state is StoreStatus.UNAVAILABLE
         assert state.items_state is StoreStatus.UNAVAILABLE
         assert state.rates_state is StoreStatus.UNAVAILABLE
 
     def test_signal_key_still_wins_when_ignored_keys_are_also_present(self):
-        state = classify_store_state(
+        state = self._state(
             {
-                IngestProducer.FF_CRAWLER: _utc("2026-09-21T11:30:00Z"),
+                IngestProducer.RSS: _utc("2026-09-21T11:30:00Z"),
                 IngestProducer.USER: _utc("2026-09-21T11:59:00Z"),
                 IngestProducer.ON_DEMAND_LOOKUP: _utc("2026-09-21T11:59:00Z"),
             },
-            now=_NOW,
-            max_age=_MAX_AGE,
+            None,
         )
-        assert state.events_state is StoreStatus.FRESH
-        assert state.items_state is StoreStatus.UNAVAILABLE
+        assert state.items_state is StoreStatus.FRESH
+        assert state.events_state is StoreStatus.UNAVAILABLE
         assert state.rates_state is StoreStatus.UNAVAILABLE
 
     def test_bond_yield_producer_feeds_the_yields_signal(self):
-        # Đợt 5 (§5/§8): ``bond_yield`` -> ``yields`` — the new signal is
-        # classified by the same rule as the other three.
-        state = classify_store_state(
-            {
-                IngestProducer.BOND_YIELD: _utc("2026-09-21T11:00:00Z"),
-            },
-            now=_NOW,
-            max_age=_MAX_AGE,
+        # Đợt 5 (§5/§8): ``bond_yield`` -> ``yields`` — classified by the same
+        # run rule as items/rates.
+        state = self._state(
+            {IngestProducer.BOND_YIELD: _utc("2026-09-21T11:00:00Z")}, None
         )
         assert state.yields_state is StoreStatus.FRESH
         assert state.yields_last_success_at == _utc("2026-09-21T11:00:00Z").isoformat()
         assert state.events_state is StoreStatus.UNAVAILABLE
         assert state.items_state is StoreStatus.UNAVAILABLE
         assert state.rates_state is StoreStatus.UNAVAILABLE
-
-    def test_status_fields_are_store_status_members(self):
-        state = classify_store_state({}, now=_NOW, max_age=_MAX_AGE)
-        for field in (
-            state.events_state,
-            state.items_state,
-            state.rates_state,
-            state.yields_state,
-        ):
-            assert isinstance(field, StoreStatus)
-
 
 class TestContractShape:
     """Exact §6.5 signature + typed results only (C3/L3, B5 — no defaults)."""
@@ -304,8 +421,26 @@ class TestContractShape:
 
     def test_classify_store_state_signature_without_defaults(self):
         sig = inspect.signature(classify_store_state)
-        assert list(sig.parameters) == ["last_success_by_producer", "now", "max_age"]
+        assert list(sig.parameters) == [
+            "last_success_by_producer",
+            "events_data_latest",
+            "now",
+            "max_age",
+            "events_coverage_latest",
+            "event_freshness_max_age",
+            "event_coverage_min",
+        ]
         for name in ("now", "max_age"):
+            assert sig.parameters[name].default is inspect.Parameter.empty
+        # Ba tham số luật events là keyword-only (chữ ký rõ, không lẫn vị trí).
+        for name in (
+            "events_coverage_latest",
+            "event_freshness_max_age",
+            "event_coverage_min",
+        ):
+            assert (
+                sig.parameters[name].kind is inspect.Parameter.KEYWORD_ONLY
+            ), name
             assert sig.parameters[name].default is inspect.Parameter.empty
         assert typing.get_type_hints(classify_store_state)["return"] is StoreState
 
@@ -322,7 +457,15 @@ class TestContractShape:
             _event(), now=_DEADLINE + timedelta(minutes=1), grace=_GRACE
         )
         assert type(event_result) is EventStatus
-        state_result = classify_store_state({}, now=_NOW, max_age=_MAX_AGE)
+        state_result = classify_store_state(
+            {},
+            None,
+            now=_NOW,
+            max_age=_MAX_AGE,
+            events_coverage_latest=None,
+            event_freshness_max_age=_EVENT_FRESHNESS,
+            event_coverage_min=_EVENT_COVERAGE_MIN,
+        )
         assert type(state_result) is StoreState
         assert type(state_result.events_state) is StoreStatus
 
@@ -394,5 +537,13 @@ class TestCoreLayerBoundary:
             _event(), now=_DEADLINE + timedelta(minutes=1), grace=_GRACE
         )
         assert result.value == "stale"
-        state = classify_store_state({}, now=_NOW, max_age=_MAX_AGE)
+        state = classify_store_state(
+            {},
+            None,
+            now=_NOW,
+            max_age=_MAX_AGE,
+            events_coverage_latest=None,
+            event_freshness_max_age=_EVENT_FRESHNESS,
+            event_coverage_min=_EVENT_COVERAGE_MIN,
+        )
         assert state.rates_state.value == "unavailable"

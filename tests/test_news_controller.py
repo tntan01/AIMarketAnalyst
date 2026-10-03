@@ -390,6 +390,8 @@ def _policy(**overrides: object) -> NewsPolicy:
         "bond_yield_refresh_hours": 6,
         "event_stale_grace_minutes": 15,
         "ingest_freshness_hours": 2,
+        "event_freshness_hours": 24,
+        "event_coverage_hours": 24,
         "ingest_runs_retention_days": 30,
         "ai_window_days": 7,
         "ai_horizon_windows": {
@@ -638,7 +640,7 @@ class TestStartupTurn:
         old = (datetime.now(UTC) - timedelta(days=100)).isoformat(timespec="seconds").replace("+00:00", "Z")
         fresh = datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
         repo.record_run(IngestRun(
-            producer=IngestProducer.FF_CRAWLER, started_at=old, finished_at=old,
+            producer=IngestProducer.FF_PASTE, started_at=old, finished_at=old,
             status=IngestRunStatus.OK, items_written=1,
         ))
         repo.record_run(IngestRun(
@@ -2197,7 +2199,7 @@ class TestPasteParseError:
         assert _rows(browser, "SELECT * FROM interest_rates") == []
         runs = _rows(browser, "SELECT * FROM ingest_runs")
         assert len(runs) == 1  # đúng 1 run failed — KHÔNG có run ok mới
-        assert runs[0]["producer"] == IngestProducer.USER.value
+        assert runs[0]["producer"] == IngestProducer.FF_PASTE.value
         assert runs[0]["status"] == IngestRunStatus.FAILED.value
         assert runs[0]["items_written"] == 0
         assert runs[0]["error_type"] == ParseErrorKind.NOT_FOUND.value  # mã có kiểu
@@ -2253,7 +2255,7 @@ class TestPasteCommitWrites:
         )
         runs = _rows(browser, "SELECT * FROM ingest_runs")
         assert len(runs) == 1
-        assert runs[0]["producer"] == IngestProducer.USER.value
+        assert runs[0]["producer"] == IngestProducer.FF_PASTE.value
         assert runs[0]["status"] == IngestRunStatus.OK.value
         assert runs[0]["items_written"] == 26  # 25 sự kiện + 1 lãi suất
         assert result.run_id == runs[0]["id"]

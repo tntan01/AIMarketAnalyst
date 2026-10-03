@@ -80,7 +80,7 @@
 | Trạng thái sự kiện | `scheduled` (chưa tới giờ) — `released` (đã có số liệu thực tế) — `stale` (đã qua giờ công bố + ân hạn mà chưa có số liệu thực tế) |
 | Loại trừ (`excluded`) | Cờ do người dùng đặt để tin tự động không được tính trong dữ liệu phục vụ vĩ mô; không xóa vật lý |
 | Mã nguồn trang (page source) | Toàn bộ văn bản HTML của một trang lịch ForexFactory do người dùng sao chép/lưu từ trình duyệt của chính mình — đầu vào duy nhất của kênh cập nhật lịch kinh tế + actual (§6.1) |
-| Lượt ingest (ingest run) | Một lần chạy của một bộ sản xuất hoặc một lượt dán mã nguồn (ghi `producer=user`), có kết quả và số bản ghi đã ghi |
+| Lượt ingest (ingest run) | Một lần chạy của một bộ sản xuất hoặc một lượt dán mã nguồn (ghi `producer=ff_paste`), có kết quả và số bản ghi đã ghi |
 | Ân hạn (grace) | Khoảng chờ sau giờ sự kiện trước khi đánh dấu `stale` |
 
 Nhãn trạng thái/loại/nguồn là **enum máy đọc** — chuỗi đóng băng, không đổi
@@ -135,6 +135,8 @@ cho ca Tin tức:
    (QĐ-1 phương án A — Owner duyệt 21/09/2026), mục tin tức trên Dashboard,
    chấm điểm vĩ mô/MacroGate và mọi code tiêu thụ tin hiện hành — các đường
    này giữ nguyên hành vi runtime 100%.
+   **[Ràng buộc này chỉ còn là ghi nhận lịch sử: ca đã hoàn tất 03/10/2026 —
+   ba file trên đã xóa cùng commit `d0175ff` sau khi đấu nối (a)+(b).]**
 2. **Không dùng chung đường dữ liệu khi song song:** hệ mới chỉ ghi
    `news.db`; hệ cũ giữ cache đĩa của nó. Không bên nào đọc/ghi đường của bên
    kia.
@@ -146,11 +148,20 @@ cho ca Tin tức:
    `screen_design.md`, viết ở ca đấu nối); **(b) vĩ mô** chuyển sang đọc qua
    `NewsRepository` (đặc tả trong `macro_score_architecture.md` + tài liệu
    Scanner, viết ở ca đấu nối).
+   → **(b) ĐÃ ĐẤU NỐI 03/10/2026** (commit `d0175ff`): Scanner đọc
+   `NewsMacroProvider` → `news.db`; công thức 3-tier ở `core/macro_tiers.py`.
+   → **(a) Dashboard:** mục tin chính đã chuyển sang `news.db` (commit
+   `7720375`); widget "sự kiện đỏ sắp tới" của panel "Bản tin AI hôm nay" cũng
+   đã đọc `NewsRepository.events_in_range` (giao-tạm 03/10/2026, chờ ca (a)
+   thẩm định lại đúng quy cách).
 4. **Xóa code cũ theo từng đấu nối, cùng commit (D2):** đấu nối (a) xóa
    đường fetch headline/dashboard cũ; đấu nối (b) xóa `news_service.py` +
    `forex_factory_client.py` (đóng sổ nợ #1, hết hiệu lực ngoại lệ E3) và
    cache đĩa tin tức. Kiểm thử đặc trưng B3 ghim đầu ra vĩ mô **trước** khi
    xóa, đối chiếu tương đương sau đấu nối.
+   → **ĐÃ XÓA 03/10/2026** (commit `d0175ff`): `news_service.py`,
+   `forex_factory_client.py`, `interest_rate_service.py` + test của path cũ;
+   **sổ nợ #1 đã đóng**, ngoại lệ E3 hết hiệu lực.
 
 ## 4. Database
 
@@ -245,7 +256,7 @@ và `NewsRepository` chỉ gọi hàm này, không tự tính (L1 — tính toá
 | Cột | Kiểu | Ghi chú |
 |---|---|---|
 | `id` | INTEGER PK | |
-| `producer` | TEXT enum | `ff_crawler` \| `rss` \| `fred` \| `user` \| `on_demand_lookup` \| `bond_yield` — chuỗi đóng băng (V3(a)); từ đợt 3 (24/09/2026): `ff_crawler`, `on_demand_lookup` là giá trị lịch sử, không phát sinh thêm; **lượt dán mã nguồn trang ghi `user`**; từ đợt 5 (28/09/2026): `bond_yield` là giá trị mới (lượt refresh của `bond_yield_producer` — §6.6), không đổi giá trị đã persist |
+| `producer` | TEXT enum | `ff_paste` \| `rss` \| `fred` \| `user` \| `on_demand_lookup` \| `bond_yield` — chuỗi đóng băng (V3(a)); từ đợt 5 (28/09/2026): `bond_yield` là giá trị mới (lượt refresh của `bond_yield_producer` — §6.6), không đổi giá trị đã persist. **03/10/2026 (fix): `ff_crawler` xóa khỏi enum + CHECK (migration 003) — giá trị chưa từng persist (§4 ghi 0 lượt ở mọi vòng nghiệm thu build); lượt dán mã nguồn trang nay ghi `ff_paste`; `user` chỉ còn là nhập tay tin (§6.4).** `on_demand_lookup` vẫn là giá trị lịch sử, không phát sinh thêm |
 | `started_at` / `finished_at` | TEXT | |
 | `status` | TEXT enum | `ok` \| `partial` \| `failed` |
 | `items_written` | INTEGER | số bản ghi upsert |
@@ -363,7 +374,8 @@ xác nhận trước khi ghi):**
    (`source=ff_html`, `observed_at` = ngày sự kiện, `rate` parse từ `actual`) —
    kênh lãi suất `ff_html` (§4.4) sống lại qua đường dán. Danh mục sự kiện bóc
    **kế thừa `_FOREX_RATE_EVENTS` hiện hành** của `interest_rate_service.py`
-   (bằng chứng: runtime hiện hành — không bịa danh mục mới, B5).
+   (bằng chứng: runtime hiện hành — không bịa danh mục mới, B5; file gốc **đã
+   xóa 03/10/2026**, danh mục nay nằm trong `services/ff_source_parser.py`).
 5. **Bảng xem trước (preview):** màn hình hiển thị dữ liệu đã bóc tách dạng
    bảng — thời gian (hiển thị theo múi giờ người dùng đã chọn trong Settings —
    khóa `display.timezone`, `Asia/Ho_Chi_Minh` / `Asia/Bangkok` / `UTC`; giá trị
@@ -384,7 +396,7 @@ xác nhận trước khi ghi):**
    sau chỉnh sửa actual**: `upsert_events` + `add_rate_observations`
    (chống trùng tuyệt đối nhờ `dedupe_key` UNIQUE — **bất biến** vì chỉ
    `actual` được sửa — + **3 quy tắc merge an toàn** bên dưới) và
-   `record_run` (`producer=user`; `items_written` = tổng bản ghi sự kiện +
+   `record_run` (`producer=ff_paste`; `items_written` = tổng bản ghi sự kiện +
    lãi suất đã ghi) → màn hình hiện tóm tắt số bản ghi **mới / cập nhật /
    xung đột**. Bấm **"Hủy"** → **không ghi gì, không sinh lượt ingest**
    (preview là dữ liệu có kiểu, hủy = loại bỏ cùng mọi chỉnh sửa).
@@ -443,8 +455,8 @@ chặn client không-phải-browser (§6.1 căn cứ); quan sát `source=ff_html
 phát sinh duy nhất qua đường dán mã nguồn (§6.1 bước 4). Dẫn xuất trend
 (hike/cut/hold) không nằm trong producer — gọi `core/rate_trend.py` (§4.4).
 Trong thời gian song song, hai hệ fetch FRED độc lập (B7 — đường cache cũ
-nuôi vĩ mô di sản giữ nguyên 100%); `interest_rate_service.py` bị xóa tại
-đấu nối (b) vĩ mô (mục 12).
+nuôi vĩ mô di sản giữ nguyên 100%); `interest_rate_service.py` **đã xóa** tại
+đấu nối (b) vĩ mô, 03/10/2026, commit `d0175ff` (mục 12).
 
 ### 6.4. Nhập tay
 
@@ -462,11 +474,25 @@ không sinh chuỗi hiển thị):
   `stale`: sự kiện `impact != non` đã qua `event_time_utc + grace`
   (`event_stale_grace_minutes`) mà `actual NULL` → `stale`; có actual →
   `released`.
-- `classify_store_state(last_success_by_producer, now, max_age)` →
-  `fresh` \| `degraded` \| `unavailable` cho từng loại tín hiệu: không có lượt
-  ingest `ok`/`partial` trong `ingest_freshness_hours` → `degraded`; chưa từng
-  có → `unavailable`. Án lệ: `MacroMarketCache` (Phụ lục C — không im lặng lạc
-  quan, B4).
+- `classify_store_state(last_success_by_producer, events_data_latest, now, max_age, *,
+  events_coverage_latest, event_freshness_max_age, event_coverage_min)`
+  → `fresh` \| `degraded` \| `unavailable` cho từng loại tín hiệu. Án lệ:
+  `MacroMarketCache` (Phụ lục C — không im lặng lạc quan, B4).
+  - **`events` — luật LAI "tuổi HOẶC độ phủ" (Owner chốt 03/10/2026, phương án 3;
+    chốt ngưỡng 24/24):**
+    - bảng rỗng (không dòng `news_events` nào) → `unavailable` (B4);
+    - ngược lại → **`fresh`** khi `now − MAX(fetched_at) ≤ event_freshness_hours`
+      (nhánh TUỔI) **HOẶC** `MAX(event_time_utc) − now ≥ event_coverage_hours`
+      (nhánh ĐỘ PHỦ — lịch còn phủ tương lai đủ xa);
+    - không thoả cả hai nhánh → `degraded` (chỉ khi đó hint "Cần dán lịch" mới hiện).
+    - **Nhãn producer không tham gia** — lỗi nhãn `ff_crawler`/`user` ngày
+      03/10/2026 (dữ liệu lịch có trong DB mà tín hiệu vẫn `unavailable`) là căn
+      cứ: mỗi dòng tự mang `fetched_at`/`event_time_utc`, dữ liệu tự chứng minh;
+      lý do luật lai: events là tín hiệu **dán tay cả ngày**, nhịp RSS không áp dụng.
+  - **`items` ← `rss`, `rates` ← `fred`, `yields` ← `bond_yield` vẫn theo RUN**
+    (`ok`/`partial` trong `ingest_freshness_hours` → `degraded`; chưa từng có →
+    `unavailable`) vì mỗi tín hiệu có producer chủ sở hữu cố định còn sống (S6);
+    `user` (nhập tay tin, §6.4) và `on_demand_lookup` **không nuôi tín hiệu nào**.
 - Producer ghi `status` lúc upsert; `NewsRepository` trả kèm `store_state` khi
   bên tiêu thụ truy vấn. **Hệ quả chấm điểm/gate từ các trạng thái này do tài
   liệu miền vĩ mô quy định** (mục 12) — tài liệu này chỉ sở hữu việc phân
@@ -520,7 +546,9 @@ máy đọc, V3(a)). Tài liệu này trỏ về khóa, **không chép giá tr�
 | `fred_refresh_hours` | chu kỳ fetch lãi suất | giữ giá trị hiện hành của `interest_rate_service` (bằng chứng: đang chạy) |
 | `bond_yield_refresh_hours` (đợt 5) | chu kỳ refresh lợi suất trái phiếu | **= giá trị khóa `fred_refresh_hours` hiện hành** (Owner chốt 28/09/2026 — không sinh số mới) |
 | `event_stale_grace_minutes` | ân hạn trước khi `stale` | **15** |
-| `ingest_freshness_hours` | tuổi tối đa lượt ingest thành công trước khi `degraded` | **2** |
+| `ingest_freshness_hours` | tuổi tối đa lượt ingest thành công trước khi `degraded` (áp cho `items`/`rates`/`yields` — KHÔNG áp cho `events`, xem 2 khóa dưới) | **2** |
+| `event_freshness_hours` (03/10/2026) | nhánh TUỔI của luật lai `events`: dữ liệu lịch mới hơn mức này → `fresh` | **24** (Owner chốt 03/10/2026 — phương án 3: tuổi HOẶC độ phủ; events là tín hiệu dán tay cả ngày, không áp nhịp RSS) |
+| `event_coverage_hours` (03/10/2026) | nhánh ĐỘ PHỦ của luật lai `events`: lịch còn phủ tương lai ≥ mức này → `fresh` | **24** (Owner chốt 03/10/2026 — phương án 3) |
 | `ingest_runs_retention_days` | retention log vận hành | **30** |
 | `ai_window_days` | cửa sổ tin đưa vào prompt AI | **7** |
 | `ai_horizon_windows` (đợt 6) | cửa sổ dữ kiện **phân tầng theo chân trời** — floor `ai_min_items` vẫn tính trên cửa sổ short (đúng `ai_window_days`) | **short 7 / mid 42 / long 180 ngày** (Owner chốt 29/09/2026) |
@@ -561,7 +589,7 @@ ra ổn định; đổi cách lưu trữ bên trong không buộc bên tiêu th�
 | `latest_rates(currencies)` | quan sát gần nhất mỗi đồng tiền + trend dẫn xuất |
 | `rate_paths(currencies)` (đợt 6) | rate hiện tại − rate ~6 tháng trước mỗi đồng tiền (dẫn xuất qua `core/rate_trend.derive_rate_path` — lịch sử `interest_rates` đã lưu vĩnh viễn); thiếu quan sát cũ → `None` (B4) |
 | `latest_bond_yields(currencies)` (đợt 5) | quan sát gần nhất mỗi `(currency, maturity)` + dẫn xuất qua `core/yield_context.py`: delta trong cửa sổ (đợt 6: + delta 3 tháng/6 tháng), spread 2y–10y, real yield 10y |
-| `store_state()` | trả `StoreState` — mô hình có kiểu (C3, cấm dict trần qua ranh giới): trạng thái `fresh`/`degraded`/`unavailable` cho từng tín hiệu (`events`, `items`, `rates`, `yields` — đợt 5) + giờ ingest thành công cuối mỗi tín hiệu (từ `ingest_runs`) |
+| `store_state()` | trả `StoreState` — mô hình có kiểu (C3, cấm dict trần qua ranh giới): trạng thái `fresh`/`degraded`/`unavailable` cho từng tín hiệu (`events`, `items`, `rates`, `yields` — đợt 5) + mốc thời gian cuối mỗi tín hiệu: `items`/`rates`/`yields` từ lượt ingest thành công cuối (`ingest_runs`), **`events` từ `MAX(news_events.fetched_at)`** (sửa 03/10/2026 — §6.5) |
 | `verdicts_for(scope_type, scope_value, limit)` | lịch sử nhận định AI, mới nhất trước |
 
 **Cấm trong repository:** công thức chấm điểm, quyết định nghiệp vụ (gate),
@@ -792,19 +820,19 @@ Viết **sau** khi phần Tin tức được duyệt và triển khai (theo quy�
 | Tài liệu | Nội dung tiếp nhận từ miền này |
 |---|---|
 | `docs/ui/screen_design.md` | **ĐÃ GHI 20/09/2026 + IMPLEMENTED 23/09/2026:** màn Quản lý tin + layout cửa sổ AI (mục News Screen — ca Tin tức đã nghiệm thu). **Đợt 5 (ghi 28/09/2026 — chưa triển khai):** thiết kế lại cửa sổ AI thành 3 tab (Tổng quan 11 tài sản + batch, Chi tiết, Cặp forex) theo §9.3. **Viết sau (ca đấu nối a):** đặc tả hiển thị mục tin Dashboard (cột/tab/dialog/empty state) — tiêu thụ hợp đồng repository mục 8 |
-| `docs/macro/macro_score_architecture.md` | **ĐÃ GHI 02/10/2026 (mục 0 — đặc tả ca đấu nối b, owner đã duyệt, CHƯA TRIỂN KHAI):** mapping 3 tier + gate sang đọc DB; hệ quả fail-closed từ `store_state`/`stale`; công thức và ngưỡng vĩ mô giữ nguyên; lộ trình 4 bước B3 → port/provider → đấu nối + xóa path cũ (D2) → vận hành |
-| `docs/scanner/scanner-architecture.md` + `scanner-flow.md` | **ĐÃ GHI 02/10/2026 (§5.2/§5.3 + flow §4 — CHƯA TRIỂN KHAI):** MacroGate/news gate đọc `events_in_range` + trạng thái `stale` — fail-closed: độ tươi dữ kiện FF phụ thuộc kỷ luật dán mã nguồn của người dùng (đợt 3, 24/09/2026 — không còn đường tự chữa `event_actual_or_lookup`); khẳng định verdict AI ngoài guard chain; ghi nhận 2 gap hiện hành (`news_events` chưa vào safety context, `news_in_3h` hardcode `False`) sẽ vá cùng ca đấu nối b |
+| `docs/macro/macro_score_architecture.md` | **ĐÃ GHI 02/10/2026 + IMPLEMENTED 03/10/2026 (mục 0 — ca đấu nối b, commit `d0175ff`):** mapping 3 tier + gate sang đọc DB; hệ quả fail-closed từ `store_state`/`stale`; công thức và ngưỡng vĩ mô giữ nguyên; lộ trình 4 bước B3 → port/provider → đấu nối + xóa path cũ (D2) → vận hành — **đã hoàn tất**, 4 thay đổi nguồn có chủ ý + erratum regime `news_sensitive` ghi tại §0 |
+| `docs/scanner/scanner-architecture.md` + `scanner-flow.md` | **ĐÃ GHI 02/10/2026 + IMPLEMENTED 03/10/2026 (§5.2/§5.3 + flow §4, commit `d0175ff`):** MacroGate/news gate đọc `events_in_range` + trạng thái `stale` — fail-closed: độ tươi dữ kiện FF phụ thuộc kỷ luật dán mã nguồn của người dùng (đợt 3, 24/09/2026 — không còn đường tự chữa `event_actual_or_lookup`); khẳng định verdict AI ngoài guard chain; **2 gap đã vá** (`news_events` vào safety context, `news_in_3h` thật đi vào regime) |
 | `docs/architecture/architecture.md` | Bản đồ module/luồng dữ liệu mới; xóa mô tả `news_service.py` cũ |
 | `docs/architecture/architecture-rules.md` (Phụ lục B) | **ĐÃ GHI 20/09/2026:** ngoại lệ E3 cho ca "đập đi – xây mới"; cập nhật mốc xử lý sổ nợ #1 |
 | `docs/README.md` | **ĐÃ ĐĂNG KÝ 20/09/2026** vào danh sách tài liệu chính (D3) |
 | `docs/product/product_spec.md`, `docs/guides/USER_GUIDE.md` | Tính năng + hướng dẫn sử dụng |
 
-Code cũ bị thay thế (thời điểm xóa theo lộ trình tiêu thụ, tránh khoảng trống
-runtime): `services/news_service.py`, `services/forex_factory_client.py`
-(**không hấp thụ vào hệ mới** — đợt 3 chuyển FF sang kênh dán mã nguồn;
-xóa tại đấu nối b), `services/interest_rate_service.py` (hấp thụ
-vào `fred_rate_producer` — QĐ-1 phương án A, xóa tại đấu nối b), cache JSON
-tin tức trên đĩa, `NewsWorker`/`fetch_news_window` phía Dashboard.
+Code cũ bị thay thế: `services/news_service.py`, `services/forex_factory_client.py`
+(**không hấp thụ vào hệ mới** — đợt 3 chuyển FF sang kênh dán mã nguồn),
+`services/interest_rate_service.py` (hấp thụ vào `fred_rate_producer` — QĐ-1
+phương án A), cache JSON tin tức trên đĩa, `NewsWorker`/`fetch_news_window` phía
+Dashboard. **Tất cả ĐÃ XÓA 03/10/2026** cùng commit `d0175ff` (đấu nối (a)+(b)
+hoàn tất) — không còn khoảng trống runtime.
 
 ## 13. Quyết định đã chốt của Owner (B5 — không còn điểm OPEN)
 
@@ -838,7 +866,7 @@ xuất/nhập file):
 | Bỏ thu tự động FF | Xóa cả 4 lượt thu (lượt khởi động JSON+HTML, nút "Lấy lịch kinh tế", nút "Cập nhật actual", on-demand lookup) — app **không phát request mạng nào tới ForexFactory** |
 | Bãi bỏ xuất/nhập file | Export CSV/JSON và Import CSV/JSON (mục 10 cũ) bị bỏ; sao lưu = tệp `news.db`; bù ngày app không chạy = dán mã nguồn trang ngày quá khứ |
 | Kênh duy nhất | Người dùng dán mã nguồn trang FF (dialog dán hoặc file `.html`) → `services/ff_source_parser.py` bóc JSON `calendarComponentStates` → upsert qua repository (chống trùng `dedupe_key` + 3 quy tắc merge giữ nguyên văn) → tóm tắt mới/cập nhật/xung đột (đặc tả hành vi: mục 6.1) |
-| Stamp `source` | Sự kiện/actual/lãi suất bóc từ source dán = `ff_html` (enum đóng băng, đúng provenance); `ff_json`, `import` = giá trị lịch sử, không phát sinh; lượt dán ghi `ingest_runs` `producer=user` |
+| Stamp `source` | Sự kiện/actual/lãi suất bóc từ source dán = `ff_html` (enum đóng băng, đúng provenance); `ff_json`, `import` = giá trị lịch sử, không phát sinh; lượt dán ghi `ingest_runs` `producer=ff_paste` |
 | Lãi suất từ source dán | CÓ — parser bóc sự kiện lãi suất theo danh mục kế thừa `_FOREX_RATE_EVENTS` (B5) → `interest_rates` `source=ff_html`; kênh FF-HTML qua mạng trong `fred_rate_producer` bị gỡ |
 | `event_actual_or_lookup` | XÓA khỏi hợp đồng §8 — bên tiêu thụ đọc `events_in_range` + trạng thái `stale` (fail-closed; độ tươi là trách nhiệm người dùng dán source) |
 | `events_pending_actual` | XÓA khỏi hợp đồng §8 cùng panel hướng dẫn "sự kiện đang thiếu actual" của màn Quản lý tin (Owner quyết 26/09/2026 — bỏ tính năng khỏi hệ thống; không bên tiêu thụ nào còn) |
@@ -852,7 +880,7 @@ khác của đợt 3 giữ nguyên hiệu lực):
 
 | Hạng mục | Quyết định |
 |---|---|
-| Luồng 2 pha | **Pha 1:** dán source → "Bóc tách" → hệ thống hiển thị **bảng xem trước** dữ liệu kinh tế đã bóc (thời gian UTC, đồng tiền, sự kiện, tác động, dự báo, kỳ trước, **actual từ chính source**) kèm trạng thái từng dòng (`Mới`/`Sẽ cập nhật`/`Xung đột — giữ nhập tay`, đối chiếu `dedupe_key` chỉ-đọc) — **không ghi gì**. **Pha 2:** người dùng kiểm tra, bấm **"Cập nhật"** → hệ thống mới ghi CSDL (+ `ingest_runs` `producer=user` + tóm tắt); bấm **"Hủy"** → không ghi, không sinh lượt ingest (đặc tả hành vi: §6.1) |
+| Luồng 2 pha | **Pha 1:** dán source → "Bóc tách" → hệ thống hiển thị **bảng xem trước** dữ liệu kinh tế đã bóc (thời gian UTC, đồng tiền, sự kiện, tác động, dự báo, kỳ trước, **actual từ chính source**) kèm trạng thái từng dòng (`Mới`/`Sẽ cập nhật`/`Xung đột — giữ nhập tay`, đối chiếu `dedupe_key` chỉ-đọc) — **không ghi gì**. **Pha 2:** người dùng kiểm tra, bấm **"Cập nhật"** → hệ thống mới ghi CSDL (+ `ingest_runs` `producer=ff_paste` + tóm tắt); bấm **"Hủy"** → không ghi, không sinh lượt ingest (đặc tả hành vi: §6.1) |
 | Quyền trên bảng xem trước | **Chỉ được sửa cột `actual` khi phát hiện sai sót** (Owner quyết 24/09/2026); mọi cột còn lại (thời gian, đồng tiền, sự kiện, tác động, dự báo, kỳ trước) **read-only**; không bỏ chọn/xóa dòng — "Cập nhật" ghi toàn bộ lô bóc được (all-or-nothing); dòng đã sửa mang trạng thái `Đã sửa`, phân loại tính lại |
 | Provenance của chỉnh sửa | Dòng sự kiện có actual đã sửa → `source=user` (quy tắc merge 2+3 bảo vệ trước các lượt dán sau), **giá trị actual FF gốc giữ trong `raw_json`**; dòng không sửa → `source=ff_html`; quan sát lãi suất giữ `ff_html` (enum §4.4 không có `user` — đóng băng), giá trị đồng bộ theo actual đã sửa; `dedupe_key` **bất biến** (chỉ actual được sửa) |
 | Phân loại dòng preview | Hàm thuần trong `services/ff_source_parser.py` (đăng ký §11b) — controller không tự tính (S2), UI không tự tính (L1) |
@@ -928,7 +956,7 @@ Chốt ngày 29/09/2026, đợt 6 (độ sâu dữ liệu theo chân trời — 
   xác nhận → chống trùng (dán 2 lần cùng source không tạo row trùng — khớp
   `dedupe_key` → cập nhật); 3 quy tắc merge mỗi quy tắc một test riêng (không
   NULL đè actual, bảo vệ `source=user`, xung đột actual → ưu tiên user +
-  log); đếm mới/cập nhật/xung đột đúng; `ingest_runs` ghi `producer=user`.
+  log); đếm mới/cập nhật/xung đột đúng; `ingest_runs` ghi `producer=ff_paste`.
 - **Producer RSS/FRED:** HTTP giả lập — RSS: fixture XML từng feed, dedupe,
   feed chết → `partial`; FRED: chuỗi nguồn API → config fallback đúng thứ tự,
   không còn kênh FF-HTML qua mạng.
@@ -958,6 +986,9 @@ Chốt ngày 29/09/2026, đợt 6 (độ sâu dữ liệu theo chân trời — 
 - **Kiểm thử đặc trưng (B3):** trước khi xóa `news_service.py`, ghim đầu ra
   macro tiers/coverage trên fixture dữ liệu cũ; sau khi miền vĩ mô chuyển sang
   đọc DB, đối chiếu tương đương trên cùng fixture (thực hiện ở ca vĩ mô).
+  → **ĐÃ THỰC HIỆN**: pin `tests/test_macro_cutover_b3_pin.py` (commit
+  `1a74934`) + đối chiếu tương đương khi port sang `core/macro_tiers.py`
+  (commit `20797ec`).
 - **Cổng E2:** kiểm thử cấm mô-đun scoring/gate/alert/producer đọc
   `ai_trend_verdicts`; import-linter chiều phụ thuộc.
 
@@ -966,7 +997,8 @@ Chốt ngày 29/09/2026, đợt 6 (độ sâu dữ liệu theo chân trời — 
 1. **Chủ sở hữu:** mọi phép tính của miền đăng ký tại mục 11b; bên tiêu thụ
    chỉ dùng hợp đồng repository — không nhân bản.
 2. **Một lý do thay đổi:** mỗi mô-đun mục 3/6 có danh tính M5 một câu không
-   "và"; `NewsService` cũ 4 vai trò bị thay thế (đóng sổ nợ #1 khi hoàn tất).
+   "và"; `NewsService` cũ 4 vai trò bị thay thế (đóng sổ nợ #1 khi hoàn tất —
+   **đã đóng 03/10/2026**, commit `d0175ff`).
 3. **Điều khoản tài liệu:** hành vi mới đều có mục ở trên; tài liệu đã BAN
    HÀNH (Owner duyệt 20/09/2026) và đã đăng ký vào `docs/README.md` (D3).
 4. **Định danh phiên bản:** không tên phiên bản trong mô-đun/tính năng mới;
@@ -981,6 +1013,8 @@ bản đóng gói xanh; cổng E2 hoạt động). Tuyên bố **READY-FOR-CONNE
 ca đấu nối: (a) Dashboard và (b) vĩ mô — đặc tả riêng, lập plan riêng theo
 §3.1 khoản 3–4. Sổ nợ kiến trúc **#1 chưa đóng** — chỉ đóng tại đấu nối (b)
 khi xóa `news_service.py` + `forex_factory_client.py` (§3.1 khoản 4, B7).
+**[Cập nhật 03/10/2026: cả hai ca đấu nối (a) Dashboard và (b) vĩ mô đã nối;
+sổ nợ #1 ĐÃ ĐÓNG — ba service xóa cùng commit `d0175ff`.]**
 
 Bốn bước, đúng thứ tự; chi tiết thực thi (sản phẩm, Definition of Done, ràng
 buộc, rủi ro, quyết định mở) nằm trong plan triển khai của ca — **đã đóng và
@@ -1008,7 +1042,9 @@ họ `test_step3_fred.py` + collection error `test_smc_gate72_fix_acceptance.py`
 luồng dán 2 pha đầu-cuối đúng điều khoản §6.1 đợt 4). Tuyên bố: miền Tin tức giữ
 READY-FOR-CONNECT — hai ca đấu nối (a) Dashboard / (b) vĩ mô không đổi lộ trình
 (§3.1 khoản 3-4); sổ nợ #1 **chưa đóng** — chỉ đóng tại đấu nối (b) khi xóa
-`news_service.py` + `forex_factory_client.py`.
+`news_service.py` + `forex_factory_client.py`. **[Cập nhật 03/10/2026: sổ nợ #1
+ĐÃ ĐÓNG — ba service xóa cùng commit `d0175ff`; dòng này giữ nguyên như ghi
+nhận lịch sử tại thời điểm nghiệm thu đợt 5.]**
 
 **Sửa đổi đợt 5 (28/09/2026):** ca "AI nhận định theo tài sản + lợi suất trái
 phiếu" — tín hiệu `bond_yields` (§4.7, §6.6), khối Market context trong prompt
@@ -1093,3 +1129,4 @@ mid 42 / long 180 top 50), `status=released/stale`, **rate path 6 tháng** +
 **delta 3m/6m**. Tuyên bố: ca đợt 6 **HOÀN TẤT**; khung v2 `prompt_hash` ghim
 `9f39d7ee…`; miền Tin tức giữ READY-FOR-CONNECT — sổ nợ #1 **chưa đóng** (chỉ
 đóng tại đấu nối (b) khi xóa `news_service.py` + `forex_factory_client.py`).
+**[Cập nhật 03/10/2026: sổ nợ #1 ĐÃ ĐÓNG — commit `d0175ff`.]**

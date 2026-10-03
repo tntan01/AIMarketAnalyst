@@ -505,7 +505,7 @@ class TestEnumCheckConstraints:
         conn = _fresh_conn(tmp_path)
         _apply_news_like_runner(conn)
         for producer in (
-            "ff_crawler",
+            "ff_paste",
             "rss",
             "fred",
             "user",
@@ -696,6 +696,102 @@ class TestMigration002IngestRunsRebuild:
             conn.close()
         assert "ingest_runs" in tables
         assert "ingest_runs_v2" not in tables
+        assert "ingest_runs_v3" not in tables
+
+
+class TestMigration003IngestRunsRebuild:
+    """003 bỏ ``ff_crawler``, thêm ``ff_paste`` (§4.6, fix 03/10/2026).
+
+    Cùng khuôn rebuild như 002. Ca quan trọng: database đang chạy đã có các lượt
+    ``user`` (nhập tay tin) + ``bond_yield`` phải **sống sót** qua rebuild, CHECK
+    mới nhận ``ff_paste`` và từ chối giá trị di sản ``ff_crawler``.
+    """
+
+    def _seed_through_002(self, db_path: Path) -> None:
+        """DB như trước fix: 001+002 đã áp, có lượt user + bond_yield."""
+        conn = sqlite3.connect(db_path)
+        try:
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS schema_migrations "
+                "(version TEXT PRIMARY KEY, applied_at_utc TEXT NOT NULL)"
+            )
+            for migration in NEWS_MIGRATIONS:
+                if migration.stem.startswith("003"):
+                    break
+                conn.executescript(migration.read_text(encoding="utf-8"))
+                conn.execute(
+                    "INSERT INTO schema_migrations (version, applied_at_utc) VALUES (?, ?)",
+                    (migration.stem, "2026-09-21T00:00:00Z"),
+                )
+            conn.executemany(
+                "INSERT INTO ingest_runs (producer, started_at, finished_at, status, items_written) "
+                "VALUES (?, ?, ?, ?, ?)",
+                [
+                    ("user", "2026-10-01T01:00:00Z", "2026-10-01T01:01:00Z", "ok", 4),
+                    ("user", "2026-10-02T01:00:00Z", "2026-10-02T01:01:00Z", "ok", 2),
+                    ("bond_yield", "2026-10-02T02:00:00Z", "2026-10-02T02:01:00Z", "ok", 3),
+                ],
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def test_003_preserves_existing_runs_and_swaps_the_producer_value(self, tmp_path):
+        db_path = tmp_path / "news_legacy_003.db"
+        self._seed_through_002(db_path)
+
+        NewsRepository(db_path=db_path, migrations_dir=NEWS_MIGRATIONS_DIR)
+
+        conn = sqlite3.connect(db_path)
+        try:
+            rows = conn.execute(
+                "SELECT producer, items_written FROM ingest_runs ORDER BY id"
+            ).fetchall()
+            # 76+ lượt user ngoài đời phải sống sót nguyên vẹn qua rebuild.
+            assert rows == [("user", 4), ("user", 2), ("bond_yield", 3)]
+            versions = {
+                row[0] for row in conn.execute("SELECT version FROM schema_migrations")
+            }
+            assert versions == {migration.stem for migration in NEWS_MIGRATIONS}
+            # CHECK mới nhận ff_paste…
+            conn.execute(
+                "INSERT INTO ingest_runs (producer, started_at, finished_at, status, items_written) "
+                "VALUES (?, ?, ?, ?, ?)",
+                ("ff_paste", "2026-10-03T01:00:00Z", "2026-10-03T01:01:00Z", "ok", 12),
+            )
+            # …và từ chối giá trị di sản.
+            with pytest.raises(sqlite3.IntegrityError):
+                conn.execute(
+                    "INSERT INTO ingest_runs (producer, started_at, finished_at, status, items_written) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    ("ff_crawler", "2026-10-03T01:00:00Z", "2026-10-03T01:01:00Z", "ok", 0),
+                )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def test_003_is_idempotent_on_an_already_migrated_db(self, tmp_path):
+        repo = NewsRepository(
+            db_path=tmp_path / "news.db", migrations_dir=NEWS_MIGRATIONS_DIR
+        )
+        conn = sqlite3.connect(repo.db_path)
+        try:
+            conn.execute(
+                "INSERT INTO ingest_runs (producer, started_at, finished_at, status, items_written) "
+                "VALUES (?, ?, ?, ?, ?)",
+                ("ff_paste", "2026-10-03T01:00:00Z", "2026-10-03T01:01:00Z", "ok", 12),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        repo.migrate()  # lần hai — version đã ghi, phải là no-op
+
+        conn = sqlite3.connect(repo.db_path)
+        try:
+            assert conn.execute("SELECT COUNT(*) FROM ingest_runs").fetchone()[0] == 1
+        finally:
+            conn.close()
 
 
 class TestQd2JournalIsolation:

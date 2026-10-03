@@ -86,14 +86,6 @@ def _iso(dt: datetime) -> str:
     return dt.isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
-def _grace_and_max_age():
-    policy = load_news_policy()
-    return (
-        timedelta(minutes=policy.event_stale_grace_minutes),
-        timedelta(hours=policy.ingest_freshness_hours),
-    )
-
-
 def _event(
     dedupe: str,
     *,
@@ -221,9 +213,12 @@ def _insert_event_raw(
     impact: str = "high",
     status: str = "scheduled",
     currency: str = "USD",
+    fetched_at: str = "2026-09-21T01:00:00Z",
 ) -> None:
     """Fixture-insert a row with an EXPLICIT stored ``status`` — used to prove
-    read-time re-classification ignores the stored column."""
+    read-time re-classification ignores the stored column.  ``fetched_at`` is
+    overridable because ``store_state`` derives the ``events`` signal from
+    ``MAX(news_events.fetched_at)`` (fix 03/10/2026)."""
     conn = sqlite3.connect(db_path)
     try:
         conn.execute(
@@ -245,7 +240,7 @@ def _insert_event_raw(
                 "ff_json",
                 dedupe,
                 None,
-                "2026-09-21T01:00:00Z",
+                fetched_at,
             ),
         )
         conn.commit()
@@ -678,18 +673,56 @@ class TestStoreState:
 
     def test_ok_and_partial_count_failed_does_not(self, tmp_path):
         repo = _repo(tmp_path)
-        repo.record_run(_run(_utc_now(), producer=IngestProducer.FF_CRAWLER, status=IngestRunStatus.OK))
         repo.record_run(_run(_utc_now(), producer=IngestProducer.RSS, status=IngestRunStatus.PARTIAL))
         repo.record_run(_run(_utc_now(), producer=IngestProducer.FRED, status=IngestRunStatus.FAILED))
         state = repo.store_state()
-        assert state.events_state == StoreStatus.FRESH
         assert state.items_state == StoreStatus.FRESH
         assert state.rates_state == StoreStatus.UNAVAILABLE
         assert state.yields_state == StoreStatus.UNAVAILABLE
-        assert state.events_last_success_at is not None
         assert state.items_last_success_at is not None
         assert state.rates_last_success_at is None
         assert state.yields_last_success_at is None
+
+    def test_events_fresh_from_data_even_without_any_run(self, tmp_path):
+        """Fix 03/10/2026 (hướng B): dữ liệu events tự chứng minh độ tươi.
+
+        Không có lượt ``ingest_runs`` nào — chỉ có dòng ``news_events`` vừa ghi.
+        """
+        repo = _repo(tmp_path)
+        _insert_event_raw(
+            repo.db_path,
+            dedupe="fresh-event",
+            event_time=_utc_now(),
+            fetched_at=_utc_now(),
+        )
+
+        state = repo.store_state()
+
+        assert state.events_state == StoreStatus.FRESH
+        assert state.events_last_success_at is not None
+        assert state.items_state == StoreStatus.UNAVAILABLE
+
+    def test_events_unavailable_without_data_even_when_other_runs_exist(self, tmp_path):
+        """Run của tín hiệu khác không cứu được events khi bảng dữ liệu rỗng."""
+        repo = _repo(tmp_path)
+        repo.record_run(_run(_utc_now(), producer=IngestProducer.RSS))
+        repo.record_run(_run(_utc_now(), producer=IngestProducer.FRED))
+
+        state = repo.store_state()
+
+        assert state.events_state == StoreStatus.UNAVAILABLE
+        assert state.events_last_success_at is None
+        assert state.items_state == StoreStatus.FRESH
+        assert state.rates_state == StoreStatus.FRESH
+
+    def test_run_label_never_decides_the_events_signal(self, tmp_path):
+        """Nhãn run (kể cả ``ff_paste``) KHÔNG ảnh hưởng events — chỉ dữ liệu."""
+        repo = _repo(tmp_path)
+        repo.record_run(_run(_utc_now(), producer=IngestProducer.FF_PASTE))
+
+        state = repo.store_state()
+
+        assert state.events_state == StoreStatus.UNAVAILABLE  # không có dòng dữ liệu
 
     def test_bond_yield_run_surfaces_the_yields_signal(self, tmp_path):
         repo = _repo(tmp_path)
@@ -702,15 +735,94 @@ class TestStoreState:
         # an unrelated signal is untouched
         assert state.rates_state == StoreStatus.UNAVAILABLE
 
-    def test_past_freshness_window_is_degraded(self, tmp_path):
-        _, max_age = _grace_and_max_age()
+    def test_stale_paste_with_calendar_coverage_is_fresh(self, tmp_path):
+        """Vòng 3 (phương án 3): dán 30h trước + lịch phủ 3 ngày → fresh."""
         now = datetime.now(timezone.utc)
-        overdue = _iso(now - max_age - timedelta(minutes=30))
+        pasted = _iso(now - timedelta(hours=30))
         repo = _repo(tmp_path)
-        repo.record_run(_run(overdue, producer=IngestProducer.FF_CRAWLER))
+        _insert_event_raw(
+            repo.db_path,
+            dedupe="stale-paste-covered",
+            event_time=_iso(now + timedelta(days=3)),
+            fetched_at=pasted,
+        )
+
         state = repo.store_state()
+
+        assert state.events_state == StoreStatus.FRESH
+        # Mốc báo cáo là timestamp DỮ LIỆU (fetched_at), không phải mốc phủ.
+        assert state.events_last_success_at == pasted.replace("Z", "+00:00")
+
+    def test_stale_paste_with_short_calendar_is_degraded(self, tmp_path):
+        """Vòng 3: dán 30h trước + lịch chỉ phủ 2h → degraded (hint mới hiện)."""
+        now = datetime.now(timezone.utc)
+        pasted = _iso(now - timedelta(hours=30))
+        repo = _repo(tmp_path)
+        _insert_event_raw(
+            repo.db_path,
+            dedupe="stale-paste-thin",
+            event_time=_iso(now + timedelta(hours=2)),
+            fetched_at=pasted,
+        )
+
+        state = repo.store_state()
+
         assert state.events_state == StoreStatus.DEGRADED
-        assert state.events_last_success_at is not None
+        assert state.events_last_success_at == pasted.replace("Z", "+00:00")
+
+    def test_stale_paste_with_exhausted_calendar_is_degraded(self, tmp_path):
+        """Vòng 3: dán 30h trước + lịch đã cạn (mốc cuối ở quá khứ) → degraded."""
+        now = datetime.now(timezone.utc)
+        pasted = _iso(now - timedelta(hours=30))
+        repo = _repo(tmp_path)
+        _insert_event_raw(
+            repo.db_path,
+            dedupe="stale-paste-exhausted",
+            event_time=_iso(now - timedelta(hours=5)),
+            fetched_at=pasted,
+        )
+
+        assert repo.store_state().events_state == StoreStatus.DEGRADED
+
+    def test_newest_event_row_decides_the_events_freshness(self, tmp_path):
+        """MAX(fetched_at): dòng cũ 30h + dòng mới → tươi theo tuổi dòng MỚI."""
+        now = datetime.now(timezone.utc)
+        stale = _iso(now - timedelta(hours=30))
+        repo = _repo(tmp_path)
+        _insert_event_raw(
+            repo.db_path,
+            dedupe="old",
+            event_time=_iso(now + timedelta(hours=1)),
+            fetched_at=stale,
+        )
+        _insert_event_raw(
+            repo.db_path,
+            dedupe="new",
+            event_time=_iso(now + timedelta(hours=2)),
+            fetched_at=_utc_now(),
+        )
+
+        assert repo.store_state().events_state == StoreStatus.FRESH
+
+    def test_farthest_future_event_decides_the_coverage(self, tmp_path):
+        """MAX(event_time_utc): lịch phủ xa nhờ dòng xa nhất, không phải dòng mới nhất."""
+        now = datetime.now(timezone.utc)
+        pasted = _iso(now - timedelta(hours=30))
+        repo = _repo(tmp_path)
+        _insert_event_raw(
+            repo.db_path,
+            dedupe="near",
+            event_time=_iso(now + timedelta(hours=1)),
+            fetched_at=pasted,
+        )
+        _insert_event_raw(
+            repo.db_path,
+            dedupe="far",
+            event_time=_iso(now + timedelta(days=4)),
+            fetched_at=_iso(now - timedelta(hours=31)),
+        )
+
+        assert repo.store_state().events_state == StoreStatus.FRESH
 
 
 # ---- 8. verdicts_for ------------------------------------------------------------

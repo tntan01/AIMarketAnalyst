@@ -124,6 +124,8 @@ def _policy(**overrides) -> NewsPolicy:
         "bond_yield_refresh_hours": 6,
         "event_stale_grace_minutes": 15,
         "ingest_freshness_hours": 2,
+        "event_freshness_hours": 24,
+        "event_coverage_hours": 24,
         "ingest_runs_retention_days": 30,
         "ai_window_days": 7,
         "ai_horizon_windows": {

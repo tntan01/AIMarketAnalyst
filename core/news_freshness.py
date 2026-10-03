@@ -87,27 +87,78 @@ def _classify_signal(
     return StoreStatus.DEGRADED, last_success.isoformat()
 
 
+def _classify_events_signal(
+    data_latest: datetime | None,
+    coverage_latest: datetime | None,
+    now: datetime,
+    freshness_max_age: timedelta,
+    coverage_min: timedelta,
+) -> tuple[StoreStatus, str | None]:
+    """Freshness of the ``events`` signal - HYBRID rule (contract section 6.5).
+
+    ``fresh`` when the pasted calendar is recent (``now - data_latest`` within
+    ``freshness_max_age``) OR still covers enough of the future
+    (``coverage_latest - now >= coverage_min``); no row at all is
+    ``unavailable`` (B4); anything else is ``degraded``.  The reported time is
+    always the DATA timestamp (``fetched_at``), never a producer run label.
+    """
+    if data_latest is None:
+        return StoreStatus.UNAVAILABLE, None
+    age_ok = now - data_latest <= freshness_max_age
+    coverage_ok = (
+        coverage_latest is not None and coverage_latest - now >= coverage_min
+    )
+    if age_ok or coverage_ok:
+        return StoreStatus.FRESH, data_latest.isoformat()
+    return StoreStatus.DEGRADED, data_latest.isoformat()
+
+
 def classify_store_state(
     last_success_by_producer: Mapping[IngestProducer, datetime],
+    events_data_latest: datetime | None,
     now: datetime,
     max_age: timedelta,
+    *,
+    events_coverage_latest: datetime | None,
+    event_freshness_max_age: timedelta,
+    event_coverage_min: timedelta,
 ) -> StoreState:
     """Classify the freshness of the whole store - contract section 6.5/8.
 
-    One signal per producer owner of the registry (contract section 6):
-    ``ff_crawler`` feeds ``events``, ``rss`` feeds ``items``, ``fred`` feeds
-    ``rates`` and ``bond_yield`` feeds ``yields`` (batch B2, section 5).
-    Producer keys outside that mapping (``user``, ``on_demand_lookup``) have no clause in
-    section 6.5 and are ignored; a missing key means that signal never had a
-    successful ingest and is reported ``unavailable`` with a ``None``
-    last-success time (B4).  The classification rule itself (``_classify_signal``)
-    is shared by every signal - only the registry mapping gains a source.
+    ``events`` follows a HYBRID rule (Owner decision 03/10/2026, option 3:
+    "age OR coverage") instead of the shared ``_classify_signal``:
+
+    * no event row at all -> ``unavailable`` (B4 - never a fabricated fresh);
+    * else ``fresh`` when the data is recent enough
+      (``now - events_data_latest <= event_freshness_max_age``) **OR** the
+      calendar still covers the future far enough
+      (``events_coverage_latest - now >= event_coverage_min``);
+    * otherwise -> ``degraded``.
+
+    Why: the calendar is a hand-pasted signal the Owner refreshes through the
+    day, so the RSS cadence threshold (``ingest_freshness_hours``) is too strict
+    for it - a paste that still covers the coming days IS current data.  The UI
+    hint must only appear when the pasted calendar is genuinely outdated (stale
+    paste AND exhausted coverage).  The label-based path was dropped entirely
+    (03/10/2026 incident: runs written under ``ff_crawler``/``user`` while the
+    calendar data was present).
+
+    ``items``/``rates``/``yields`` keep the run-based rule via the shared
+    ``_classify_signal`` and the caller's ``max_age`` (``rss``/``fred``/
+    ``bond_yield`` each have a fixed, still-living producer owner - S6);
+    producer keys outside that mapping (``user`` - manual note entry,
+    ``on_demand_lookup``) feed no signal and are ignored.
     """
-    events_latest = last_success_by_producer.get(IngestProducer.FF_CRAWLER)
     items_latest = last_success_by_producer.get(IngestProducer.RSS)
     rates_latest = last_success_by_producer.get(IngestProducer.FRED)
     yields_latest = last_success_by_producer.get(IngestProducer.BOND_YIELD)
-    events_status, events_success_at = _classify_signal(events_latest, now, max_age)
+    events_status, events_success_at = _classify_events_signal(
+        events_data_latest,
+        events_coverage_latest,
+        now,
+        event_freshness_max_age,
+        event_coverage_min,
+    )
     items_status, items_success_at = _classify_signal(items_latest, now, max_age)
     rates_status, rates_success_at = _classify_signal(rates_latest, now, max_age)
     yields_status, yields_success_at = _classify_signal(yields_latest, now, max_age)
