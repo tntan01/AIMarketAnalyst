@@ -276,6 +276,33 @@ Snapshot ngày 09/08/2026 không xác nhận JPY là safe haven trong sample: c�
 JPY pairs và AUD/NZD đều neutral; chỉ BTC/USD, XAG/USD và XAU/USD actionable
 theo raw gate. Vì vậy bật flag hiện tại không làm JPY pairs được giảm phạt.
 
+### Sao lưu / Phục hồi dữ liệu (chuyển máy)
+
+Mở **Cài đặt → tab Sao lưu**. Hai thao tác:
+
+- **Sao lưu ngay…** — đóng gói toàn bộ dữ liệu người dùng thành **một file
+  zip** (mặc định đề xuất trong thư mục `backups` của dữ liệu app; có thể chọn
+  nơi khác như USB). Gói gồm: hai cơ sở dữ liệu `journal.db` (nhật ký) và
+  `news.db` (tin tức) — chụp thời điểm đang chạy vẫn nguyên vẹn, `settings.json`
+  (toàn bộ cài đặt + cấu hình từng mã), trạng thái cửa sổ, trạng thái quản lý
+  lệnh, sức khỏe quét, snapshot và bằng chứng các lần quét. **Loại bỏ** log,
+  cache và các output tái tạo được. Giữ tối đa 5 thế hệ gần nhất tại thư mục
+  `backups` mặc định.
+- **Phục hồi từ file…** — chọn file zip đã sao lưu. App kiểm tra toàn vẹn
+  (SHA-256 từng tệp) rồi **tự sao lưu an toàn dữ liệu hiện tại** trước khi
+  chuẩn bị phục hồi; khởi động lại app để áp dụng (lúc khởi động, trước khi bất
+  kỳ chức năng nào chạm dữ liệu).
+
+**Lưu ý khi chuyển máy:**
+
+1. Cài app bản mới trên máy mới, chạy một lần, thoát ra.
+2. Copy file zip sao lưu sang, mở **Cài đặt → Sao lưu → Phục hồi từ file…**,
+   khởi động lại.
+3. **API key của các nhà cung cấp AI không nằm trong file sao lưu** (chúng được
+   lưu trong Windows Credential Manager) — nhập lại ở **Cài đặt → AI**.
+4. Cơ sở dữ liệu cũ hơn app mới vẫn phục hồi được: migration tự nâng cấp schema
+   khi app mở database.
+
 ## 7.1. Tin tức — AI nhận định xu hướng (dialog 3 tab)
 
 Mở từ nút **AI nhận định xu hướng** ở màn Quản lý tin. Cửa sổ có **3 tab**, kèm

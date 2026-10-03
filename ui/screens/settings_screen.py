@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from datetime import datetime
+from pathlib import Path
 
 from config.constants import DEFAULT_DEEPSEEK_MODEL, SUPPORTED_SYMBOLS
+from config.paths import app_data_dir
 from config.settings import AdvancedSettings, AIProviderSettings, AISettings, DisplaySettings, NotificationSettings, SymbolScanSettings, TradingSettings
 from core.symbol_scan_config import (
     apply_settings_row,
@@ -22,6 +25,7 @@ from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDoubleSpinBox,
+    QFileDialog,
     QFrame,
     QGridLayout,
     QHeaderView,
@@ -30,6 +34,7 @@ from PyQt6.QtWidgets import (
     QLineEdit,
     QListWidget,
     QListWidgetItem,
+    QMessageBox,
     QPushButton,
     QScrollArea,
     QSizePolicy,
@@ -59,6 +64,7 @@ from ui.layout_system import (
 )
 from ui.screens.shared import action_button, card, page_header
 from workers.ai_test_worker import AITestWorker
+from workers.backup_worker import BackupWorker
 
 class SettingsScreen(QWidget):
     def __init__(self, navigate=None, *, app=None) -> None:
@@ -71,6 +77,8 @@ class SettingsScreen(QWidget):
         self.app_settings = self.settings_service.load()
         self.ai_test_thread = None
         self.ai_test_worker = None
+        self._backup_thread = None
+        self._backup_worker = None
         self.setObjectName("FormScreen")
         self._build_ui()
 
@@ -87,6 +95,7 @@ class SettingsScreen(QWidget):
         tabs.addTab(self._order_management_tab(), "Quản lý lệnh")
         tabs.addTab(self._display_tab(), "Hiển thị")
         tabs.addTab(self._advanced_tab(), "Nâng cao")
+        tabs.addTab(self._backup_tab(), "Sao lưu")
         # Ở viewport compact, nội dung tab cao hơn vùng hiển thị; đặt trong vùng
         # cuộn dọc để mọi cài đặt vẫn tới được. Desktop đã vừa nên không mọc
         # thanh cuộn.
@@ -1737,3 +1746,159 @@ class SettingsScreen(QWidget):
 
     def _advanced_tab(self) -> QFrame:
         return self._advanced_tab_impl()
+
+    # ------------------------------------------------------------------
+    # Sao lưu / Phục hồi (plan backup-restore; logic nằm ở BackupService)
+    # ------------------------------------------------------------------
+
+    def _backup_tab(self) -> QFrame:
+        frame = card()
+        frame.layout().setAlignment(Qt.AlignmentFlag.AlignTop)
+
+        panel = QFrame()
+        panel.setObjectName("CompactFormPanel")
+        panel_layout = QVBoxLayout(panel)
+        configure_layout(panel_layout, spacing=LayoutTokens.SPACE_2)
+
+        title = QLabel("Sao lưu / Phục hồi dữ liệu")
+        title.setObjectName("PanelTitle")
+        panel_layout.addWidget(title)
+
+        info = QLabel(
+            "Sao lưu đóng gói cả hai cơ sở dữ liệu (nhật ký, tin tức), cài đặt "
+            "và dữ liệu quét vào một file zip để chuyển sang máy khác. API key "
+            "không nằm trong file — cần nhập lại trên máy mới. Phục hồi được "
+            "áp dụng khi khởi động lại app; dữ liệu hiện tại luôn được tự sao "
+            "lưu an toàn trước khi ghi đè."
+        )
+        info.setObjectName("HelperText")
+        info.setWordWrap(True)
+        panel_layout.addWidget(info)
+
+        button_row = QHBoxLayout()
+        button_row.setSpacing(LayoutTokens.SPACE_3)
+        self.backup_now_button = action_button(
+            "Sao lưu ngay…", primary=True, color="success",
+            icon="save", icon_role="selection_text", icon_disabled_role="selection_text",
+        )
+        self.backup_now_button.clicked.connect(self._choose_backup_destination)
+        self.restore_button = action_button(
+            "Phục hồi từ file…", primary=True, color="info",
+            icon="upload", icon_role="selection_text", icon_disabled_role="selection_text",
+        )
+        self.restore_button.clicked.connect(self._choose_restore_file)
+        button_row.addWidget(self.backup_now_button)
+        button_row.addWidget(self.restore_button)
+        button_row.addStretch(1)
+        panel_layout.addLayout(button_row)
+
+        self.backup_status_label = QLabel("")
+        self.backup_status_label.setObjectName("HelperText")
+        self.backup_status_label.setWordWrap(True)
+        panel_layout.addWidget(self.backup_status_label)
+        panel_layout.addStretch(1)
+
+        frame.layout().addWidget(panel, 0, Qt.AlignmentFlag.AlignTop)
+        return frame
+
+    def _choose_backup_destination(self) -> None:
+        if self._backup_thread is not None:
+            return
+        default_dir = app_data_dir() / "backups"
+        default_path = default_dir / (
+            f"backup-{datetime.now().strftime('%Y%m%d-%H%M')}.zip"
+        )
+        dest, _ = QFileDialog.getSaveFileName(
+            self,
+            "Chọn nơi lưu bản sao lưu",
+            str(default_path),
+            "Bản sao lưu (*.zip)",
+        )
+        if not dest:
+            return
+        self._run_backup_worker(Path(dest))
+
+    def _choose_restore_file(self) -> None:
+        if self._backup_thread is not None:
+            return
+        zip_file, _ = QFileDialog.getOpenFileName(
+            self,
+            "Chọn file sao lưu để phục hồi",
+            str(app_data_dir() / "backups"),
+            "Bản sao lưu (*.zip)",
+        )
+        if not zip_file:
+            return
+        confirm = QMessageBox.warning(
+            self,
+            "Phục hồi dữ liệu",
+            "Phục hồi sẽ ghi đè toàn bộ dữ liệu hiện tại bằng dữ liệu trong "
+            "file sao lưu và cần khởi động lại app. Dữ liệu hiện tại được tự "
+            "sao lưu an toàn trước khi ghi đè. Tiếp tục?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if confirm != QMessageBox.StandardButton.Yes:
+            return
+        self._run_restore_worker(Path(zip_file))
+
+    def _run_backup_worker(self, dest: Path) -> None:
+        self._set_backup_status("Đang sao lưu…", "ok")
+        thread = QThread(self)
+        worker = BackupWorker("backup", dest_dir=dest)
+        self._start_backup_thread(thread, worker)
+
+    def _run_restore_worker(self, zip_path: Path) -> None:
+        self._set_backup_status("Đang kiểm tra và chuẩn bị phục hồi…", "ok")
+        thread = QThread(self)
+        worker = BackupWorker("restore", zip_path=zip_path)
+        worker.restore_staged.connect(self._restore_staged)
+        self._start_backup_thread(thread, worker)
+
+    def _start_backup_thread(self, thread: QThread, worker: BackupWorker) -> None:
+        self.backup_now_button.setEnabled(False)
+        self.restore_button.setEnabled(False)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.backup_done.connect(self._backup_succeeded)
+        worker.failed.connect(self._backup_failed)
+        worker.finished.connect(thread.quit)
+        worker.finished.connect(worker.deleteLater)
+        thread.finished.connect(self._backup_worker_finished)
+        thread.finished.connect(thread.deleteLater)
+        self._backup_thread = thread
+        self._backup_worker = worker
+        thread.start()
+
+    def _backup_succeeded(self, message: str) -> None:
+        self._set_backup_status(message, "ok")
+
+    def _backup_failed(self, message: str) -> None:
+        self._set_backup_status(f"Thất bại: {message}", "error")
+
+    def _backup_worker_finished(self) -> None:
+        self.backup_now_button.setEnabled(True)
+        self.restore_button.setEnabled(True)
+        self._backup_thread = None
+        self._backup_worker = None
+
+    def _restore_staged(self, message: str, safety_backup: str) -> None:
+        text = message
+        if safety_backup:
+            text += f"\nBản an toàn: {safety_backup}"
+        self._set_backup_status(text, "ok")
+        restart = QMessageBox.question(
+            self,
+            "Khởi động lại",
+            "Đã chuẩn bị xong. Khởi động lại app ngay để áp dụng?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if restart == QMessageBox.StandardButton.Yes:
+            self._restart_app()
+
+    def _set_backup_status(self, text: str, state: str) -> None:
+        self.backup_status_label.setText(text)
+        self.backup_status_label.setProperty("state", state)
+        self.backup_status_label.style().unpolish(self.backup_status_label)
+        self.backup_status_label.style().polish(self.backup_status_label)

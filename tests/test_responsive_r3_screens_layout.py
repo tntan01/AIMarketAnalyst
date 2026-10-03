@@ -407,7 +407,8 @@ def test_every_settings_tab_stays_reachable(
     app = _app()
     screen = _open(shell, "settings", viewport)
     tabs = _settings_tabs(screen)
-    assert tabs.count() == 6
+    # 7 tab kể từ tính năng Sao lưu (tab "Sao lưu" thêm 03/10/2026).
+    assert tabs.count() == 7
 
     scroll = screen.findChild(QScrollArea, "SettingsScroll")
     assert scroll is not None

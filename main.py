@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import sys
 
@@ -21,6 +22,27 @@ def _icon_path() -> Path:
 def main() -> int:
     ensure_runtime_dirs()
     configure_logging()
+    # Phục hồi chờ phải áp dụng TRƯỚC khi bất kỳ service nào mở DB và trước
+    # cả retention (retention dọn snapshot cũ) — điểm an toàn duy nhất theo
+    # plan backup-restore §4.3; điểm gọi apply này là duy nhất.
+    try:
+        from services.backup_service import BackupService
+
+        restore = BackupService().apply_pending_restore()
+        if restore.applied:
+            logging.getLogger(__name__).info(
+                "Khởi động: đã áp dụng bản phục hồi (%d mục; bản an toàn: %s)",
+                restore.applied_files,
+                restore.safety_backup,
+            )
+        elif restore.errors:
+            logging.getLogger(__name__).error(
+                "Khởi động: thư mục phục hồi chờ không nguyên vẹn — giữ dữ "
+                "liệu hiện tại; lỗi: %s",
+                "; ".join(restore.errors),
+            )
+    except Exception:
+        logging.getLogger(__name__).exception("Khởi động: áp dụng phục hồi thất bại")
     scanner_retention.ensure_started()
 
     # Must be called BEFORE QApplication for Windows taskbar icon
