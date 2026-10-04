@@ -1,6 +1,7 @@
 # Đặc tả B/Q/L/C SMC — task 11
 
 > **Trạng thái:** DRAFT — chờ Tech Lead review tại task 16.  
+> **Bổ sung 04/10/2026 (Owner duyệt — Ca 0 của `smc-bqlc-producer-gaps-plan.md`):** khóa nguồn dữ liệu cho producer B/Q/L/C: `atr_current` là ATR hiện tại của timeframe tại cutoff, field riêng, không đè ATR formation (§4.3); `structure_event_age_bars` chỉ sinh cho zone có `confirmation_event_id` (§3.1); sweep linking giữ route cửa sổ formation (§5). Nhóm ca nối producer đổi `SMC_SCORING_CONTRACT_VERSION` một lần chung (`smc-scoring-canonical-2026-08` → `smc-scoring-canonical-2026-10`).  
 > **Mục đích:** biến chất lượng SMC thành công thức định lượng, tái lập được và tách khỏi readiness/entry/risk. Các số dưới đây là baseline triển khai, không phải xác suất thắng hay kết quả tối ưu hóa.
 
 ## 1. Công thức tổng
@@ -69,6 +70,8 @@ Mục tiêu của B là tách “bias cấu trúc” khỏi “trigger còn hi�
 - Wick vượt mức, equal-level observation hoặc sweep không tự tạo B event.
 - Alignment cùng Trend/market regime không thuộc B; alignment do technical/regime owner sở hữu.
 
+Nguồn dữ liệu trigger (Owner duyệt 04/10/2026): `structure_event_age_bars` chỉ được sinh cho zone có `confirmation_event_id` (hiện chỉ OB); tuổi tính bằng bar từ thời điểm confirm event đến cutoff theo lifetime P2. Zone không có field này dùng fallback: tuổi zone (`age_bars`, neo tại `available_at`) kèm reason `STRUCTURE_EVENT_TIME_UNAVAILABLE` — fallback là hành vi được đặc tả, không phải thiếu dữ liệu bắt buộc.
+
 ### 3.2 Biên và thiếu dữ liệu
 
 - Không đủ swing bootstrap hoặc protected swing không xác định: `state_score=0`, `event_score=0`, reason `STRUCTURE_UNAVAILABLE` nếu thiếu dữ liệu bắt buộc.
@@ -133,6 +136,8 @@ integrity = 0.35*lifecycle_state_score
 
 Đối với FVG, `remaining_width/original_width` chỉ nằm trong geometry; full fill đồng thời đặt lifecycle state bằng 0 cho imbalance. OB hoặc S/D child cùng `setup_id` không bị làm mất giá trị chỉ vì FVG sibling full fill.
 
+ATR của các luật lifecycle (reaction follow-through `0.25*ATR`, visit tolerance, break buffer) lấy từ `atr_current`: ATR hiện tại của timeframe zone tính trên các nến đã đóng đến cutoff — field riêng, không ghi đè ATR formation (đặc tả dữ liệu §4). Producer canonical chịu trách nhiệm stamp `atr_current` lên mọi zone; thiếu field → các luật này fail-closed theo metadata unknown. (Owner duyệt 04/10/2026.)
+
 ## 5. L — Liquidity
 
 L chỉ nhận bằng chứng pool/sweep/reclaim có nguồn, đúng chiều, đúng thời gian và chưa bị khử trùng.
@@ -151,6 +156,8 @@ L = pool_score
 ```
 
 `consumed_once_score=1` khi sweep được gán cho setup owner. Với mỗi sweep, tính mọi claim đủ điều kiện tại cutoff: cùng side, distance/time gate đạt, và `claim_eligible_at=max(sweep_reclaim_at, setup_available_at)`. Owner là claim có `claim_eligible_at` sớm nhất; nếu cùng thời điểm mới tie-break bằng `stable_setup_id`. Gán owner được ghi với `assignment_id`, `owner_setup_id`, `assigned_at` và không bị setup xuất hiện muộn rút lại. Child cùng owner setup tham chiếu assignment nhưng contribution L chỉ một lần; setup khác không được tái dùng. Prefix/rebuild thiếu lịch sử owner phải trả `SWEEP_OWNER_HISTORY_INCOMPLETE`, không tự trao sweep cho setup muộn. Nếu đã đánh giá đủ history nhưng không có sweep, `L=0` và không renormalize trọng số sang B/Q/C.
+
+Route link canonical (Owner duyệt 04/10/2026): linking chạy trước khi visits được tính trong cùng snapshot; cặp sweep–zone đối chiếu qua cửa sổ formation `[formation_start, departure_end]` trong `20` bar. Route đối chiếu visit chỉ áp dụng khi payload đã mang visits (replay/đầu vào ngoài). Không đảo thứ tự linking/lifecycle.
 
 ## 6. C — SMC context/confluence
 

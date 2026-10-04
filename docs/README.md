@@ -27,6 +27,7 @@ Khi tài liệu và code khác nhau, thứ tự ưu tiên (theo quy tắc V2 tro
 | Contract dữ liệu Tin tức (DB, producer, repository, AI nhận định xu hướng) | `news/news-architecture.md` — ban hành 20/09/2026, sửa đổi đợt 3 24/09/2026 (FF = dán mã nguồn trang), đợt 5 28/09/2026 (bond yields + AI nhận định 11 tài sản — ca đợt 5 hoàn tất 29/09/2026), đợt 6 29/09/2026 (độ sâu dữ liệu theo chân trời — ca hoàn tất 29/09/2026); lộ trình §16 (tầng dữ liệu hoàn tất 23/09/2026, READY-FOR-CONNECT; ca "Nguồn dán FF" hoàn tất 25/09/2026) |
 | Vận hành/re-validate VIX theo pair | `macro/macro_score_architecture.md`, mục Bước 7 |
 | Contract SMC (B/Q/L/C, zone, lifecycle…) | `plans/smc-*-spec.md`, `plans/smc-parameter-table.md` |
+| Phân tích khoảng hở producer B/Q/L/C + kế hoạch nối (chờ duyệt) | `plans/smc-bqlc-producer-gaps-plan.md` — 04/10/2026 |
 | Quản lý lệnh / R:R | `trading/order-management-contract.md`, `trading/rr_anchor_semantics.md` |
 | Thiết kế UI và baseline kiểm thử | `ui/screen_design.md`, `ui/style-guide.md` |
 

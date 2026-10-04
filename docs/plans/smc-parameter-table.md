@@ -6,6 +6,7 @@
 ## Quy ước đọc bảng
 
 - `ATR` luôn là ATR của cùng timeframe, period 14, lấy từ các nến đã đóng trước thời điểm hình thành sự kiện.
+- `atr_current` là ngoại lệ duy nhất của quy ước trên: ATR cùng timeframe, period 14, tính trên các nến đã đóng **đến cutoff** — nguồn cho các luật lifecycle (P7); field riêng, không đè ATR formation (Owner duyệt 04/10/2026).
 - `tick` là `trade_tick_size`; nếu broker không cung cấp thì dùng `point` dương kèm provenance. Không suy ra tick size chỉ từ `digits`.
 - `max(a, b)` là ngưỡng bảo vệ đồng thời khỏi nhiễu làm tròn giá và khác biệt biến động giữa các symbol.
 - “Code hiện có” nghĩa là giá trị đã tồn tại trong runtime hiện tại. “Quy ước khởi đầu” nghĩa là giá trị được điền để loại bỏ khoảng trống của phụ lục P, chưa được gọi là tối ưu.
@@ -35,6 +36,7 @@
 | Break/reclaim buffer | `max(2*tick, 0.10*ATR)` | giá | Quy ước khởi đầu; cùng loại tolerance với level comparison | Break chỉ hợp lệ khi close vượt level + buffer; reclaim phải đóng lại qua buffer | Wick-only không được gọi là BOS/CHoCH. |
 | Bootstrap structure | Tối thiểu `2` confirmed highs + `2` confirmed lows và một quan hệ HH/HL hoặc LH/LL rõ | swing | `smc-structure-spec.md` | Không đủ hoặc conflict → `unknown`, không default trend | Tránh suy luận trend từ dữ liệu chưa đủ. |
 | Structure-event lifetime | D1 `20`, H4 `40`, H1 `80`, M15 `48` | bar của TF | Quy ước khởi đầu, phù hợp cửa sổ hiện có | Hết hạn nếu chưa follow-through; event vẫn giữ trong audit history | Giới hạn tín hiệu cũ mà không xóa provenance. |
+| Trigger age field | `structure_event_age_bars` — chỉ sinh cho zone có `confirmation_event_id` (OB); bar từ confirm event đến cutoff | field/zone | QĐ Owner 04/10/2026 | Zone không có field → fallback tuổi zone (`age_bars`) + reason `STRUCTURE_EVENT_TIME_UNAVAILABLE`; fallback là hành vi được đặc tả | Tách bias cấu trúc khỏi trigger còn hiệu lực; không suy ra tuổi event cho family không gắn event. |
 | Protected swing update | Chỉ cập nhật từ swing confirmed là nguồn của BOS gần nhất | event relation | `smc-structure-spec.md`; fixture task 5 | Latest swing không tự thay protected swing | Sửa lỗi dùng nhầm last swing khi tìm CHoCH. |
 
 ## P3 — Departure và impulse
@@ -79,6 +81,7 @@
 | Tham số | Giá trị khởi đầu | Đơn vị/phạm vi | Căn cứ | Điều kiện biên | Lý do |
 |---|---:|---|---|---|---|
 | Visit entry/exit tolerance | `max(1*tick, 0.05*ATR)` | giá | Quy ước khởi đầu | Overlap trong tolerance gộp cùng một visit; thiếu cả ATR/tick → lifecycle unknown | Không tạo nhiều visit vì một sai số nhỏ. |
+| ATR nguồn lifecycle | `atr_current`: ATR hiện tại của timeframe zone tính trên nến đã đóng đến cutoff | giá/TF | QĐ Owner 04/10/2026; `smc-data-spec.md` §4 | Thiếu field → reaction/tolerance/break buffer fail-closed (metadata unknown), không bịa ngưỡng | Current ATR là field riêng; không đè ATR formation. Producer canonical stamp field này lên mọi zone. |
 | Reaction follow-through | Close ra khỏi zone ít nhất `0.25*ATR` hoặc tạo micro BOS trong `3` bar | giá/bar | Quy ước khởi đầu; micro window hiện là 3 | Không có follow-through → visit, không phải reaction | Phân biệt chạm vùng với phản ứng có hiệu lực. |
 | Dwell score | `inverse(dwell_bars, 0, 5)` | hệ số `[0,1]` | `smc-bqlc-spec.md` | `0→1.00`, `1→0.80`, `5→0.00`, `>=6→0.00`; không dùng số lần polling | Một công thức duy nhất giữa bảng tham số, lifecycle và B/Q/L/C. |
 | Penetration threshold | `0.50` | tỷ lệ độ sâu zone | Quy ước khởi đầu | `>=0.50` đánh dấu deep mitigation; close xuyên boundary là broken | Tách retest nông khỏi mitigation sâu. |
@@ -96,6 +99,7 @@
 | Consumed policy | Một sweep có một `owner_setup_id` độc quyền; child cùng owner tham chiếu assignment nhưng chỉ đóng góp L một lần | pool/setup | `smc-bqlc-spec.md` | `claim_eligible_at=max(sweep_reclaim_at, setup_available_at)`; owner sớm nhất, cùng thời điểm mới tie-break stable setup ID; setup đến muộn không rút owner; thiếu owner history → `SWEEP_OWNER_HISTORY_INCOMPLETE` | Đảm bảo exclusive ownership causal giữa setup, không phụ thuộc rebuild/list order. |
 | Zone-link distance | `<=0.25*ATR` | giá/ATR | `SWEEP_ZONE_TOLERANCE_ATR` | Ngoài tolerance → không link | Association phải price-aware. |
 | Zone-link time window | Formation/departure window của zone; tối đa `20` bar | bar cùng TF | Quy ước khởi đầu + linker formation window | Ngoài window → giữ sweep độc lập | Không kéo sweep xa vào zone mới. |
+| Link route canonical | Linking chạy trước lifecycle visits; đối chiếu qua cửa sổ formation | thứ tự pipeline | QĐ Owner 04/10/2026 | Route visit chỉ khi payload đã mang visits (replay/đầu vào ngoài); không đảo thứ tự linking/lifecycle | Giữ tính causal: sweep phải thuộc formation của zone. |
 
 ## P9 — Multi-timeframe D1/H4/H1
 
