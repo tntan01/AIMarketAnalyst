@@ -846,7 +846,11 @@ def test_the_certified_record_is_the_one_published_on_the_whole_corpus() -> None
             assert swing["id"] == record["protected_swing_id"]
             assert swing["source_bos_id"] == record["source_bos_id"]
 
-    assert published == 77, f"the corpus control must keep all 77 layers, got {published}"
+    # Ca 2 (smc-bqlc-producer-gaps): 76, không phải 77 — break buffer sống
+    # lại làm một (snapshot, timeframe) của corpus mất sạch zone publishable,
+    # nên layer protected_swing của nó không còn được vẽ. Mọi layer còn vẽ vẫn
+    # khớp record chứng nhận phía trên.
+    assert published == 76, f"the corpus control must keep all 76 layers, got {published}"
 
 
 def _read(loaded: dict[str, Any]):

@@ -360,15 +360,23 @@ def _analyze_for_case(case: dict[str, Any]):
 
 
 def test_the_macro_confidence_gate_still_blocks_the_canonical_plan():
-    """With macro data missing the score gate still refuses the scenario."""
+    """With macro data missing the score gate still refuses the setup.
+
+    Ca 2 (smc-bqlc-producer-gaps): the lifecycle ATR wiring raised this
+    fixture's SMC quality (raw 6 -> 8), so the macro-derated signal score is
+    51 — above the 50 floor where a scenario may anchor on the canonical zone
+    instead of the ATR fallback, but still far below the ready threshold.  The
+    protected outcome is unchanged: the setup is not tradeable.
+    """
 
     result, pipeline = _analyze(correlation_context={})
     selection = _selection(pipeline, "buy")
     assert selection.state == "evaluated" and selection.plan_available is True
-    assert pipeline._scores["buy"]["signal_score"] < 50
+    assert pipeline._scores["buy"]["signal_score"] < 65
     scenario = _scenario(result, "buy")
-    # The canonical plan exists but the score gate owns the outcome.
-    assert scenario is None or scenario["entry_zone_source"] != "smc_selected"
+    # The canonical plan may anchor the display, but the score gate owns the
+    # outcome: the setup stays a watch zone, never a ready trade.
+    assert scenario is None or scenario["entry_status"] != "ready_to_trade"
 
 
 def test_the_blocked_permission_gate_still_blocks_the_canonical_plan():

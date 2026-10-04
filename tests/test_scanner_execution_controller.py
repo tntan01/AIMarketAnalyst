@@ -169,7 +169,18 @@ from tests.test_scanner_release import NOW as _FIXTURE_ANCHOR
 # built on.
 _M15_CANDLES = 23
 _OBSERVATION_OFFSET = timedelta(hours=6)
-_OBSERVED_AT: datetime = _FIXTURE_ANCHOR + _OBSERVATION_OFFSET
+# Ca 2 (smc-bqlc-producer-gaps): the buffered invalidation killed the
+# previously-winning visited zone, and the tie of fresh zones at the old
+# observation instant is broken alphabetically, so the winner there can never
+# reach READY (readiness §6.6 waits for the zone's own lifecycle visit) and
+# flips whenever the M15 window moves.  Pulling the observation back ten
+# hours — WITHOUT re-shifting the candles — puts the cutoff where the BUY side
+# has exactly one visited, plannable zone: the dispatch vehicle is then stable
+# with or without its own M15 window.
+_CUTOFF_PULLBACK = timedelta(hours=10)
+_OBSERVED_AT: datetime = (
+    _FIXTURE_ANCHOR + _OBSERVATION_OFFSET - _CUTOFF_PULLBACK
+)
 _SHIFT: timedelta = _OBSERVATION_OFFSET
 _M15_START: datetime = _OBSERVED_AT - timedelta(
     minutes=15 * (_M15_CANDLES - 1)
@@ -269,13 +280,62 @@ def _canonical_selection(candles: dict):
     return _selection_for(_APPROVED_SIDE, candles)
 
 
+def _closed_at_observation(candles, timeframe: str) -> list:
+    """Candles of the window that already closed at the observation instant.
+
+    The production-clock control derives the fresh snapshot at the REAL now,
+    far after the fixture's own instant; only a window that is entirely closed
+    at ``_OBSERVED_AT`` keeps both cutoffs on the same candle set and therefore
+    on the same canonical verdict.
+    """
+
+    from core.market_models import candle_close_at
+
+    return [
+        candle
+        for candle in candles
+        if candle_close_at(candle.time, timeframe) <= _OBSERVED_AT
+    ]
+
+
 def _resolve_fixture() -> tuple[dict, object]:
     """Winner + the M15 window that confirms THAT winner (fixed point)."""
 
+    from core.scanner_live_producers import derive_live_analysis
     from tests.test_scanner_release import _zoned_candles
 
     d1, h4, h1 = _zoned_candles()
-    candles = {"D1": _scale(d1), "H4": _scale(h4), "H1": _scale(h1), "M15": ()}
+    candles = {
+        "D1": _closed_at_observation(_scale(d1), "D1"),
+        "H4": _closed_at_observation(_scale(h4), "H4"),
+        "H1": _closed_at_observation(_scale(h1), "H1"),
+        "M15": (),
+    }
+    # Ca 2 (smc-bqlc-producer-gaps): the buffered invalidation killed the
+    # previously-winning VISITED zone, and a fresh zone can never reach READY
+    # (readiness §6.6 waits for the zone's own lifecycle visit), so the
+    # dispatch vehicle must be a visited candidate.  Seed the fixed point with
+    # the M15 window of the best visited candidate: its confirmed M15 ranks it
+    # ahead of the fresh zones, and the loop below keeps it the winner.
+    initial = derive_live_analysis(
+        candles["D1"],
+        candles["H4"],
+        candles["H1"],
+        symbol=_PROPOSAL_SYMBOL,
+        captured_at=_OBSERVED_AT,
+        m15_candles=None,
+        m15_as_of=_OBSERVED_AT,
+        tick_size=_TICK_SIZE,
+        min_rr=_MIN_RR,
+    )
+    ordered = initial["smc_evaluation"].candidate_sets[_APPROVED_SIDE].ordered
+    visited = next((candidate for candidate in ordered if candidate.visit_id), None)
+    if visited is not None:
+        bounds = visited.plan_zone["original_bounds"]
+        candles = dict(candles)
+        candles["M15"] = _confirming_m15(
+            float(bounds["low"]), float(bounds["high"])
+        )
     previous = None
     trace: list[tuple[str | None, str | None]] = []
     for _round in range(_MAX_FIXPOINT_ROUNDS):

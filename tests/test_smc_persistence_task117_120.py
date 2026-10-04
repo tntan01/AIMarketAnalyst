@@ -196,15 +196,21 @@ def _selection_of(pipeline, side: str) -> SmcSideSelection:
 
 
 # The M15 window decides the typed confirmation, so the two cases below differ
-# only in the candles that follow the entry trigger: holding near the band keeps
-# the trigger alive, running away from it invalidates the entry.  Everything
-# else — candles, cutoff, policy — is the shared positive fixture.
+# only in the candles that follow the entry trigger: holding above the band
+# keeps the confirmation alive, closing back inside it is a reclaim against
+# the entry.  Everything else — candles, cutoff, policy — is the shared
+# positive fixture.
+# Ca 2 (smc-bqlc-producer-gaps): with the break buffer computing again, the
+# H1 FVG this window used to confirm died correctly (close through the band),
+# so the pipeline now selects ``smcz-8a3bac1f…`` (1002.415–1003.49) and the
+# window below is aimed at THAT zone: calm above the band, entry into the
+# band, a bullish rejection closing back above it.
 _M15_AS_OF = datetime(2026, 8, 13, 11, 0, tzinfo=timezone.utc)
-_M15_CALM = [(1008.0, 1008.3, 1007.8, 1008.1)] * 20
+_M15_CALM = [(1003.8, 1004.0, 1003.6, 1003.9)] * 20
 _M15_ENTRY = [
-    (1008.0, 1008.2, 1006.0, 1006.4),
-    (1006.3, 1006.5, 1004.0, 1004.2),
-    (1004.1, 1004.3, 1002.9, 1005.6),
+    (1003.5, 1003.6, 1002.5, 1002.7),
+    (1003.0, 1003.6, 1002.4, 1003.55),
+    (1003.5, 1003.7, 1003.45, 1003.6),
 ]
 
 
@@ -233,11 +239,55 @@ def _m15_analysis(tail) -> tuple[dict[str, Any], Any, str]:
 
 
 def _confirmed_analysis():
-    return _m15_analysis([(1005.0, 1005.4, 1004.3, 1004.9)] * 8)
+    # Every close stays above the band: no reclaim, no run past 0.5*ATR.
+    return _m15_analysis([(1003.55, 1003.75, 1003.5, 1003.65)] * 8)
 
 
 def _invalidated_analysis():
-    return _m15_analysis([(1005.6, 1006.6, 1005.4, 1006.4)] * 8)
+    # The first candle after the trigger closes back inside the band, which is
+    # the reclaim-against terminal of the confirmed entry.
+    return _m15_analysis([(1003.3, 1003.5, 1003.15, 1003.35)] * 8)
+
+
+# Ca 2 (smc-bqlc-producer-gaps): the H1 FVG the shared fixture selects at
+# CUTOFF is fresh (no lifecycle visit), and one test needs a payload where the
+# SELECTION's lifecycle visit and the CONFIRMATION's M15 visit both exist.
+# Nine hours earlier the BUY selection is ``smcz-199666…`` (1000.34–1001.41,
+# available 19:00) with an OPEN lifecycle visit, so this window is aimed at
+# that zone: calm above the band, entry into it, a bullish rejection closing
+# back above the band and a tail that holds there.
+_M15_VISITED_AS_OF = _R114.CUTOFF - timedelta(hours=9)
+_M15_VISITED_CALM = [(1001.8, 1002.0, 1001.6, 1001.9)] * 20
+_M15_VISITED_ENTRY = [
+    (1001.7, 1001.8, 1000.5, 1000.7),
+    (1001.2, 1001.6, 1000.9, 1001.5),
+    (1001.5, 1001.65, 1001.46, 1001.58),
+]
+
+
+def _visited_zone_analysis():
+    """The REAL Analyze caller selecting a zone that already has a visit."""
+
+    rows = _M15_VISITED_CALM + _M15_VISITED_ENTRY + [
+        (1001.5, 1001.6, 1001.45, 1001.52)
+    ] * 8
+    start = _M15_VISITED_AS_OF - timedelta(minutes=15 * (len(rows) - 1))
+    window = tuple(
+        Candle(
+            time=start + timedelta(minutes=15 * index),
+            open=row[0],
+            high=row[1],
+            low=row[2],
+            close=row[3],
+        )
+        for index, row in enumerate(rows)
+    )
+    result, pipeline = _R114._analyze(
+        snapshot_as_of=_M15_VISITED_AS_OF,
+        m15_candles=window,
+        m15_as_of=_M15_VISITED_AS_OF,
+    )
+    return result, pipeline, "XAUUSD"
 
 
 _CONFIRMATION_FIELDS = (
@@ -341,7 +391,13 @@ def test_the_reader_reproduces_the_live_verdict_from_the_stored_payload(tmp_path
     """The stored payload drives the reader to the SAME side/zone/quality as live."""
 
     _result, pipeline, _symbol = _evaluated_analysis()
-    _service, loaded = _stored(tmp_path, _evaluated_analysis())
+    # Ca 2 (smc-bqlc-producer-gaps): both sides of this case now score the
+    # same raw (8), so the score-comparison fallback of a row WITHOUT a
+    # recorded side is a documented tie.  A real Scanner row records the side
+    # the candidate engine chose, and that is what the reader reproduces from.
+    _service, loaded = _stored(
+        tmp_path, _evaluated_analysis(), selected_side="buy"
+    )
 
     buy = _selection_of(pipeline, "buy")
     assert buy.state == "evaluated" and buy.plan_available is True
@@ -747,7 +803,7 @@ def test_the_confirmation_visit_ids_are_not_the_selection_visit_id(tmp_path):
     that the confirmation's ids are scoped to the SAME zone as the selection.
     """
 
-    _service, loaded = _stored(tmp_path, _confirmed_analysis(), selected_side="buy")
+    _service, loaded = _stored(tmp_path, _visited_zone_analysis(), selected_side="buy")
     selection = loaded["analysis_result"]["smc_scoring"]["consumer_contract"]["sides"][
         "buy"
     ]["selection"]

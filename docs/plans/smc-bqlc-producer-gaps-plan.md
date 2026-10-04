@@ -1,6 +1,6 @@
 # Phân tích khoảng hở producer B/Q/L/C — kế hoạch nối lại (chờ duyệt)
 
-> **Trạng thái:** Ca 0 **HOÀN TẤT 04/10/2026** — Owner duyệt 5 quyết định (đã ghi vào `smc-bqlc-spec.md` + `smc-parameter-table.md`). Ca 1 **HOÀN TẤT 04/10/2026** (Owner duyệt checkpoint). Ca 2–4 chờ thực thi theo thứ tự, mỗi ca một commit nguyên tử (D2) và checkpoint Owner xem diff replay trước khi sang ca kế.
+> **Trạng thái:** Ca 0 **HOÀN TẤT 04/10/2026** — Owner duyệt 5 quyết định (đã ghi vào `smc-bqlc-spec.md` + `smc-parameter-table.md`). Ca 1 **HOÀN TẤT 04/10/2026** (Owner duyệt checkpoint). Ca 2 **HOÀN TẤT 04/10/2026** (Owner duyệt checkpoint). Ca 3–4 chờ thực thi theo thứ tự, mỗi ca một commit nguyên tử (D2) và checkpoint Owner xem diff replay trước khi sang ca kế.
 > **Mục đích:** (1) bản đồ cấu trúc 1 trang phục vụ onboarding Tech Lead; (2) xác minh độc lập 5 phát hiện từ replay 58 snapshot thật; (3) root cause từng phát hiện với bằng chứng file:line; (4) kế hoạch nối lại 3 producer chưa đấu nối + 1 ca vệ sinh reason-code, mỗi ca một điểm chạm duy nhất, chờ checkpoint Owner.
 > **Phạm vi:** chuỗi canonical SMC (B/Q/L/C) từ `derive_live_analysis` trở xuống. Không thuộc phạm vi: threshold/gate, trọng số 4/7/2/2, calibration.
 
@@ -130,7 +130,7 @@ Nguyên tắc: mỗi ca một điểm chạm logic (S1/D1/D2); semantics đổi 
 |---|---|---|---|
 | 0 | Chốt semantics + cập nhật đặc tả (tài liệu trước code — D1) | `docs/plans/smc-bqlc-spec.md` + `smc-parameter-table.md` | **HOÀN TẤT 04/10/2026** — 5 quyết định ghi ở trên |
 | 1 (P1) | Nối ngưỡng cho sweep detector: truyền `tick_size` + `atr_value=_latest_atr(closed)` tại call site canonical | `core/smc_canonical_context.py` | **HOÀN TẤT 04/10/2026** — diff replay: 20 side đổi, 15 tăng raw, 0 giảm, 0 đổi trạng thái; L>0 17/92 (finalized); sweep dò được 271 H4 + 308 H1; bump contract → `smc-scoring-canonical-2026-10` + phân loại historical cho payload 2026-08 |
-| 2 (P2) | Stamp `atr_current` lên zone tại cùng chỗ stamp tick_size | `core/smc_canonical_context.py:221-223` | Ảnh hưởng: visited zone đạt completed_reacted được; break buffer sống lại → vài side invalid (kỳ vọng 92→~89) |
+| 2 (P2) | Stamp `atr_current` lên zone tại cùng chỗ stamp tick_size | `core/smc_canonical_context.py` | **HOÀN TẤT 04/10/2026** — diff replay khớp what-if từng con số: trạng thái 41/48/16/11, S mean 7.85, `atr_current` 89/89, metadata available 89/89, usable 53/89, zone có completed_reacted 0→33, D1 reaction 3/89; 23 side đổi (12 tăng/11 giảm — giảm truy về break buffer sống đúng dự kiến); full suite 5740 pass (5 fail có sẵn + 1 flake UI) |
 | 3 (P3) | Sinh `structure_event_age_bars`: join `confirmation_event_id` ↔ `structure_events` (occurred/confirmed index → bar đến cutoff) trong producer zone | `core/smc_canonical_context.py` (sau khi có zones+events) hoặc `core/smc_context.py:3525-3535` | Tác động trigger B: một số side trigger giảm (tuổi event > tuổi zone) — đúng intent tách bias/trigger |
 | 4 (P4) | Vệ sinh reason-code: nhánh fresh-zone không còn gắn `LIFECYCLE_EVIDENCE_UNAVAILABLE` (mã riêng hoặc bỏ — đăng ký từ vựng theo S5) | `core/smc_quality.py:746-748` | Xác nhận không đổi điểm, chỉ đổi diagnostics |
 

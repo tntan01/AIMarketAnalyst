@@ -44,9 +44,9 @@
             "directions": [
               "buy"
             ],
-            "eligible": 1,
+            "eligible": 0,
             "lifecycles": [
-              "usable"
+              "invalid"
             ],
             "with_bounds": 1,
             "with_formation_atr": 1,
@@ -60,7 +60,8 @@
             ],
             "eligible": 0,
             "lifecycles": [
-              "candidate"
+              "candidate",
+              "invalid"
             ],
             "with_bounds": 2,
             "with_formation_atr": 2,
@@ -383,7 +384,7 @@
             ],
             "eligible": 0,
             "lifecycles": [
-              "candidate"
+              "invalid"
             ],
             "with_bounds": 5,
             "with_formation_atr": 4,
@@ -395,9 +396,10 @@
               "buy",
               "sell"
             ],
-            "eligible": 5,
+            "eligible": 2,
             "lifecycles": [
-              "confirmed"
+              "confirmed",
+              "invalid"
             ],
             "with_bounds": 5,
             "with_formation_atr": 5,

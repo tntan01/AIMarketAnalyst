@@ -218,9 +218,18 @@ def build_canonical_timeframe_context(
     # zone; when the snapshot has no usable tick the field stays absent and the
     # rule that needs it fails that candidate closed with
     # ``SMC_TICK_SIZE_UNAVAILABLE`` — nothing is substituted.
+    # Ca 2 (smc-bqlc-producer-gaps): `atr_current` — the CURRENT ATR of this
+    # timeframe at the cutoff — is stamped the same way so the lifecycle rules
+    # (reaction follow-through, visit tolerance, break buffer) can compute.
+    # It is a field of its own and never overwrites ATR formation; absent ATR
+    # leaves the field out and those rules fail closed (metadata unknown).
+    current_atr = _latest_atr(closed)
     if _positive(tick_size) is not None:
         for zone in zones:
             zone["tick_size"] = _positive(tick_size)
+    if current_atr is not None:
+        for zone in zones:
+            zone["atr_current"] = current_atr
     by_id = {str(zone.get("zone_id") or ""): zone for zone in zones}
     order_blocks = _pick(order_blocks, by_id)
     fvg = _pick(fvg, by_id)
@@ -229,7 +238,6 @@ def build_canonical_timeframe_context(
     demand_zones = [zone for zone in supply_demand if _zone_direction(zone) == "buy"]
     supply_zones = [zone for zone in supply_demand if _zone_direction(zone) == "sell"]
 
-    current_atr = _latest_atr(closed)
     pools = detect_liquidity_pools(
         closed,
         swings,

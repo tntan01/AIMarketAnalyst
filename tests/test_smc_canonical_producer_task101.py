@@ -9,6 +9,7 @@ pipeline), not through synthetic quality fixtures.
 
 from __future__ import annotations
 
+import math
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -368,6 +369,33 @@ def test_without_a_tick_the_sweep_detector_stays_fail_closed():
     )
     assert context["zone_link_sweeps"]["swept_highs"] == []
     assert context["zone_link_sweeps"]["swept_lows"] == []
+
+
+def test_the_facade_stamps_the_current_atr_on_every_zone():
+    """Ca 2 (smc-bqlc-producer-gaps): the lifecycle rules get their ATR input.
+
+    Before the stamping, ``enrich_zones`` read ``zone["atr_current"]`` that no
+    producer ever wrote, so the reaction follow-through, the visit tolerance
+    and the break buffer could never compute: ``metadata_state`` stayed
+    ``unknown`` and every canonical zone was flagged unusable.
+    """
+
+    d1, h4, h1 = _zoned_candles()
+    context = build_canonical_timeframe_context(
+        h4, symbol="XAUUSD", timeframe="H4", as_of=NOW, tick_size=0.01
+    )
+    zones = [
+        *context["order_blocks"],
+        *context["fvg"],
+        *context["demand_zones"],
+        *context["supply_zones"],
+    ]
+    assert zones, "the fixture must produce canonical zones"
+    for zone in zones:
+        atr_current = zone.get("atr_current")
+        assert atr_current is not None and atr_current > 0
+        assert math.isfinite(atr_current)
+        assert zone.get("metadata_state") == "available"
 
 
 def test_only_candles_closed_at_the_cutoff_take_part():
