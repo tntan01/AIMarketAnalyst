@@ -34,6 +34,7 @@ from core.smc_structure_window import StructureWindowReuse
 from core.smc_context import (
     _attach_zone_sweep_links,
     _filter_swings_by_atr,
+    _parse_utc_timestamp,
     apply_zone_availability,
     atr_value_before_event,
     confirm_fvg_candidates,
@@ -230,6 +231,14 @@ def build_canonical_timeframe_context(
     if current_atr is not None:
         for zone in zones:
             zone["atr_current"] = current_atr
+    # Ca 3 (smc-bqlc-producer-gaps): the trigger feature reads
+    # ``zone["structure_event_age_bars"]`` (smc_quality.py:601-610) but no
+    # producer ever wrote it, so every side fell back to the zone age with
+    # ``STRUCTURE_EVENT_TIME_UNAVAILABLE`` (92/92 in the replay corpus).  The
+    # age is measured from the candle that CONFIRMED the zone's own event to
+    # the last closed candle; zones without a resolvable event stay absent and
+    # keep the documented fallback (fail-closed, nothing is invented).
+    _stamp_structure_event_age_bars(zones, events, closed, normalized)
     by_id = {str(zone.get("zone_id") or ""): zone for zone in zones}
     order_blocks = _pick(order_blocks, by_id)
     fvg = _pick(fvg, by_id)
@@ -501,6 +510,67 @@ def _limit(zones: Sequence[dict[str, Any]], family: str) -> list[dict[str, Any]]
         ),
     )
     return ordered[:limit]
+
+
+def _stamp_structure_event_age_bars(
+    zones: Sequence[dict[str, Any]],
+    events: Sequence[Mapping[str, Any]],
+    closed: Sequence[Candle],
+    timeframe: str,
+) -> None:
+    """Stamp ``structure_event_age_bars`` for zones with a confirmation event.
+
+    Ca 3 (smc-bqlc-producer-gaps): the evaluator's trigger feature reads this
+    field (``core/smc_quality.py:601-610``) but no producer ever wrote it, so
+    every side fell back to the zone age plus
+    ``STRUCTURE_EVENT_TIME_UNAVAILABLE`` (92/92 sides in the replay corpus).
+    Owner decision (04/10/2026, smc-bqlc-spec §3.1): the field is produced only
+    for zones carrying ``confirmation_event_id``; the age is the number of
+    closed bars from the candle whose close matches the event's confirmation
+    timestamp to the last closed candle of the window.  Everything that cannot
+    be resolved to a concrete closed candle (unknown event id, missing or
+    unparseable timestamps, off-grid timestamp) leaves the field absent so the
+    documented zone-age fallback stays in force — fail-closed, never invented.
+    """
+
+    if not closed:
+        return
+    events_by_id: dict[str, Mapping[str, Any]] = {}
+    for event in events:
+        event_id = str(event.get("event_id") or "").strip()
+        if event_id:
+            events_by_id.setdefault(event_id, event)
+    if not events_by_id:
+        return
+    close_index: dict[datetime, int] = {}
+    for index, candle in enumerate(closed):
+        close_at = candle_close_at(candle.time, timeframe).astimezone(timezone.utc)
+        close_index.setdefault(close_at, index)
+    last_index = len(closed) - 1
+    for zone in zones:
+        event_id = str(zone.get("confirmation_event_id") or "").strip()
+        if not event_id:
+            continue
+        event = events_by_id.get(event_id)
+        if event is None:
+            continue
+        index: int | None = None
+        # The confirmation close is the canonical anchor; ``occurred_at`` is
+        # the same candle for BOS/CHoCH_CONFIRMED but is the documented
+        # fallback when the confirmation timestamp cannot be resolved.
+        for field in ("confirmed_at", "occurred_at"):
+            try:
+                stamp = _parse_utc_timestamp(event.get(field), f"event.{field}")
+            except (TypeError, ValueError):
+                continue
+            if stamp in close_index:
+                index = close_index[stamp]
+                break
+        if index is None:
+            continue
+        age = last_index - index
+        if age >= 0:
+            zone["structure_event_age_bars"] = age
 
 
 def _positive(value: Any) -> float | None:

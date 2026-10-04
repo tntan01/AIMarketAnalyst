@@ -14,7 +14,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from core.market_models import Candle
+from core.market_models import Candle, candle_close_at
 from core.smc_canonical_context import build_canonical_timeframe_context
 from core.smc_context import build_smc_context
 from core.smc_quality import QUALITY_FORMATION_ATR_UNAVAILABLE
@@ -396,6 +396,150 @@ def test_the_facade_stamps_the_current_atr_on_every_zone():
         assert atr_current is not None and atr_current > 0
         assert math.isfinite(atr_current)
         assert zone.get("metadata_state") == "available"
+
+
+def test_structure_event_age_is_joined_only_for_resolvable_confirmation_events():
+    """Ca 3 (smc-bqlc-producer-gaps): the event-age join is fail-closed.
+
+    The evaluator reads ``zone["structure_event_age_bars"]`` for the trigger
+    feature but no producer ever wrote it, so every side fell back to the zone
+    age with ``STRUCTURE_EVENT_TIME_UNAVAILABLE`` (92/92 in the replay corpus).
+    The join stamps exactly the zones whose ``confirmation_event_id`` resolves
+    to a concrete closed candle; everything else keeps the fallback.
+    """
+
+    from core.smc_canonical_context import _stamp_structure_event_age_bars
+
+    base = datetime(2026, 8, 11, 0, 0, 0, tzinfo=UTC)
+    closed = [
+        Candle(
+            time=base + timedelta(hours=4 * index),
+            open=100.0,
+            high=101.0,
+            low=99.0,
+            close=100.0,
+        )
+        for index in range(10)
+    ]
+
+    def close_at(index: int) -> str:
+        return candle_close_at(closed[index].time, "H4").isoformat()
+
+    events = [
+        {"event_id": "bos-early", "occurred_at": close_at(4), "confirmed_at": close_at(4)},
+        {"event_id": "bos-last", "occurred_at": close_at(9), "confirmed_at": close_at(9)},
+        # confirmed_at matches no candle close; occurred_at does.
+        {
+            "event_id": "bos-occurred",
+            "occurred_at": close_at(3),
+            "confirmed_at": "2026-08-11T00:30:00+00:00",
+        },
+        # Neither timestamp matches a closed candle.
+        {
+            "event_id": "bos-offgrid",
+            "occurred_at": "2026-08-11T01:00:00+00:00",
+            "confirmed_at": "2026-08-11T02:00:00+00:00",
+        },
+        # Unparseable timestamp.
+        {
+            "event_id": "bos-broken",
+            "occurred_at": None,
+            "confirmed_at": "not-a-timestamp",
+        },
+    ]
+    zones = [
+        {"zone_id": "z-early", "confirmation_event_id": "bos-early"},
+        {"zone_id": "z-unconfirmed"},
+        {"zone_id": "z-empty", "confirmation_event_id": ""},
+        {"zone_id": "z-unknown-event", "confirmation_event_id": "bos-missing"},
+        {"zone_id": "z-offgrid", "confirmation_event_id": "bos-offgrid"},
+        {"zone_id": "z-broken", "confirmation_event_id": "bos-broken"},
+        {"zone_id": "z-occurred", "confirmation_event_id": "bos-occurred"},
+        {"zone_id": "z-last", "confirmation_event_id": "bos-last"},
+    ]
+
+    _stamp_structure_event_age_bars(zones, events, closed, "H4")
+
+    by_id = {zone["zone_id"]: zone for zone in zones}
+    assert by_id["z-early"]["structure_event_age_bars"] == 5
+    assert type(by_id["z-early"]["structure_event_age_bars"]) is int
+    assert by_id["z-occurred"]["structure_event_age_bars"] == 6
+    assert by_id["z-last"]["structure_event_age_bars"] == 0  # clamped at the bar itself
+    for zone_id in (
+        "z-unconfirmed",
+        "z-empty",
+        "z-unknown-event",
+        "z-offgrid",
+        "z-broken",
+    ):
+        assert "structure_event_age_bars" not in by_id[zone_id]
+
+
+def test_the_facade_stamps_structure_event_age_on_confirmed_zones():
+    """Ca 3 (smc-bqlc-producer-gaps): the canonical payload feeds trigger age.
+
+    The field is produced only for zones carrying a resolvable
+    ``confirmation_event_id`` (Owner decision 04/10/2026); every other zone
+    keeps the documented ``age_bars`` fallback and no key.  The triangle-wave
+    fixture confirms no OB, so a dedicated candle path supplies the positive
+    case end to end through the façade.
+    """
+
+    d1, h4, h1 = _zoned_candles()
+    context = build_canonical_timeframe_context(
+        h4, symbol="XAUUSD", timeframe="H4", as_of=NOW, tick_size=0.01
+    )
+    zones = [
+        *context["order_blocks"],
+        *context["fvg"],
+        *context["demand_zones"],
+        *context["supply_zones"],
+    ]
+    assert zones, "the fixture must produce canonical zones"
+    # This fixture confirms no zone against a structure event: the field must
+    # stay absent for every one of them (the documented fallback behavior).
+    assert all(not zone.get("confirmation_event_id") for zone in zones)
+    assert all("structure_event_age_bars" not in zone for zone in zones)
+
+    # Positive case: the dedicated H4 path that really produces a BOS-confirmed
+    # order block (same fixture the fast-path OB regression uses).
+    from tests.scanner_fast_path_fixtures import _bearish_order_block_path
+
+    candles = _bearish_order_block_path(1.1, 240)
+    cutoff = candles[-1].time + timedelta(hours=4)
+    ob_context = build_canonical_timeframe_context(
+        candles, symbol="EUR/USD", timeframe="H4", as_of=cutoff, tick_size=0.00001
+    )
+    ob_zones = [
+        *ob_context["order_blocks"],
+        *ob_context["fvg"],
+        *ob_context["demand_zones"],
+        *ob_context["supply_zones"],
+    ]
+    closed = [
+        candle for candle in candles if candle_close_at(candle.time, "H4") <= cutoff
+    ]
+    assert any(zone.get("confirmation_event_id") for zone in ob_zones), (
+        "the dedicated OB path must confirm at least one zone"
+    )
+    for zone in ob_zones:
+        if not zone.get("confirmation_event_id"):
+            assert "structure_event_age_bars" not in zone
+            continue
+        age = zone.get("structure_event_age_bars")
+        assert type(age) is int and age >= 0
+        event = next(
+            event
+            for event in ob_context["structure_events"]
+            if event.get("event_id") == zone["confirmation_event_id"]
+        )
+        confirm_index = next(
+            index
+            for index, candle in enumerate(closed)
+            if candle_close_at(candle.time, "H4").isoformat()
+            == event.get("confirmed_at")
+        )
+        assert age == len(closed) - 1 - confirm_index
 
 
 def test_only_candles_closed_at_the_cutoff_take_part():
