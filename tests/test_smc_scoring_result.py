@@ -77,7 +77,7 @@ def _full_result() -> SmcScoringResult:
 
 
 def test_contract_version_matches_plan():
-    assert SMC_SCORING_CONTRACT_VERSION == "smc-scoring-canonical-2026-08"
+    assert SMC_SCORING_CONTRACT_VERSION == "smc-scoring-canonical-2026-10"
 
 
 def test_round_trip_preserves_all_fields():

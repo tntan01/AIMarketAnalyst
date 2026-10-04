@@ -229,12 +229,16 @@ def build_canonical_timeframe_context(
     demand_zones = [zone for zone in supply_demand if _zone_direction(zone) == "buy"]
     supply_zones = [zone for zone in supply_demand if _zone_direction(zone) == "sell"]
 
+    current_atr = _latest_atr(closed)
     pools = detect_liquidity_pools(
         closed,
         swings,
         tick_size=tick_size,
-        atr_value=_latest_atr(closed),
+        atr_value=current_atr,
     )
+    # Ca 1 (smc-bqlc-producer-gaps): the excursion threshold inputs travel with
+    # the call — without them the detector's fail-closed guard (typed swings +
+    # no tick/ATR) returns an empty sweep list, so L never sees any evidence.
     sweeps = detect_liquidity_sweeps(
         closed,
         swings,
@@ -244,6 +248,8 @@ def build_canonical_timeframe_context(
         max_results=None,
         causal_only=True,
         liquidity_pools=pools,
+        tick_size=tick_size,
+        atr_value=current_atr,
     )
     _attach_zone_sweep_links(
         (

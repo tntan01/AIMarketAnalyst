@@ -153,13 +153,13 @@ Với mỗi side `buy` / `sell`:
 ### 3.4 `smc` ≤ 15 — QUYẾT ĐỊNH CHỜ (xem §4)
 Raw này KHÔNG derive từ candles đơn thuần; nó là *canonical SMC* = `SmcScoringResult`
 mà `project_smc_technical_raw` đòi đúng `scoring_version == "smc-v2"` và
-`contract_version == "smc-scoring-canonical-2026-08"`.
+`contract_version == "smc-scoring-canonical-2026-10"`.
 
 ## 4. Quyết định producer cho raw `smc` — cần owner chọn
 
 **Sự thật vật lý:** `project_smc_technical_raw` (`technical_signal_scorer.py:641`)
 yêu cầu một thể hiện `SmcScoringResult` với `scoring_version == "smc-v2"` (=
-`SMC_SCORER_VERSION`) và `contract_version == "smc-scoring-canonical-2026-08"`.
+`SMC_SCORER_VERSION`) và `contract_version == "smc-scoring-canonical-2026-10"`.
 Producer duy nhất của object này là `core/smc_scorer.py:score_smc(smc, technical, ...)`
 (trong đó `smc` từ `core/smc_context.py:build_smc_context`) — và **`smc_scorer.py` nằm
 trong danh sách xóa** của plan Bước 12.

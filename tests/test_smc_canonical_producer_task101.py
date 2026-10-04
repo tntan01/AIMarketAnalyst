@@ -299,6 +299,77 @@ def test_the_canonical_facade_produces_canonical_evidence_where_legacy_does_not(
 # ---------------------------------------------------------------------------
 
 
+def _sweep_candles():
+    """H4 series with one confirmed swing high and one reclaiming sweep bar."""
+
+    base = datetime(2026, 8, 11, 0, 0, 0, tzinfo=UTC)
+    rows: list[Candle] = []
+
+    def add(open_: float, high: float, low: float, close: float) -> None:
+        rows.append(
+            Candle(
+                time=base + timedelta(hours=4 * len(rows)),
+                open=open_,
+                high=high,
+                low=low,
+                close=close,
+            )
+        )
+
+    # ATR warm-up: calm oscillation around 100.
+    for _ in range(15):
+        add(100.0, 101.0, 99.0, 100.0)
+    # Rise into the pivot peak.
+    for high in (103.0, 105.0, 107.0, 108.5, 109.5):
+        add(high - 1.0, high, high - 2.0, high - 0.5)
+    # The pivot high.
+    add(109.5, 112.0, 108.5, 109.0)
+    # Lower highs on both sides confirm the pivot.
+    for high in (110.0, 108.5, 107.0, 105.5, 104.0):
+        add(high - 1.0, high, high - 2.0, high - 0.5)
+    # Quiet base below the pivot.
+    for _ in range(4):
+        add(103.0, 104.0, 102.5, 103.5)
+    # The sweep bar: wick through the pivot level, close back below it.
+    add(103.5, 113.0, 103.0, 110.5)
+    # Post-sweep drift keeps the sweep inside the 60-bar lookback.
+    for _ in range(19):
+        add(106.0, 107.5, 105.0, 106.5)
+    return rows
+
+
+def test_the_facade_feeds_the_sweep_detector_its_threshold_inputs():
+    """Ca 1 (smc-bqlc-producer-gaps): sweeps are detected on the canonical path.
+
+    Before the wiring the façade called the detector without tick/ATR, so its
+    fail-closed guard returned an empty list on every snapshot and L never saw
+    any evidence (NO_RELATED_SWEEP 92/92 in the replay corpus).
+    """
+
+    candles = _sweep_candles()
+    cutoff = candles[-1].time + timedelta(hours=4)
+    context = build_canonical_timeframe_context(
+        candles, symbol="EURUSD", timeframe="H4", as_of=cutoff, tick_size=0.01
+    )
+    swept_highs = context["zone_link_sweeps"]["swept_highs"]
+    assert swept_highs, "a wick-through-and-reclaim bar must be detected"
+    sweep = swept_highs[0]
+    assert sweep["source_pool_id"], "the sweep must carry its pool lineage"
+    assert sweep["depth_atr"] is not None
+
+
+def test_without_a_tick_the_sweep_detector_stays_fail_closed():
+    """No computable excursion threshold still yields an empty sweep list."""
+
+    candles = _sweep_candles()
+    cutoff = candles[-1].time + timedelta(hours=4)
+    context = build_canonical_timeframe_context(
+        candles, symbol="EURUSD", timeframe="H4", as_of=cutoff, tick_size=None
+    )
+    assert context["zone_link_sweeps"]["swept_highs"] == []
+    assert context["zone_link_sweeps"]["swept_lows"] == []
+
+
 def test_only_candles_closed_at_the_cutoff_take_part():
     d1, h4, h1 = _zoned_candles()
     cutoff = NOW

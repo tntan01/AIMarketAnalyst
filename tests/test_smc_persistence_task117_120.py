@@ -56,11 +56,11 @@ from core.smc_persistence import (
     SMC_PERSISTENCE_BLOCK_MISSING,
     SMC_PERSISTENCE_CONFIRMATION_IDENTITY_MISMATCH,
     SMC_PERSISTENCE_CONTRACT_MISSING,
+    SMC_PERSISTENCE_CONTRACT_RETIRED,
     SMC_PERSISTENCE_CONTRACT_UNSUPPORTED,
     SMC_PERSISTENCE_IDENTITY_KEY,
     SMC_PERSISTENCE_IDENTITY_DIGEST_MISMATCH,
     SMC_PERSISTENCE_IDENTITY_MISMATCH,
-    SMC_PERSISTENCE_IDENTITY_MISSING,
     SMC_PERSISTENCE_SELECTION_MALFORMED,
     SMC_PERSISTENCE_SELECTION_MISSING,
     SMC_PERSISTENCE_SNAPSHOT_KEY,
@@ -1028,12 +1028,12 @@ def _legacy_document() -> dict[str, Any]:
 
 
 def test_a_historical_document_is_read_with_its_own_meaning():
-    """No identity stamp ⇒ historical: legacy fields read, nothing invented."""
+    """Retired contract ⇒ historical: legacy fields read, nothing invented."""
 
     document = _legacy_document()
     compat = classify_persisted_smc(document)
     assert compat.status == SMC_PAYLOAD_HISTORICAL
-    assert compat.reason_codes == (SMC_PERSISTENCE_IDENTITY_MISSING,)
+    assert compat.reason_codes == (SMC_PERSISTENCE_CONTRACT_RETIRED,)
     assert compat.source == SMC_SOURCE_LEGACY_SELECTED_ZONE
 
     sample = replay_sample_from_analysis_document(document, dataset_split="oos")

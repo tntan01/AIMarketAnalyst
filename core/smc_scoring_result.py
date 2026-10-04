@@ -26,7 +26,13 @@ from core.smc_versions import SMC_SCORER_VERSION as _CANONICAL_SCORER_VERSION
 from core.smc_versions import SMC_SELECTION_VERSION
 
 
-SMC_SCORING_CONTRACT_VERSION = "smc-scoring-canonical-2026-08"
+# Identity of the producer-semantics change group Ca 1–4 (Owner duyệt
+# 04/10/2026, docs/plans/smc-bqlc-producer-gaps-plan.md): sweeps carry
+# threshold inputs, zones carry `atr_current`, confirmed zones carry
+# `structure_event_age_bars`, fresh-zone lifecycle reason is honest. One bump
+# for the whole group; cached/persisted results under the old contract
+# identity stay partitioned away from the new verdicts.
+SMC_SCORING_CONTRACT_VERSION = "smc-scoring-canonical-2026-10"
 
 
 class SmcConfirmationIdentityError(ValueError):

@@ -510,7 +510,7 @@ def test_smc_projected_with_canonical(candles):
     d1, h4, h1 = candles
     canonical = _real_canonical_smc(d1, h4, h1)
     assert canonical.scoring_version == "smc-v2"
-    assert canonical.contract_version == "smc-scoring-canonical-2026-08"
+    assert canonical.contract_version == "smc-scoring-canonical-2026-10"
     r = derive_technical_raws(d1, h4, h1, canonical_smc=canonical, captured_at=NOW)
     # Outermost raw the scorer consumes must already be ≤15.
     for side in ("buy", "sell"):

@@ -136,7 +136,7 @@ def test_analysis_outputs_single_canonical_scorer():
     # not a shadow/legacy router payload.
     for result in (first, second):
         diagnostics = result["smc_scoring"]
-        assert diagnostics["contract_version"] == "smc-scoring-canonical-2026-08"
+        assert diagnostics["contract_version"] == "smc-scoring-canonical-2026-10"
         assert diagnostics["scoring_version"] == "smc-v2"
         assert set(diagnostics["sides"]) == {"buy", "sell"}
         assert "policy" not in diagnostics

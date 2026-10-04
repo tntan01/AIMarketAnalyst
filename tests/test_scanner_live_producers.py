@@ -270,7 +270,7 @@ def test_derive_live_analysis_produces_valid_inputs(candles):
     a = derive_live_analysis(d1, h4, h1, symbol="XAUUSD", captured_at=NOW)
     assert a["regime"] in VALID_TECHNICAL_REGIMES
     assert a["canonical_smc"].scoring_version == "smc-v2"
-    assert a["canonical_smc"].contract_version == "smc-scoring-canonical-2026-08"
+    assert a["canonical_smc"].contract_version == "smc-scoring-canonical-2026-10"
     raws = a["raws"]
     assert raws.features_version == "scanner-features"
     assert set(raws.per_side) == {"buy", "sell"}

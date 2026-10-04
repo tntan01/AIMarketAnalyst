@@ -94,6 +94,14 @@ SMC_PERSISTENCE_CONTRACT_MISSING = "SMC_PERSISTENCE_CONTRACT_MISSING"
 SMC_PERSISTENCE_CONTRACT_UNSUPPORTED = "SMC_PERSISTENCE_CONTRACT_UNSUPPORTED"
 SMC_PERSISTENCE_SELECTION_MALFORMED = "SMC_PERSISTENCE_SELECTION_MALFORMED"
 SMC_PERSISTENCE_SELECTION_MISSING = "SMC_PERSISTENCE_SELECTION_MISSING"
+# Readable as historical because its canonical contract version is retired
+# (V3(a) frozen strings): the payload is opened as it was created and never
+# promoted to a current verdict. Only a version the reader does not know at
+# all stays incompatible.
+SMC_PERSISTENCE_CONTRACT_RETIRED = "SMC_PERSISTENCE_CONTRACT_RETIRED"
+SMC_RETIRED_SCORING_CONTRACT_VERSIONS = frozenset({
+    "smc-scoring-canonical-2026-08",
+})
 # Readable and meaningful, but produced by another identity.  Every marker the
 # writer stamps is verified, so a single tampered/rolled marker is reported with
 # its own reason instead of being accepted on the strength of the others.
@@ -409,6 +417,13 @@ def classify_persisted_smc(document: object) -> SmcPersistenceCompat:
             block=block,
         )
     if contract_version != SMC_SCORING_CONTRACT_VERSION:
+        if contract_version in SMC_RETIRED_SCORING_CONTRACT_VERSIONS:
+            return SmcPersistenceCompat(
+                status=SMC_PAYLOAD_HISTORICAL,
+                reason_codes=(SMC_PERSISTENCE_CONTRACT_RETIRED,),
+                sides=raw_sides,
+                block=block,
+            )
         return SmcPersistenceCompat(
             status=SMC_PAYLOAD_INCOMPATIBLE,
             reason_codes=(SMC_PERSISTENCE_CONTRACT_UNSUPPORTED,),
@@ -722,8 +737,10 @@ __all__ = [
     "SMC_PERSISTENCE_BLOCK_MISSING",
     "SMC_PERSISTENCE_CONFIRMATION_IDENTITY_MISMATCH",
     "SMC_PERSISTENCE_CONTRACT_MISSING",
+    "SMC_PERSISTENCE_CONTRACT_RETIRED",
     "SMC_PERSISTENCE_CONTRACT_UNSUPPORTED",
     "SMC_PERSISTENCE_CONTRACT_VERSION",
+    "SMC_RETIRED_SCORING_CONTRACT_VERSIONS",
     "SMC_PERSISTENCE_IDENTITY_KEY",
     "SMC_PERSISTENCE_IDENTITY_MISMATCH",
     "SMC_PERSISTENCE_IDENTITY_MISSING",

@@ -99,7 +99,7 @@ Không đưa `capture_source`, UI text, thứ tự dictionary hoặc comment AI 
 `canonical_rule_identity` là một record nội bộ, tối thiểu gồm:
 
 ```text
-smc_scoring_contract = smc-scoring-canonical-2026-08
+smc_scoring_contract = smc-scoring-canonical-2026-10
 scorer_formula_identity = SMC_SCORER_VERSION hiện hành/đã được duyệt
 structure_policy = protected-swing/BOS/CHoCH policy identity
 zone_policy = OB/FVG/S-D policy identity
