@@ -41,7 +41,13 @@ from core.final_score import (
     FINAL_SCORE_NEUTRAL_FALLBACK_SOURCE,
     FINAL_SCORE_POLICY_VERSION,
 )
-from core.macro_gate import MacroGate, MacroGateError, MacroPolicy, build_macro_assessment
+from core.macro_gate import (
+    MACRO_DATA_UNAVAILABLE,
+    MacroGate,
+    MacroGateError,
+    MacroPolicy,
+    build_macro_assessment,
+)
 from core.market_safety_gate import (
     AVAILABILITY_VALID,
     ConnectivitySource,
@@ -998,6 +1004,24 @@ class TestBlockKeepsScoreAndScenario:
         self._assert_blocked_keeps_evidence(result)
         assert result.macro_gate.status == BLOCK
         assert result.macro_assessment.status == "conflict"
+
+    def test_macro_data_missing_block_keeps_scores(self):
+        """Macro DATA missing is a critical block even on a configured policy.
+
+        The scanner-side protection for the same outcome the Analyze
+        macro-derate test pins (test_smc_analyze_scenario_r114): a snapshot
+        whose macro feed is absent (raw scores and confidence all None) must
+        never reach a tradable decision — the macro gate is critical, so the
+        pair is BLOCKED with the data reason in the block codes while the
+        honest scores and scenario are kept.
+        """
+        snapshot = _snapshot(macro_raw_buy=None, macro_raw_sell=None, macro_confidence=None)
+        result = _compose(snapshot)
+        self._assert_blocked_keeps_evidence(result)
+        assert result.macro_gate.status == UNKNOWN
+        assert result.macro_assessment.status == "unknown"
+        assert MACRO_DATA_UNAVAILABLE in result.macro_gate.reason_codes
+        assert MACRO_DATA_UNAVAILABLE in result.decision.block_codes
 
     def test_account_margin_block(self):
         snapshot = _snapshot(account=AccountState(free_margin=500.0, required_margin=1000.0))
