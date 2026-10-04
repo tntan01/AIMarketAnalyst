@@ -744,7 +744,11 @@ def _integrity_features(
 
     last_visit = visits[-1] if visits and isinstance(visits[-1], dict) else {}
     penetration_ratio = _optional_float(last_visit.get("max_penetration_ratio"))
-    if penetration_ratio is None:
+    if penetration_ratio is None and visits:
+        # Ca 4 (smc-bqlc-producer-gaps): only a zone that WAS visited can
+        # lack penetration evidence.  A never-visited zone is complete
+        # evidence — fresh, full marks per BQLC spec §4.3 — so the reason
+        # must not claim its lifecycle evidence is unavailable.
         reasons.append(QUALITY_LIFECYCLE_UNAVAILABLE)
     penetration_score = 1.0 - min(1.0, max(0.0, penetration_ratio or 0.0))
 

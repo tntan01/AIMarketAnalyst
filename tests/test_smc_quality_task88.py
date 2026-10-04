@@ -40,6 +40,7 @@ from core.smc_geometry import (  # noqa: F811  (R80-91-02 regression import)
 )
 from core.smc_quality import (
     QUALITY_FORMATION_ATR_UNAVAILABLE,
+    QUALITY_LIFECYCLE_UNAVAILABLE,
     QUALITY_NO_RELATED_SWEEP,
     evaluate_candidate_sets,
     order_candidates,
@@ -278,6 +279,38 @@ def test_core_unavailable_never_produces_a_zero_quality():
     assert sets["buy"].state == "data_unavailable"
     assert sets["buy"].quality_raw is None
     assert "SMC_H4_COVERAGE_GAP" in sets["buy"].reason_codes
+
+
+def test_a_never_visited_zone_is_complete_evidence_not_unavailable():
+    """Ca 4 (smc-bqlc-producer-gaps): a fresh zone keeps full lifecycle marks.
+
+    An empty visit list is a complete measurement — the zone was never
+    touched (BQLC spec §4.3: fresh chưa visit = 1.00) — so the evaluator must
+    not attach ``LIFECYCLE_EVIDENCE_UNAVAILABLE`` to it.  Only a zone that
+    WAS visited may lack penetration evidence.
+    """
+
+    fresh = evaluate_candidate_sets(_context(_zone(visits=[])), _technical(), as_of=_AS_OF)["buy"]
+    assert QUALITY_LIFECYCLE_UNAVAILABLE not in fresh.reason_codes
+    assert fresh.quality.feature("lifecycle_state_score") == 1.0
+    assert fresh.quality.feature("penetration_score") == 1.0
+    assert fresh.quality.feature("dwell_score") == 1.0
+
+
+def test_a_visited_zone_without_penetration_keeps_the_unavailable_reason():
+    """The reason still fires for genuinely malformed visit evidence."""
+
+    zone = _zone(
+        visits=[
+            {
+                "visit_id": "smcz-hand-1:visit-1",
+                "visit_state": "completed_reacted",
+                "bars_spent_inside": 1,
+            }
+        ]
+    )
+    visited = evaluate_candidate_sets(_context(zone), _technical(), as_of=_AS_OF)["buy"]
+    assert QUALITY_LIFECYCLE_UNAVAILABLE in visited.reason_codes
 
 
 def test_absent_sweep_is_l_zero_without_renormalization():
