@@ -359,14 +359,15 @@ def _analyze_for_case(case: dict[str, Any]):
 # ---------------------------------------------------------------------------
 
 
-def test_the_macro_confidence_gate_still_blocks_the_canonical_plan():
-    """With macro data missing the score gate still refuses the setup.
+def test_the_macro_derated_setup_stays_untradeable():
+    """With macro data missing the setup never becomes tradeable.
 
-    Ca 2 (smc-bqlc-producer-gaps): the lifecycle ATR wiring raised this
-    fixture's SMC quality (raw 6 -> 8), so the macro-derated signal score is
-    51 — above the 50 floor where a scenario may anchor on the canonical zone
-    instead of the ATR fallback, but still far below the ready threshold.  The
-    protected outcome is unchanged: the setup is not tradeable.
+    Ca 2 (smc-bqlc-producer-gaps) raised this fixture's SMC quality (raw 6 -> 8),
+    so the macro-derated signal score is 51 — above the 50 floor where the
+    scenario may anchor on the canonical zone instead of the ATR fallback
+    (risk_engine.py:675). The macro derate therefore no longer blocks the plan
+    itself; the protected outcome is that the entry chain keeps the setup a
+    watch zone: never a confirmed entry, never ready to trade.
     """
 
     result, pipeline = _analyze(correlation_context={})
@@ -374,9 +375,10 @@ def test_the_macro_confidence_gate_still_blocks_the_canonical_plan():
     assert selection.state == "evaluated" and selection.plan_available is True
     assert pipeline._scores["buy"]["signal_score"] < 65
     scenario = _scenario(result, "buy")
-    # The canonical plan may anchor the display, but the score gate owns the
-    # outcome: the setup stays a watch zone, never a ready trade.
-    assert scenario is None or scenario["entry_status"] != "ready_to_trade"
+    # The canonical plan may anchor the display, but the entry chain owns the
+    # outcome: no confirmed entry, no ready trade.
+    assert scenario is None or scenario["entry_status"] != "confirmed_entry"
+    assert scenario is None or scenario["ready_to_trade"] is not True
 
 
 def test_the_blocked_permission_gate_still_blocks_the_canonical_plan():
