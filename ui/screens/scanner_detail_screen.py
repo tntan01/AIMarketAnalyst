@@ -2777,11 +2777,10 @@ class ScannerDetailScreen(QWidget):
             # ``scenario_scores``/``pipeline_diagnostics``/``trade_gate`` which
             # Scanner does not emit.  Render Scanner-native diagnostics instead.
             parts.append(self._diag_route_html(light=light))
-            parts.append(self._diag_scores_html(light=light))
+            parts.append(self._diag_plan_html(light=light))
+            parts.append(self._diag_gates_html(light=light))
             parts.append(self._diag_smc_html(light=light))
             parts.append(self._diag_location_html(light=light))
-            parts.append(self._diag_gates_html(light=light))
-            parts.append(self._diag_plan_html(light=light))
         else:
             parts.append(self._diag_branch_html(light=light))
             parts.append(self._diag_score_breakdown_html(analysis, light=light))
@@ -3993,114 +3992,8 @@ class ScannerDetailScreen(QWidget):
             f"</div></td></tr></table>"
         )
 
-    def _diag_scores_html(self, light: bool = False) -> str:
-        """Per-side component scores + the selected side's four scores."""
-        side_scores = self.row.get("side_scores") or []
-        if not isinstance(side_scores, list) or not side_scores:
-            return ""
-        selected = self._selected_side()
-        by_side = {
-            str(s.get("side", "")): s
-            for s in side_scores
-            if isinstance(s, dict) and s.get("side")
-        }
-
-        title_color = "#D94625" if light else "#ea580c"
-        desc_color = "#736B60" if light else "#64748b"
-        border_color = "#D6D2C8" if light else "#334155"
-        row_border_color = "#EAE6DF" if light else "#1e293b"
-        text_color = "#111827" if light else "#e2e8f0"
-        muted_color = "#57534E" if light else "#94a3b8"
-
-        def _val(side_dict: dict, key: str, dash: str = "—") -> str:
-            v = side_dict.get(key)
-            if v is None:
-                return dash
-            try:
-                return str(int(v))
-            except (TypeError, ValueError):
-                return str(v)
-
-        def _fmt(v: object) -> str:
-            if v is None:
-                return "—"
-            try:
-                return f"{float(v):.2f}"
-            except (TypeError, ValueError):
-                return str(v)
-
-        def _diff_text() -> str:
-            gap = self.row.get("score_gap")
-            if gap is None:
-                return "chưa có"
-            try:
-                return f"{float(gap):.1f}"
-            except (TypeError, ValueError):
-                return str(gap)
-
-        rows = [
-            f"<div style='{_HTML_BODY}'>",
-            f"<h2 style='color:{title_color};margin:0 0 4px;{_HTML_SUBTITLE}'>Phân rã điểm số</h2>",
-            f"<p style='color:{desc_color};{_HTML_SMALL}margin:0 0 12px;'>"
-            "Điểm theo từng hướng MUA và BÁN; hướng được chọn được đánh dấu. "
-            "<b>Tín hiệu kỹ thuật</b> (technical signal) · <b>Setup</b> (điểm thiết lập) · "
-            "<b>Bằng chứng</b> (evidence từ lịch sử) · <b>Chất lượng thực thi</b> (execution). "
-            "Thang 0–100."
-            "</p>",
-            f"<table style='width:100%;border-collapse:collapse;margin-bottom:12px;{_HTML_BODY}'>",
-            "<tr>",
-            f"<th style='text-align:left;padding:4px 10px;border-bottom:2px solid {border_color};color:{muted_color};{_HTML_BODY}font-weight:bold;'>Thành phần</th>",
-            f"<th style='text-align:center;padding:4px 10px;border-bottom:2px solid #ea580c;color:#ea580c;width:110px;{_HTML_BODY}font-weight:bold;'>MUA</th>",
-            f"<th style='text-align:center;padding:4px 10px;border-bottom:2px solid #f43f5e;color:#f43f5e;width:110px;{_HTML_BODY}font-weight:bold;'>BÁN</th>",
-            "</tr>",
-        ]
-        components = [
-            ("Tín hiệu kỹ thuật", "technical_signal_score"),
-            ("Điểm thiết lập (Setup)", "setup_score"),
-            ("Bằng chứng (Evidence)", "evidence_score"),
-            ("Chất lượng thực thi", "execution_quality_score"),
-        ]
-        sides = ("buy", "sell")
-        check_uri = flat_data_uri("check", "success", size=12)
-        for label, key in components:
-            tds = []
-            for side in sides:
-                s = by_side.get(side, {})
-                marker = (
-                    f" · <img src='{check_uri}' width='12' height='12'/> đang chọn"
-                    if side == selected
-                    else ""
-                )
-                tds.append(
-                    f"<td style='text-align:center;padding:4px 10px;border-bottom:1px solid "
-                    f"{row_border_color};color:{text_color};{_HTML_NUMBER}' "
-                    f"title='{side.upper()}'>"
-                    f"{_val(s, key)}{marker}</td>"
-                )
-            rows.append(
-                f"<tr>"
-                f"<td style='padding:4px 10px;border-bottom:1px solid {row_border_color};color:{text_color};{_HTML_BODY}'>{label}</td>"
-                + "".join(tds)
-                + "</tr>"
-            )
-        rows.append("</table>")
-
-        sel = by_side.get(selected, {})
-        rows.append(
-            f"<table style='width:100%;border-collapse:collapse;margin-bottom:12px;{_HTML_BODY}'>"
-            f"<tr><td style='padding:4px 12px;color:{muted_color};width:160px;{_HTML_BODY}'>Chênh lệch điểm MUA–BÁN</td>"
-            f"<td style='padding:4px 12px;color:{text_color};{_HTML_NUMBER}'>{_diff_text()}</td></tr>"
-            f"<tr><td style='padding:4px 12px;color:{muted_color};{_HTML_BODY}'>R:R kỳ vọng sau chi phí</td>"
-            f"<td style='padding:4px 12px;color:{text_color};{_HTML_NUMBER}'>{_fmt(self.row.get('expected_effective_rr'))}</td></tr>"
-            f"<tr><td style='padding:4px 12px;color:{muted_color};{_HTML_BODY}'>Nguồn bằng chứng</td>"
-            f"<td style='padding:4px 12px;color:{desc_color};{_HTML_BODY}'>{sel.get('evidence_source') or '—'}</td></tr>"
-            f"</table>"
-        )
-        rows.append("</div>")
-        return "\n".join(rows)
-
     def _diag_location_html(self, light: bool = False) -> str:
-        """Render canonical Location raw/contribution/detail without re-scoring."""
+        """Render the canonical Location reference, anchor and obstacle."""
         side_scores = self.row.get("side_scores") or []
         if not isinstance(side_scores, list) or not side_scores:
             return ""
@@ -4132,54 +4025,11 @@ class ScannerDetailScreen(QWidget):
             status_text = f" · {escape(status)}" if status else ""
             return f"[{low}, {high}]{status_text}"
 
-        def _codes(detail: dict) -> str:
-            codes = detail.get("reason_codes")
-            if not isinstance(codes, list) or not codes:
-                return "Không có"
-            return escape(", ".join(_translate_codes([str(code) for code in codes])))
-
         theme_class = "rt-location-light" if light else "rt-location-dark"
         rows = [
             f'<div class="rt-location-root {theme_class}">',
             '<h2 class="rt-location-title">Location</h2>',
-            '<p class="rt-location-description">'
-            "Raw và contribution được đọc từ technical breakdown canonical; "
-            "‘Vị trí’ bên dưới không phải price_vs_zone của vùng entry."
-            "</p>",
-            '<table class="rt-location-table rt-location-summary">',
-            "<tr>",
-            '<th class="rt-location-header rt-location-align-left">Hướng</th>',
-            '<th class="rt-location-header rt-location-align-center">Raw</th>',
-            '<th class="rt-location-header rt-location-align-center">Đóng góp kỹ thuật</th>',
-            '<th class="rt-location-header rt-location-align-left">Trạng thái / lý do</th>',
-            "</tr>",
         ]
-        for side, label in (("buy", "MUA"), ("sell", "BÁN")):
-            item = by_side.get(side, {})
-            breakdown = item.get("technical_breakdown")
-            breakdown = breakdown if isinstance(breakdown, dict) else {}
-            component = breakdown.get("location")
-            component = component if isinstance(component, dict) else {}
-            detail = item.get("location_detail")
-            detail = detail if isinstance(detail, dict) else None
-            raw = component.get("raw", item.get("location_raw"))
-            raw_text = "Không đủ dữ liệu" if raw is None else f"{escape(str(raw))}/25"
-            contribution = component.get("contribution")
-            contribution_text = "Không đủ dữ liệu" if contribution is None else _fmt(contribution)
-            if detail is None:
-                status_text = "Bản lưu cũ chưa có chi tiết Location"
-            else:
-                status = escape(str(detail.get("status") or "Chưa xác định"))
-                status_text = f'{status}<br><span class="rt-location-small">{_codes(detail)}</span>'
-            rows.append(
-                "<tr>"
-                f'<td class="rt-location-cell rt-location-label">{label}</td>'
-                f'<td class="rt-location-cell rt-location-number rt-location-align-center">{raw_text}</td>'
-                f'<td class="rt-location-cell rt-location-number rt-location-align-center">{contribution_text}</td>'
-                f'<td class="rt-location-cell rt-location-description">{status_text}</td>'
-                "</tr>"
-            )
-        rows.append("</table>")
 
         selected = self._selected_side()
         detail = by_side.get(selected, {}).get("location_detail")
@@ -4213,8 +4063,6 @@ class ScannerDetailScreen(QWidget):
             f'<td class="rt-location-value">{obstacle_label}</td></tr>'
             f'<tr><td class="rt-location-label">Khoảng trống obstacle</td>'
             f'<td class="rt-location-value rt-location-number">{_fmt(detail.get("clearance_atr"))} ATR H4</td></tr>'
-            f'<tr><td class="rt-location-label">Model/config</td>'
-            f'<td class="rt-location-value rt-location-description rt-location-small">{escape(str(detail.get("model_version") or "—"))} / {escape(str((detail.get("config_used") or {}).get("config_version") or "—"))}</td></tr>'
             "</table></div>"
         )
         return "\n".join(rows)
@@ -4343,13 +4191,6 @@ class ScannerDetailScreen(QWidget):
                 "</tr>"
             )
         rows.append("</table>")
-
-        all_codes_vn = [" ".join(_translate_codes(all_codes))] if all_codes else []
-        if all_codes_vn:
-            rows.append(
-                f"<div style='{_HTML_BODY}color:{muted_color};padding:4px 12px;margin-bottom:12px;'>"
-                f"<b>Mã chặn tổng hợp:</b> {', '.join(all_codes_vn)}</div>"
-            )
         rows.append("</div>")
         return "\n".join(rows)
 
@@ -4421,16 +4262,7 @@ class ScannerDetailScreen(QWidget):
             present_smc_row,
             smc_lifecycle_text,
             smc_reason_text,
-            smc_trigger_kind_text,
         )
-
-        def _fmt(value: object, digits: int = 3) -> str:
-            if value is None:
-                return "—"
-            try:
-                return f"{float(value):.{digits}f}"
-            except (TypeError, ValueError, OverflowError):
-                return escape(str(value))
 
         def _txt(value: object) -> str:
             text = str(value or "").strip()
@@ -4486,7 +4318,7 @@ class ScannerDetailScreen(QWidget):
             else {}
         )
 
-        # --- score + state -------------------------------------------------
+        # --- score, state and the zone the verdict is about -----------------
         rows.append('<table class="rt-location-table rt-location-summary">')
         rows.append(_pair(SMC_SCORE_LABEL, escape(view.score_text)))
         rows.append(_pair("Trạng thái", escape(view.state_text)))
@@ -4494,43 +4326,6 @@ class ScannerDetailScreen(QWidget):
             _pair("Xác nhận vào lệnh", escape(view.confirmation_text or "—"))
         )
         rows.append(_pair("Vùng được chọn", escape(view.zone_text or "—")))
-        rows.append("</table>")
-
-        # --- B/Q/L/C of the SAME selected setup -----------------------------
-        rows.append(
-            '<table class="rt-location-table rt-location-detail"><tr>'
-            '<th class="rt-location-header rt-location-align-left">Thành phần SMC</th>'
-            '<th class="rt-location-header rt-location-align-center">B</th>'
-            '<th class="rt-location-header rt-location-align-center">Q</th>'
-            '<th class="rt-location-header rt-location-align-center">L</th>'
-            '<th class="rt-location-header rt-location-align-center">C</th>'
-            '<th class="rt-location-header rt-location-align-center">S</th>'
-            "</tr><tr>"
-            '<td class="rt-location-cell rt-location-label">'
-            "Cấu trúc · Chất lượng · Thanh khoản · Bối cảnh (0–1)</td>"
-            + "".join(
-                f'<td class="rt-location-cell rt-location-number rt-location-align-center">'
-                f"{_fmt(selection.get(key))}</td>"
-                for key in ("b", "q", "l", "c", "total")
-            )
-            + "</tr></table>"
-        )
-
-        # --- zone identity + lifecycle/visit --------------------------------
-        visit_extra = ""
-        if confirmation.get("visit_anchor_at"):
-            visit_extra += f" · từ {_txt(confirmation.get('visit_anchor_at'))}"
-        if confirmation.get("bars_since_anchor") is not None:
-            visit_extra += f" · {_txt(confirmation.get('bars_since_anchor'))} nến M15"
-        rows.append('<table class="rt-location-table rt-location-detail">')
-        rows.append(
-            _pair(
-                "Mã vùng / mã setup",
-                f"{_txt(selection.get('selected_zone_id'))} · "
-                f"{_txt(selection.get('selected_setup_id'))}",
-                small=True,
-            )
-        )
         rows.append(
             _pair(
                 "Vòng đời vùng",
@@ -4538,44 +4333,8 @@ class ScannerDetailScreen(QWidget):
             )
         )
         rows.append(
-            _pair(
-                "Lần giá vào vùng (vòng đời)",
-                _txt(selection.get("entry_visit_id")),
-                small=True,
-            )
-        )
-        rows.append(
-            _pair(
-                "Lần vào vùng trên M15 (xác nhận vào lệnh)",
-                f"{_txt(confirmation.get('entry_visit_id'))}{visit_extra}",
-                small=True,
-            )
-        )
-        rows.append("</table>")
-
-        # --- trigger / expiry / invalidation of the confirmation -------------
-        invalidation = _txt(confirmation.get("invalidated_at"))
-        if confirmation.get("invalidation_reason"):
-            invalidation += " · " + escape(
-                smc_reason_text(confirmation.get("invalidation_reason"))
-            )
-        rows.append('<table class="rt-location-table rt-location-detail">')
-        rows.append(
-            _pair(
-                "Loại tín hiệu xác nhận",
-                _txt(smc_trigger_kind_text(confirmation.get("trigger_kind"))),
-            )
-        )
-        rows.append(
-            _pair("Thời điểm tín hiệu", _txt(confirmation.get("trigger_at")), small=True)
-        )
-        rows.append(
-            _pair("Xác nhận lúc", _txt(confirmation.get("confirmed_at")), small=True)
-        )
-        rows.append(
             _pair("Hiệu lực đến", _txt(confirmation.get("expires_at")), small=True)
         )
-        rows.append(_pair("Vô hiệu lúc", invalidation, small=True))
         rows.append("</table>")
 
         # --- why this zone was selected -------------------------------------

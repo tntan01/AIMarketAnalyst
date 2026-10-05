@@ -6,7 +6,9 @@ statuses and reason codes directly on the UI row — NOT inside the legacy
 that the rows never emit).  Regression: the Chẩn đoán tab previously rendered
 only the legacy builders, so it came out empty for these rows.
 ``_refresh_diagnostics`` now dispatches to native builders; here we assert they
-render the component scores and gate blocks from the real row.
+render the route, plan, gate groups, SMC verdict and Location detail from the
+real row — and that the trimmed blocks (score breakdown, B/Q/L/C table, Location
+raw/contribution, aggregate block codes) are gone.
 
 These tests drive the builders on a real ``_analyze_one_symbol`` row through
 a minimal (non-QWebEngineView) screen stub, because constructing a full
@@ -172,61 +174,10 @@ def test_route_html_annotates_status_and_side() -> None:
     assert "Hướng MUA" in html or "Hướng BÁN" in html
 
 
-def test_scores_html_lists_component_scores() -> None:
-    screen = _stub_screen(_blocked_row())
-    html = screen._diag_scores_html(light=True)
-    assert html, "Chẩn đoán must render component scores (non-empty)"
-    for label in (
-        "Tín hiệu kỹ thuật",
-        "Điểm thiết lập (Setup)",
-        "Bằng chứng (Evidence)",
-        "Chất lượng thực thi",
-    ):
-        assert label in html, f"missing component label {label!r}"
-    assert "MUA" in html and "BÁN" in html
-
-
-def test_scores_html_selected_marker_is_flat_icon() -> None:
-    """Marker hướng chọn phải là icon phẳng data-URI, không còn emoji ✅."""
-    screen = _stub_screen(_blocked_row())
-    html = screen._diag_scores_html(light=True)
-    assert "✅" not in html
-    assert "đang chọn" in html
-    assert "data:image/png;base64" in html
-
-
-def test_scores_html_marker_follows_theme() -> None:
-    """Data-URI icon build theo palette hiện hành — đổi theme phải đổi URI."""
-    import sys
-
-    from PyQt6.QtWidgets import QApplication
-
-    from ui.theme_manager import APP_THEME_PROPERTY, current_palette
-
-    app = QApplication.instance() or QApplication(sys.argv)
-    start = "light" if current_palette().name == "light" else "dark"
-    target = "dark" if start == "light" else "light"
-    screen = _stub_screen(_blocked_row())
-    before = screen._diag_scores_html(light=True)
-    app.setProperty(APP_THEME_PROPERTY, target)
-    try:
-        after = screen._diag_scores_html(light=True)
-    finally:
-        app.setProperty(APP_THEME_PROPERTY, start)
-    assert before != after, "data-URI icon không đổi theo theme"
-
-
-@pytest.mark.parametrize("raw", [0, 13, None])
-def test_location_html_renders_raw_states_and_h1_reference(raw) -> None:
+def test_location_html_renders_h1_reference_anchor_and_obstacle() -> None:
     from tests.test_location_canonical_detail import _location_detail
 
-    detail = _location_detail("buy", raw).to_dict() if raw is not None else None
-    location_component = {
-        "raw": raw,
-        "raw_max": 25,
-        "weight": 40,
-        "contribution": None if raw is None else raw * 40 / 25,
-    }
+    detail = _location_detail("buy", 13).to_dict()
     row = {
         "pipeline_route": "scanner",
         "scanner_candidate_decision": {
@@ -236,22 +187,42 @@ def test_location_html_renders_raw_states_and_h1_reference(raw) -> None:
         "side_scores": [
             {
                 "side": "buy",
-                "location_raw": raw,
-                "technical_breakdown": {"location": location_component},
-                **({"location_detail": detail} if detail is not None else {}),
+                "location_raw": 13,
+                "technical_breakdown": {
+                    "location": {"raw": 13, "raw_max": 25, "contribution": 20.8},
+                },
+                "location_detail": detail,
             }
         ],
     }
 
     html = _stub_screen(row)._diag_location_html(light=True)
     assert "Location" in html
-    assert (f"{raw}/25" in html if raw is not None else "Không đủ dữ liệu" in html)
-    if detail is None:
-        assert "Bản lưu cũ chưa có chi tiết Location" in html
-    else:
-        assert "Giá tham chiếu H1" in html
-        assert "reference_closed_at" not in html
-        assert "Chưa quan sát được trong dữ liệu đã xét" in html
+    for label in (
+        "Giá tham chiếu H1",
+        "Anchor",
+        "Khoảng cách anchor",
+        "Obstacle phía trước",
+        "Khoảng trống obstacle",
+    ):
+        assert label in html, f"missing Location field {label!r}"
+    assert "reference_closed_at" not in html
+    # The raw/contribution summary and the version row were cut from the tab.
+    for dropped in ("Raw", "Đóng góp kỹ thuật", "/25", "Model/config"):
+        assert dropped not in html, f"cut Location content {dropped!r} still rendered"
+
+
+def test_location_html_without_detail_says_so() -> None:
+    row = {
+        "pipeline_route": "scanner",
+        "scanner_candidate_decision": {"selected_side": "buy"},
+        "side_scores": [{"side": "buy", "location_raw": 0}],
+    }
+
+    html = _stub_screen(row)._diag_location_html(light=True)
+    assert "Location" in html
+    assert "Bản lưu cũ chưa có chi tiết Location" in html
+    assert "Raw" not in html and "Đóng góp kỹ thuật" not in html
 
 
 @pytest.mark.parametrize("light", [True, False])
@@ -261,10 +232,6 @@ def test_location_html_fixture_is_responsive_for_long_values(light, viewport_wid
     from tests.test_location_canonical_detail import _location_detail
 
     detail = _location_detail("buy", 13).to_dict()
-    detail["reason_codes"] = [
-        "LOCATION_LIMITED_CONTEXT",
-        "LONG_REASON_CODE_FOR_RESPONSIVE_LOCATION_CARD_REGRESSION",
-    ]
     detail["reference_price"] = 1234567890.123456
     detail["reference_closed_at"] = "2026-09-10T12:34:56.123456+00:00"
     detail["obstacle"] = None
@@ -289,10 +256,9 @@ def test_location_html_fixture_is_responsive_for_long_values(light, viewport_wid
     assert f"width:100%" in html
     assert "table-layout:fixed" in html
     assert "overflow-wrap:anywhere" in html
-    assert "LONG_REASON_CODE_FOR_RESPONSIVE_LOCATION_CARD_REGRESSION" in html
     assert "1234567890.12" in html
     assert "Chưa quan sát được trong dữ liệu đã xét" in html
-    assert "Raw" in html and "Giá tham chiếu H1" in html
+    assert "Giá tham chiếu H1" in html
     assert "min-width" not in html
     assert viewport_width in (320, 1280)  # document the narrow/wide fixture matrix
 
@@ -318,7 +284,7 @@ def test_location_html_fixture_theme_changes_palette_not_content() -> None:
     dark_html = screen._diag_location_html(light=False)
 
     assert light_html != dark_html
-    for text in ("Location", "0/25", "Giá tham chiếu H1", "Anchor"):
+    for text in ("Location", "Giá tham chiếu H1", "Anchor"):
         assert text in light_html and text in dark_html
 
 
@@ -360,10 +326,6 @@ def test_location_card_renders_without_horizontal_overflow_at_supported_widths()
     detail["reference_price"] = 1.142465
     detail["anchor"]["low"] = 1.14211
     detail["anchor"]["high"] = 1.14267
-    detail["reason_codes"] = [
-        "LOCATION_LIMITED_CONTEXT",
-        "LONG_REASON_CODE_FOR_LOCATION_CARD_RENDER_REGRESSION",
-    ]
     row = {
         "symbol": "EUR/USD",
         "scanner_candidate_decision": {"selected_side": "buy"},
@@ -396,7 +358,6 @@ def test_location_card_renders_without_horizontal_overflow_at_supported_widths()
                 plain = edit.toPlainText()
                 assert "1.14247" in plain
                 assert "1.14211" in plain and "1.14267" in plain
-                assert "LONG_REASON_CODE_FOR_LOCATION_CARD_RENDER_REGRESSION" in plain
                 edit.close()
     finally:
         app.setProperty(APP_THEME_PROPERTY, original_theme)
@@ -422,6 +383,8 @@ def test_gates_html_lists_all_gate_groups() -> None:
         assert emoji not in html, f"gate section còn emoji {emoji!r}"
     assert "data:image/png;base64" in html
     assert "Chặn" in html, "row BLOCKED phải giữ label trạng thái 'Chặn'"
+    # The aggregate block-code line was cut: every code is already listed above.
+    assert "Mã chặn tổng hợp" not in html
 
 
 def test_plan_html_shows_entry_sl_tp_and_status() -> None:
@@ -432,8 +395,8 @@ def test_plan_html_shows_entry_sl_tp_and_status() -> None:
         assert label in html, f"missing plan field {label!r}"
 
 
-def test_refresh_diagnostics_dispatches_to_builders() -> None:
-    """For a row, the Chẩn đoán render uses the native builders (non-empty)."""
+def test_refresh_diagnostics_renders_the_trimmed_blocks_in_order() -> None:
+    """Route → plan → gates → SMC → Location, with the cut content absent."""
     captured: list[str] = []
 
     def _fake_set_rich_html(widget, html, **kwargs):
@@ -450,6 +413,24 @@ def test_refresh_diagnostics_dispatches_to_builders() -> None:
 
     assert captured, "Chẩn đoán must emit HTML for a row"
     html = captured[0]
-    assert "Scanner — Hướng" in html
-    assert "Phân rã điểm số" in html
-    assert "Cổng chặn" in html
+    markers = [
+        "Scanner — Hướng",
+        "Kế hoạch &amp; quyết định",
+        "Cổng chặn",
+        'rt-location-title">SMC<',
+        'rt-location-title">Location<',
+    ]
+    positions = []
+    for marker in markers:
+        assert marker in html, f"missing block {marker!r}"
+        positions.append(html.index(marker))
+    assert positions == sorted(positions), f"blocks out of order: {positions}"
+
+    for dropped in (
+        "Phân rã điểm số",
+        "Thành phần SMC",
+        "Mã chặn tổng hợp",
+        "Đóng góp kỹ thuật",
+        "Model/config",
+    ):
+        assert dropped not in html, f"cut content {dropped!r} still rendered"

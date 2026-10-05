@@ -585,28 +585,42 @@ def _detail_row(state: str = "confirmed") -> tuple[dict[str, Any], dict[str, Any
     return row, selection
 
 
-def test_the_detail_panel_shows_bqlc_visit_trigger_and_reasons():
+def test_the_detail_panel_shows_the_verdict_zone_lifecycle_and_reasons():
+    """The trimmed panel keeps the verdict, its zone, lifecycle and reasons."""
+
     row, selection = _detail_row("confirmed")
-    confirmation = selection["confirmation"] or {}
 
     text = _plain(_detail_screen(row)._diag_smc_html(light=True))
 
-    # B / Q / L / C of the same selection.
-    for component in ("b", "q", "l", "c"):
-        assert f"{float(selection[component]):.3f}" in text, f"{component} missing"
-    # Selected zone, lifecycle and BOTH visits, labelled apart.
-    assert str(selection["selected_zone_id"]) in text
-    assert str(selection["selected_setup_id"]) in text
-    assert "Lần giá vào vùng (vòng đời)" in text
-    assert "Lần vào vùng trên M15" in text
-    if confirmation.get("entry_visit_id"):
-        assert str(confirmation["entry_visit_id"]) in text
-    # Trigger / expiry / invalidation of the confirmation.
-    assert "Thời điểm tín hiệu" in text
+    assert "Điểm SMC" in text
+    assert "Trạng thái" in text
+    assert "Xác nhận vào lệnh" in text
+    assert "Vùng được chọn" in text
+    assert "Vòng đời vùng" in text
     assert "Hiệu lực đến" in text
-    assert "Vô hiệu lúc" in text
     # Why this zone was selected.
     assert "Vì sao chọn vùng này" in text
+    # The plan reference of the same zone.
+    assert "Kế hoạch vào lệnh:" in text
+
+    # Cut from the tab (owner trim 05/10/2026): the B/Q/L/C component table, the
+    # zone/setup identity, the visit ids, the confirmation timestamps and its
+    # trigger kind.
+    assert "Thành phần SMC" not in text
+    for component in ("b", "q", "l", "c"):
+        assert f"{float(selection[component]):.3f}" not in text, (
+            f"cut component {component} still rendered"
+        )
+    for label in (
+        "Mã vùng / mã setup",
+        "Lần giá vào vùng (vòng đời)",
+        "Lần vào vùng trên M15",
+        "Loại tín hiệu xác nhận",
+        "Thời điểm tín hiệu",
+        "Xác nhận lúc",
+        "Vô hiệu lúc",
+    ):
+        assert label not in text, f"cut row {label!r} still rendered"
 
 
 def test_the_detail_panel_calls_the_score_a_quality_scale():
