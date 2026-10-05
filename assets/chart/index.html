@@ -148,9 +148,11 @@
       if (caption) { caption.textContent = ''; caption.style.display = 'none'; }
     }
 
-    function showEmpty() {
+    function showEmpty(keepPayload) {
       _clearChart();
-      _payload = null;
+      // A timeframe missing from the payload is not "no data at all": the other
+      // timeframes are still browsable, so that caller keeps the payload.
+      if (!keepPayload) _payload = null;
       _hide('error-state');
       _show('empty-state');
       _resetSourceZoneToggle();
@@ -689,7 +691,14 @@
 
     function switchTimeframe(tf) {
       if (!_payload) return;
-      if (!_payload.timeframes || !_payload.timeframes[tf]) return;
+      if (!_payload.timeframes || !_payload.timeframes[tf]) {
+        // This timeframe carries no candles in the payload: state the absence
+        // instead of doing nothing.  _activeTF is left alone so the timeframe
+        // actually on screen keeps its active button, and the payload is kept
+        // so the other timeframes stay clickable.
+        showEmpty(true);
+        return;
+      }
 
       _activeTF = tf;
       _payload.active_timeframe = tf;

@@ -44,7 +44,12 @@ def _blocked_pkt() -> dict:
     return {
         "symbol": "XAU/USD",
         "broker_symbol": "XAUUSDc",
-        "candles": {"D1": d1, "H4": h4, "H1": h1, "M15": m15},
+        # Production shape: ``candles`` carries only the analysed timeframes
+        # (``bars_by_timeframe`` = D1/H4/H1).  M15 is prefetched for the
+        # confirmation into the packet's OWN key, exactly as the live provider
+        # emits it — a fixture that also puts M15 in ``candles`` would hide a
+        # chart that never got its M15 row.
+        "candles": {"D1": d1, "H4": h4, "H1": h1},
         "m15_candles": m15,
         # Task 101: the snapshot seam takes the symbol metadata from the packet.
         # The fixture quotes ~1000 with 0.2 wicks, so one broker tick is 0.01;
@@ -66,10 +71,9 @@ def _blocked_pkt() -> dict:
     }
 
 
-def _analyzed() -> dict:
-    pkt = _blocked_pkt()
+def _analyzed(pkt: dict | None = None) -> dict:
     return _analyze_one_symbol(
-        pkt,
+        _blocked_pkt() if pkt is None else pkt,
         correlation_context={},
         freshness_multiplier=1.0,
         contract_size_overrides={},
@@ -102,6 +106,41 @@ def test_analysis_result_carries_candles_for_the_chart() -> None:
     for tf in ("D1", "H4", "H1", "M15"):
         assert tf in cp and cp[tf], f"expected candles for {tf}"
         assert isinstance(cp[tf][0], dict), f"{tf} rows must be dicts"
+
+
+def test_the_prefetched_m15_window_reaches_the_map_as_its_own_timeframe() -> None:
+    """Regression: M15 lives in its own packet key, so it must be merged in.
+
+    The chart payload used to be built from ``pkt["candles"]`` alone
+    (D1/H4/H1), so the payload carried no ``M15`` row at all and the M15 button
+    of the Detail chart had nothing to draw.
+    """
+    pkt = _blocked_pkt()
+    row = _analyzed(pkt)
+    cp = row["analysis_result"]["chart_payload"]
+    assert set(cp) == {"D1", "H4", "H1", "M15"}
+    # The window that reached the chart is the prefetched one, candle for candle.
+    assert len(cp["M15"]) == len(pkt["m15_candles"])
+    assert cp["M15"][-1]["time"] == pkt["m15_candles"][-1].time.isoformat()
+
+    timeframes = build_full_chart_payload(
+        row["symbol"], row["analysis_result"], active_timeframe="H1"
+    )["timeframes"]
+    assert timeframes["M15"]["candles"], "the chart reads timeframes, not candles"
+
+
+def test_a_packet_without_m15_candles_gets_no_m15_timeframe() -> None:
+    """No prefetched M15 window → the timeframe is absent, never invented."""
+    pkt = _blocked_pkt()
+    pkt.pop("m15_candles")
+    row = _analyzed(pkt)
+    cp = row["analysis_result"]["chart_payload"]
+    assert {"D1", "H4", "H1"} <= set(cp)
+    assert "M15" not in cp
+    timeframes = build_full_chart_payload(
+        row["symbol"], row["analysis_result"], active_timeframe="H1"
+    )["timeframes"]
+    assert "M15" not in timeframes
 
 
 def test_chart_payload_builds_a_nonempty_chart_for_blocked() -> None:

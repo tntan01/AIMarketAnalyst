@@ -43,7 +43,7 @@ def test_chart_html_has_explicit_surface_and_complete_state_api() -> None:
     assert "background: transparent !important" not in html
     assert "--chart-background:" in html
     assert "function applyChartTheme(theme, palette)" in html
-    assert "function showEmpty()" in html
+    assert "function showEmpty(" in html  # signature may take keepPayload
     assert "function showError(message)" in html
     assert "window.applyChartTheme = applyChartTheme;" in html
     assert "window.showEmpty = showEmpty;" in html

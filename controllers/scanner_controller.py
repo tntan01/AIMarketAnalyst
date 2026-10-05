@@ -3488,6 +3488,13 @@ def _analyze_one_symbol(
                 for tf, series in (pkt.get("candles") or {}).items()
                 if isinstance(series, list) and series
             }
+            # M15 is fetched for confirmation into its OWN packet key and is not
+            # part of ``bars_by_timeframe``, so the chart payload built from
+            # ``candles`` alone has no M15 row and the M15 button draws nothing.
+            # ``setdefault`` keeps a packet that already carries M15 authoritative.
+            m15 = pkt.get("m15_candles")
+            if isinstance(m15, list) and m15:
+                chart_candles.setdefault("M15", m15)
             if chart_candles:
                 _analysis_ui["chart_payload"] = build_chart_payload(chart_candles)
             # The canonical SMC block travels WITH the Scanner row (task 128

@@ -280,3 +280,41 @@ def test_a_theme_switch_never_resets_the_density() -> None:
     assert "minBarSpacing" not in body
     assert source.count("barSpacing: 1.5") == 1, "one density setting only"
     assert source.count("minBarSpacing: 1.5") == 1
+
+
+def test_a_timeframe_without_candles_states_the_absence() -> None:
+    """Bấm một khung không có trong payload: empty state, không im lặng.
+
+    Regression: ``switchTimeframe`` returned on the missing guard without a
+    word, so the M15 button of a payload without an M15 row looked dead.
+    """
+
+    source = _CHART_HTML.read_text(encoding="utf-8")
+    start = source.index("function switchTimeframe")
+    end = source.index("\n    }", start)
+    body = source[start:end]
+
+    guard = body.index("!_payload.timeframes[tf]")
+    empty_state = body.index("showEmpty(true)", guard)
+    active = body.index("_activeTF = tf;", guard)
+    assert guard < empty_state < active, (
+        "khung thiếu dữ liệu phải hiện empty state TRƯỚC khi đổi khung đang xem"
+    )
+
+
+def test_the_missing_timeframe_empty_state_keeps_the_other_timeframes() -> None:
+    """Empty state của một khung thiếu KHÔNG được xoá payload.
+
+    ``showEmpty()`` gọi không tham số vẫn là "không có dữ liệu biểu đồ" (payload
+    = null, mọi nút hết tác dụng).  Riêng nhánh thiếu khung giữ payload để các
+    khung còn lại vẫn bấm được.
+    """
+
+    source = _CHART_HTML.read_text(encoding="utf-8")
+    start = source.index("function showEmpty")
+    end = source.index("\n    }", start)
+    body = source[start:end]
+
+    assert "function showEmpty(keepPayload)" in body
+    assert "if (!keepPayload) _payload = null;" in body
+    assert "showEmpty(true)" in source
