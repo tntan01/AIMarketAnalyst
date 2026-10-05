@@ -1,8 +1,9 @@
-"""Detail "Chi tiết kết quả quét" — ghi chú refresh nến nằm trên dòng "Quét lúc…".
+"""Detail "Chi tiết kết quả quét" — ghi chú refresh nến nằm CÙNG DÒNG "Quét lúc…".
 
 The candle-refresh notice used to live in its own row above the chart.  It now
-sits in the tab bar's corner, **above** the scan-time line, right-aligned, and
-hides itself when there is nothing to say — the scan line keeps its place.
+sits in the tab bar's corner on ONE line: the notice first, the scan-time line
+after it, both right-aligned.  The notice hides itself when there is nothing to
+say, and the scan line keeps that row (no blank band, no second row).
 
 The check runs against a REAL ``ScannerDetailScreen`` in a subprocess (same
 recipe as ``tests/test_scanner_detail_entry_checklist.py``): building the screen
@@ -38,6 +39,7 @@ from ui.screens.scanner_detail_screen import ScannerDetailScreen
 
 app = QApplication([])
 screen = ScannerDetailScreen()
+screen.resize(1600, 800)
 
 screen.row = {
     "symbol": "AUD/NZD",
@@ -78,10 +80,25 @@ observations = {
     "copy_success": screen._candle_refresh_notice(),
 }
 
-# The scan line keeps its own wording/format while the notice is above it.
+# The scan line keeps its own wording/format while sharing the notice's row.
 screen.row["timestamp"] = "2026-09-18T05:15:34+00:00"
 screen._refresh_scan_time_label()
 observations["scan_line_text"] = screen.scan_time_label.text()
+
+# Geometry: both labels must sit on ONE row, notice first.  The screen is shown
+# offscreen so the layouts run; the scan line is measured again with the notice
+# hidden to prove it keeps that row instead of dropping to a band of its own.
+screen.show()
+for _ in range(5):
+    app.processEvents()
+
+
+def _geo(widget):
+    g = widget.geometry()
+    return [g.x(), g.y(), g.width(), g.height()]
+
+
+observations["scan_geo_while_empty"] = _geo(screen.scan_time_label)
 
 # From here on, ONLY the notice paths run — the row must come out untouched.
 row_before = json.dumps(screen.row, sort_keys=True, default=str)
@@ -89,6 +106,37 @@ row_before = json.dumps(screen.row, sort_keys=True, default=str)
 screen._set_chart_notice(observations["copy_success"])
 observations["notice_shown_with_text"] = not screen.chart_notice.isHidden()
 observations["notice_text"] = screen.chart_notice.text()
+for _ in range(5):
+    app.processEvents()
+observations["notice_geo"] = _geo(screen.chart_notice)
+observations["scan_geo"] = _geo(screen.scan_time_label)
+observations["same_row"] = (
+    screen.chart_notice.y() == screen.scan_time_label.y()
+)
+observations["notice_left_of_scan"] = (
+    screen.chart_notice.x() < screen.scan_time_label.x()
+)
+observations["corner_geo"] = _geo(corner)
+observations["line_height"] = max(
+    screen.chart_notice.height(), screen.scan_time_label.height()
+)
+
+# One line means: the label asks for the width its sentence actually needs (a
+# wrapped size hint asks for less and then wraps), and it renders that width
+# without cutting the sentence.
+_fm = screen.chart_notice.fontMetrics()
+observations["notice_text_px"] = _fm.horizontalAdvance(screen.chart_notice.text())
+observations["font_line_px"] = _fm.height()
+observations["notice_hint"] = [
+    screen.chart_notice.sizeHint().width(),
+    screen.chart_notice.sizeHint().height(),
+]
+
+screen._set_chart_notice("")
+for _ in range(5):
+    app.processEvents()
+observations["scan_geo_after_hide"] = _geo(screen.scan_time_label)
+screen._set_chart_notice(observations["copy_success"])
 
 screen._on_candle_refresh_failed("MT5 lỗi thô: -10004 raw provider text")
 observations["copy_failed_on_ui"] = screen.chart_notice.text()
@@ -135,16 +183,31 @@ def observed() -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# Vị trí: notice ở trên, "Quét lúc…" ở dưới, cả hai trong góc tab
+# Vị trí: notice và "Quét lúc…" trên MỘT dòng, cả hai trong góc tab
 # ---------------------------------------------------------------------------
 
 
-def test_the_notice_sits_above_the_scan_line_in_the_tab_corner(observed: dict[str, Any]) -> None:
+def test_the_notice_shares_one_row_with_the_scan_line(observed: dict[str, Any]) -> None:
+    """Đúng một dòng: ghi chú bên trái, 'Quét lúc …' bên phải, cùng một hàng."""
+
     assert observed["has_corner"] and observed["corner_is_tab_corner"]
     assert observed["corner_name"] == "TabBarCorner"
     assert observed["corner_names"] == ["PageSubtitle", "PageSubtitle"]
-    assert observed["first_is_notice"], "dòng trên là ghi chú refresh nến"
-    assert observed["second_is_scan_line"], "dòng dưới là 'Quét lúc …'"
+    assert observed["first_is_notice"], "phần đầu dòng là ghi chú refresh nến"
+    assert observed["second_is_scan_line"], "phần sau dòng là 'Quét lúc …'"
+
+    # The row is one line tall: the labels sit at the same y, notice first.
+    assert observed["same_row"], (
+        f"notice và 'Quét lúc' phải cùng một dòng: "
+        f"notice={observed['notice_geo']} scan={observed['scan_geo']}"
+    )
+    assert observed["notice_left_of_scan"], (
+        f"notice đứng trước 'Quét lúc': "
+        f"notice={observed['notice_geo']} scan={observed['scan_geo']}"
+    )
+    assert observed["corner_geo"][3] <= 2 * observed["line_height"], (
+        "góc tab chỉ cao một dòng chữ"
+    )
 
 
 def test_the_notice_left_the_chart_status_row(observed: dict[str, Any]) -> None:
@@ -163,13 +226,35 @@ def test_without_a_notice_only_the_scan_line_is_shown(observed: dict[str, Any]) 
         "'Quét lúc …' vẫn hiện khi không có ghi chú"
     )
     assert observed["scan_line_text"].startswith("Quét lúc ")
+    # Hiding the notice neither drops the row nor moves the scan line off it.
+    assert observed["scan_geo_after_hide"][1] == observed["scan_geo_while_empty"][1], (
+        "'Quét lúc …' giữ nguyên hàng khi ghi chú ẩn đi"
+    )
 
 
-def test_the_notice_wraps_within_a_bounded_width(observed: dict[str, Any]) -> None:
-    """Word-wrap on, and a width cap so the corner cannot squeeze the tab strip."""
+def test_the_notice_keeps_its_whole_sentence_on_one_line(observed: dict[str, Any]) -> None:
+    """Một dòng, và cả câu — không wrap, không bị cắt bớt chữ.
 
-    assert observed["notice_word_wrap"] is True
-    assert 0 < observed["notice_max_width"] <= 480
+    Regression: ``setWordWrap(True)`` làm size hint của QLabel nhỏ hơn bề rộng
+    thật của câu, nên ghi chú tự wrap thành 2 dòng dù góc tab còn chỗ.
+    """
+
+    assert observed["notice_word_wrap"] is False
+    assert observed["notice_max_width"] >= observed["notice_text_px"], (
+        "không đặt trần bề rộng dưới bề rộng thật của câu"
+    )
+    assert observed["notice_hint"][0] >= observed["notice_text_px"], (
+        f"góc tab phải xin đủ bề rộng cho cả câu: "
+        f"hint={observed['notice_hint']} cần={observed['notice_text_px']}"
+    )
+    assert observed["notice_geo"][3] <= observed["font_line_px"] * 1.5, (
+        f"ghi chú chỉ cao một dòng: geo={observed['notice_geo']} "
+        f"font={observed['font_line_px']}"
+    )
+    assert observed["notice_geo"][2] >= observed["notice_text_px"], (
+        f"chữ không bị cắt: geo={observed['notice_geo']} "
+        f"cần={observed['notice_text_px']}"
+    )
 
 
 # ---------------------------------------------------------------------------

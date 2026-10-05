@@ -266,10 +266,10 @@ class ScannerDetailScreen(QWidget):
         root.addLayout(self.header_slot)
 
         # ---- Tab widget: Tổng quan | Chẩn đoán | AI kiểm định ---------------
-        # The scan-time line and the candle-refresh notice share the tab bar's
-        # corner — notice on top, scan instant under it, both right-aligned.  The
-        # notice is the transient one: hiding it drops its row entirely, so the
-        # "Quét lúc …" line keeps its place instead of leaving a blank band.
+        # The scan-time line and the candle-refresh notice share ONE row in the
+        # tab bar's corner — notice first, scan instant after it, both
+        # right-aligned.  The notice is the transient one: hiding it leaves the
+        # scan line in place on the same row instead of leaving a blank band.
         self.tabs = QTabWidget()
         self.tabs.setObjectName("ContentTabs")
 
@@ -278,11 +278,12 @@ class ScannerDetailScreen(QWidget):
         self.chart_notice.setAlignment(
             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
         )
-        self.chart_notice.setWordWrap(True)
-        # A notice is a sentence, not a paragraph: capping the width keeps the
-        # corner (and therefore the tab strip beside it) from growing without
-        # bound, while word-wrap keeps a longer sentence readable.
-        self.chart_notice.setMaximumWidth(400)
+        # The notice is ONE line: the sentence is short, and a word-wrapped
+        # label asks the layout for a heuristic width narrower than the text
+        # (Qt's wrapped size hint), so it wrapped itself even in a corner with
+        # room to spare.  Not wrapping keeps the full sentence on the row; the
+        # corner asks for the width that sentence actually needs.
+        self.chart_notice.setWordWrap(False)
         self.chart_notice.setVisible(False)
 
         self.scan_time_label = QLabel("")
@@ -293,9 +294,9 @@ class ScannerDetailScreen(QWidget):
 
         corner = QWidget()
         corner.setObjectName("TabBarCorner")
-        corner_layout = QVBoxLayout(corner)
+        corner_layout = QHBoxLayout(corner)
         corner_layout.setContentsMargins(0, 0, 4, 0)
-        corner_layout.setSpacing(0)
+        corner_layout.setSpacing(8)
         corner_layout.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         corner_layout.addWidget(self.chart_notice)
         corner_layout.addWidget(self.scan_time_label)
