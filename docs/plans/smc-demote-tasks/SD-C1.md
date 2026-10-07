@@ -172,7 +172,9 @@ do trong report).
   `feat(research): [SD-C1] lấy lịch sử MT5 và lập cutoff cho corpus SMC demote`.
   Commit gồm: script, test, `.gitignore`, `corpus_manifest.json`, `cutoffs.json`.
   **Không** commit `data/`.
-- Viết `docs/plans/smc-demote-tasks/SD-C1-report.md` theo mẫu §7 của plan, thêm:
+- Sau commit code, viết `docs/plans/smc-demote-tasks/SD-C1-report.md` theo mẫu §7
+  của plan (ghi hash commit code) rồi commit riêng file report:
+  `docs(smc): [SD-C1] báo cáo`. Report gồm thêm:
   - bảng symbol: status, số nến D1/H4/H1/M15, số cutoff;
   - danh sách symbol bị loại và lý do;
   - số cutoff bị bỏ theo từng lý do;

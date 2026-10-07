@@ -31,7 +31,7 @@
 ```text
 TL   viết docs/plans/smc-demote-tasks/SD-xx.md (tự đủ) → commit lên main
 Owner  bảo Coder: "Đọc và thực hiện docs/plans/smc-demote-tasks/SD-xx.md"
-Coder  làm trên main, commit, viết SD-xx-report.md, dừng
+Coder  làm trên main, commit code; viết SD-xx-report.md (mẫu §7 plan), commit riêng; dừng
 Owner  bảo TL: "Review SD-xx"
 TL   review → ACCEPT (ghi §8 plan, giao task kế) | REWORK (ghi mục "Rework" cuối SD-xx.md)
 ```

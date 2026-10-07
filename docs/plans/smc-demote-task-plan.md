@@ -49,8 +49,9 @@ Giai đoạn 3: Triển khai phương án A (SD-I1..I7)     → CP3 (sau I1–I3
 ```text
 TL viết  docs/plans/smc-demote-tasks/SD-xx.md         (file giao việc tự đủ)
 Owner    bảo Coder (opencode): "Đọc và thực hiện docs/plans/smc-demote-tasks/SD-xx.md"
-Coder    làm trực tiếp trên main, commit theo task, viết
-         docs/plans/smc-demote-tasks/SD-xx-report.md   (mẫu §7) rồi DỪNG
+Coder    làm trực tiếp trên main, commit code của task, rồi viết
+         docs/plans/smc-demote-tasks/SD-xx-report.md   (mẫu §7, ghi hash commit code)
+         và commit riêng file report → DỪNG
 Owner    bảo TL: "Review SD-xx"
 TL       đọc report + git diff + tự chạy lại lệnh nghiệm thu
          → ACCEPT (giao task kế) hoặc REWORK (ghi yêu cầu sửa vào cuối SD-xx.md, mục "Rework")
