@@ -28,6 +28,7 @@ Khi tài liệu và code khác nhau, thứ tự ưu tiên (theo quy tắc V2 tro
 | Vận hành/re-validate VIX theo pair | `macro/macro_score_architecture.md`, mục Bước 7 |
 | Contract SMC (B/Q/L/C, zone, lifecycle…) | `plans/smc-*-spec.md`, `plans/smc-parameter-table.md` |
 | Phân tích khoảng hở producer B/Q/L/C + kế hoạch nối | `plans/smc-bqlc-producer-gaps-plan.md` — thi hành xong 04/10/2026, review độc lập 04/10/2026 (ACCEPT; số liệu đã hiệu đính trong file) |
+| Đề xuất rút SMC khỏi TechnicalScore (dùng làm chất lượng entry) | `plans/smc-demote-entry-quality-plan.md` — ĐỀ XUẤT 07/10/2026, chờ Owner duyệt; kế hoạch giao việc TL → Coder: `plans/smc-demote-task-plan.md` |
 | Quản lý lệnh / R:R | `trading/order-management-contract.md`, `trading/rr_anchor_semantics.md` |
 | Thiết kế UI và baseline kiểm thử | `ui/screen_design.md`, `ui/style-guide.md` |
 
