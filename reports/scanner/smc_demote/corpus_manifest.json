@@ -1,0 +1,967 @@
+{
+  "cutoff_hours_utc": [
+    4,
+    12,
+    20
+  ],
+  "fetch_days": {
+    "D1": 1000,
+    "H1": 220,
+    "H4": 400,
+    "M15": 120
+  },
+  "fetched_at": "2026-10-07T06:44:42.334894+00:00",
+  "min_rr": 2.0,
+  "min_rr_status": "loaded",
+  "period_days": 92,
+  "supported_symbols": [
+    "EUR/USD",
+    "GBP/USD",
+    "AUD/USD",
+    "NZD/USD",
+    "USD/JPY",
+    "USD/CHF",
+    "USD/CAD",
+    "EUR/GBP",
+    "EUR/JPY",
+    "EUR/CHF",
+    "EUR/AUD",
+    "EUR/NZD",
+    "EUR/CAD",
+    "GBP/JPY",
+    "GBP/CHF",
+    "GBP/AUD",
+    "GBP/NZD",
+    "GBP/CAD",
+    "CHF/JPY",
+    "AUD/JPY",
+    "NZD/JPY",
+    "CAD/JPY",
+    "AUD/CHF",
+    "NZD/CHF",
+    "CAD/CHF",
+    "AUD/NZD",
+    "AUD/CAD",
+    "NZD/CAD",
+    "XAU/USD",
+    "XAG/USD",
+    "BTC/USD"
+  ],
+  "symbols": {
+    "AUD/CAD": {
+      "broker_symbol": "AUDCADm",
+      "sha256": "sha256:8f0792263b789f3ab03dbbaecbb927f36a96ed5d570cbd83dbd895fe132e2469",
+      "status": "ok",
+      "tick_size": 1e-05,
+      "tick_size_source": "trade_tick_size",
+      "timeframes": {
+        "D1": {
+          "candles": 856,
+          "first": "2024-01-12T00:00:00+00:00",
+          "last": "2026-10-06T00:00:00+00:00"
+        },
+        "H1": {
+          "candles": 3777,
+          "first": "2026-03-01T22:00:00+00:00",
+          "last": "2026-10-07T05:00:00+00:00"
+        },
+        "H4": {
+          "candles": 1762,
+          "first": "2025-09-02T08:00:00+00:00",
+          "last": "2026-10-07T00:00:00+00:00"
+        },
+        "M15": {
+          "candles": 8252,
+          "first": "2026-06-09T06:45:00+00:00",
+          "last": "2026-10-07T06:15:00+00:00"
+        }
+      }
+    },
+    "AUD/CHF": {
+      "broker_symbol": "AUDCHFm",
+      "sha256": "sha256:33c4b89736c49c51a3ebc0b0008b2a38e66e726e1754a03d8e3117258f0ad05f",
+      "status": "ok",
+      "tick_size": 1e-05,
+      "tick_size_source": "trade_tick_size",
+      "timeframes": {
+        "D1": {
+          "candles": 856,
+          "first": "2024-01-12T00:00:00+00:00",
+          "last": "2026-10-06T00:00:00+00:00"
+        },
+        "H1": {
+          "candles": 3777,
+          "first": "2026-03-01T22:00:00+00:00",
+          "last": "2026-10-07T05:00:00+00:00"
+        },
+        "H4": {
+          "candles": 1762,
+          "first": "2025-09-02T08:00:00+00:00",
+          "last": "2026-10-07T00:00:00+00:00"
+        },
+        "M15": {
+          "candles": 8251,
+          "first": "2026-06-09T06:45:00+00:00",
+          "last": "2026-10-07T06:15:00+00:00"
+        }
+      }
+    },
+    "AUD/JPY": {
+      "broker_symbol": "AUDJPYm",
+      "sha256": "sha256:c207c62981b450e115cc4714c7d04579cb116c9edbf0a3388410676dcdcd9897",
+      "status": "ok",
+      "tick_size": 0.001,
+      "tick_size_source": "trade_tick_size",
+      "timeframes": {
+        "D1": {
+          "candles": 856,
+          "first": "2024-01-12T00:00:00+00:00",
+          "last": "2026-10-06T00:00:00+00:00"
+        },
+        "H1": {
+          "candles": 3777,
+          "first": "2026-03-01T22:00:00+00:00",
+          "last": "2026-10-07T05:00:00+00:00"
+        },
+        "H4": {
+          "candles": 1762,
+          "first": "2025-09-02T08:00:00+00:00",
+          "last": "2026-10-07T00:00:00+00:00"
+        },
+        "M15": {
+          "candles": 8253,
+          "first": "2026-06-09T06:45:00+00:00",
+          "last": "2026-10-07T06:15:00+00:00"
+        }
+      }
+    },
+    "AUD/NZD": {
+      "broker_symbol": "AUDNZDm",
+      "sha256": "sha256:b8e2f8e6550e2cce8c9045925918d1dc354bb3ba57ca568be9385455c6dba909",
+      "status": "ok",
+      "tick_size": 1e-05,
+      "tick_size_source": "trade_tick_size",
+      "timeframes": {
+        "D1": {
+          "candles": 856,
+          "first": "2024-01-12T00:00:00+00:00",
+          "last": "2026-10-06T00:00:00+00:00"
+        },
+        "H1": {
+          "candles": 3777,
+          "first": "2026-03-01T22:00:00+00:00",
+          "last": "2026-10-07T05:00:00+00:00"
+        },
+        "H4": {
+          "candles": 1762,
+          "first": "2025-09-02T08:00:00+00:00",
+          "last": "2026-10-07T00:00:00+00:00"
+        },
+        "M15": {
+          "candles": 8246,
+          "first": "2026-06-09T06:45:00+00:00",
+          "last": "2026-10-07T06:15:00+00:00"
+        }
+      }
+    },
+    "AUD/USD": {
+      "broker_symbol": "AUDUSDm",
+      "sha256": "sha256:fb3302a406172066f923324777b87b59d5b98d6259b5dc05553c812b1459ac0b",
+      "status": "ok",
+      "tick_size": 1e-05,
+      "tick_size_source": "trade_tick_size",
+      "timeframes": {
+        "D1": {
+          "candles": 856,
+          "first": "2024-01-12T00:00:00+00:00",
+          "last": "2026-10-06T00:00:00+00:00"
+        },
+        "H1": {
+          "candles": 3777,
+          "first": "2026-03-01T22:00:00+00:00",
+          "last": "2026-10-07T05:00:00+00:00"
+        },
+        "H4": {
+          "candles": 1762,
+          "first": "2025-09-02T08:00:00+00:00",
+          "last": "2026-10-07T00:00:00+00:00"
+        },
+        "M15": {
+          "candles": 8255,
+          "first": "2026-06-09T06:45:00+00:00",
+          "last": "2026-10-07T06:15:00+00:00"
+        }
+      }
+    },
+    "BTC/USD": {
+      "broker_symbol": "BTCUSDm",
+      "sha256": "sha256:5094d9303547c3e96e868c177d269f416b16d09ee827aba3f8385e6ddcfe5eb3",
+      "status": "ok",
+      "tick_size": 0.01,
+      "tick_size_source": "trade_tick_size",
+      "timeframes": {
+        "D1": {
+          "candles": 999,
+          "first": "2024-01-12T00:00:00+00:00",
+          "last": "2026-10-06T00:00:00+00:00"
+        },
+        "H1": {
+          "candles": 5279,
+          "first": "2026-03-01T07:00:00+00:00",
+          "last": "2026-10-07T05:00:00+00:00"
+        },
+        "H4": {
+          "candles": 2399,
+          "first": "2025-09-02T08:00:00+00:00",
+          "last": "2026-10-07T00:00:00+00:00"
+        },
+        "M15": {
+          "candles": 11519,
+          "first": "2026-06-09T06:45:00+00:00",
+          "last": "2026-10-07T06:15:00+00:00"
+        }
+      }
+    },
+    "CAD/CHF": {
+      "broker_symbol": "CADCHFm",
+      "sha256": "sha256:f79bf6f8b7de651b6fc35690d137a3e8a026bbaa7b0842b5e79bc28e7700f770",
+      "status": "ok",
+      "tick_size": 1e-05,
+      "tick_size_source": "trade_tick_size",
+      "timeframes": {
+        "D1": {
+          "candles": 856,
+          "first": "2024-01-12T00:00:00+00:00",
+          "last": "2026-10-06T00:00:00+00:00"
+        },
+        "H1": {
+          "candles": 3777,
+          "first": "2026-03-01T22:00:00+00:00",
+          "last": "2026-10-07T05:00:00+00:00"
+        },
+        "H4": {
+          "candles": 1762,
+          "first": "2025-09-02T08:00:00+00:00",
+          "last": "2026-10-07T00:00:00+00:00"
+        },
+        "M15": {
+          "candles": 8250,
+          "first": "2026-06-09T06:45:00+00:00",
+          "last": "2026-10-07T06:15:00+00:00"
+        }
+      }
+    },
+    "CAD/JPY": {
+      "broker_symbol": "CADJPYm",
+      "sha256": "sha256:78bdaa98972abfa9d2600563dedb76c13ae252571c69d3f0a2237733c2af6826",
+      "status": "ok",
+      "tick_size": 0.001,
+      "tick_size_source": "trade_tick_size",
+      "timeframes": {
+        "D1": {
+          "candles": 856,
+          "first": "2024-01-12T00:00:00+00:00",
+          "last": "2026-10-06T00:00:00+00:00"
+        },
+        "H1": {
+          "candles": 3777,
+          "first": "2026-03-01T22:00:00+00:00",
+          "last": "2026-10-07T05:00:00+00:00"
+        },
+        "H4": {
+          "candles": 1762,
+          "first": "2025-09-02T08:00:00+00:00",
+          "last": "2026-10-07T00:00:00+00:00"
+        },
+        "M15": {
+          "candles": 8252,
+          "first": "2026-06-09T06:45:00+00:00",
+          "last": "2026-10-07T06:15:00+00:00"
+        }
+      }
+    },
+    "CHF/JPY": {
+      "broker_symbol": "CHFJPYm",
+      "sha256": "sha256:62696172394eba4ce3b812951dd81464d6fb6219005b35839ef9ba6ca8cf486b",
+      "status": "ok",
+      "tick_size": 0.001,
+      "tick_size_source": "trade_tick_size",
+      "timeframes": {
+        "D1": {
+          "candles": 856,
+          "first": "2024-01-12T00:00:00+00:00",
+          "last": "2026-10-06T00:00:00+00:00"
+        },
+        "H1": {
+          "candles": 3775,
+          "first": "2026-03-01T22:00:00+00:00",
+          "last": "2026-10-07T05:00:00+00:00"
+        },
+        "H4": {
+          "candles": 1762,
+          "first": "2025-09-02T08:00:00+00:00",
+          "last": "2026-10-07T00:00:00+00:00"
+        },
+        "M15": {
+          "candles": 8234,
+          "first": "2026-06-09T06:45:00+00:00",
+          "last": "2026-10-07T06:15:00+00:00"
+        }
+      }
+    },
+    "EUR/AUD": {
+      "broker_symbol": "EURAUDm",
+      "sha256": "sha256:91f263a4691f2693d66aa18fa7f1ef31e07f7c17a79813fc4549f53ce6cbf25c",
+      "status": "ok",
+      "tick_size": 1e-05,
+      "tick_size_source": "trade_tick_size",
+      "timeframes": {
+        "D1": {
+          "candles": 856,
+          "first": "2024-01-12T00:00:00+00:00",
+          "last": "2026-10-06T00:00:00+00:00"
+        },
+        "H1": {
+          "candles": 3777,
+          "first": "2026-03-01T22:00:00+00:00",
+          "last": "2026-10-07T05:00:00+00:00"
+        },
+        "H4": {
+          "candles": 1762,
+          "first": "2025-09-02T08:00:00+00:00",
+          "last": "2026-10-07T00:00:00+00:00"
+        },
+        "M15": {
+          "candles": 8248,
+          "first": "2026-06-09T06:45:00+00:00",
+          "last": "2026-10-07T06:15:00+00:00"
+        }
+      }
+    },
+    "EUR/CAD": {
+      "broker_symbol": "EURCADm",
+      "sha256": "sha256:450afcc67c94b0c2fe6bfd5b10e766c5ea1a7e75c65ee78934cff097b991b311",
+      "status": "ok",
+      "tick_size": 1e-05,
+      "tick_size_source": "trade_tick_size",
+      "timeframes": {
+        "D1": {
+          "candles": 856,
+          "first": "2024-01-12T00:00:00+00:00",
+          "last": "2026-10-06T00:00:00+00:00"
+        },
+        "H1": {
+          "candles": 3777,
+          "first": "2026-03-01T22:00:00+00:00",
+          "last": "2026-10-07T05:00:00+00:00"
+        },
+        "H4": {
+          "candles": 1762,
+          "first": "2025-09-02T08:00:00+00:00",
+          "last": "2026-10-07T00:00:00+00:00"
+        },
+        "M15": {
+          "candles": 8252,
+          "first": "2026-06-09T06:45:00+00:00",
+          "last": "2026-10-07T06:15:00+00:00"
+        }
+      }
+    },
+    "EUR/CHF": {
+      "broker_symbol": "EURCHFm",
+      "sha256": "sha256:97ea509cc8685eb5c7b35624e0aa1c858d9ea06e1c3bd41927787bba2fa3a6e2",
+      "status": "ok",
+      "tick_size": 1e-05,
+      "tick_size_source": "trade_tick_size",
+      "timeframes": {
+        "D1": {
+          "candles": 856,
+          "first": "2024-01-12T00:00:00+00:00",
+          "last": "2026-10-06T00:00:00+00:00"
+        },
+        "H1": {
+          "candles": 3777,
+          "first": "2026-03-01T22:00:00+00:00",
+          "last": "2026-10-07T05:00:00+00:00"
+        },
+        "H4": {
+          "candles": 1762,
+          "first": "2025-09-02T08:00:00+00:00",
+          "last": "2026-10-07T00:00:00+00:00"
+        },
+        "M15": {
+          "candles": 8254,
+          "first": "2026-06-09T06:45:00+00:00",
+          "last": "2026-10-07T06:15:00+00:00"
+        }
+      }
+    },
+    "EUR/GBP": {
+      "broker_symbol": "EURGBPm",
+      "sha256": "sha256:c101e009be46fea8443b2f07647a996e01ea65ec300f9ded3b7bf12e7e04b535",
+      "status": "ok",
+      "tick_size": 1e-05,
+      "tick_size_source": "trade_tick_size",
+      "timeframes": {
+        "D1": {
+          "candles": 856,
+          "first": "2024-01-12T00:00:00+00:00",
+          "last": "2026-10-06T00:00:00+00:00"
+        },
+        "H1": {
+          "candles": 3777,
+          "first": "2026-03-01T22:00:00+00:00",
+          "last": "2026-10-07T05:00:00+00:00"
+        },
+        "H4": {
+          "candles": 1762,
+          "first": "2025-09-02T08:00:00+00:00",
+          "last": "2026-10-07T00:00:00+00:00"
+        },
+        "M15": {
+          "candles": 8255,
+          "first": "2026-06-09T06:45:00+00:00",
+          "last": "2026-10-07T06:15:00+00:00"
+        }
+      }
+    },
+    "EUR/JPY": {
+      "broker_symbol": "EURJPYm",
+      "sha256": "sha256:aaacdbeb16bb27c4eb5f5c65deaadbb32d843e527866eb9262c97464799fdd33",
+      "status": "ok",
+      "tick_size": 0.001,
+      "tick_size_source": "trade_tick_size",
+      "timeframes": {
+        "D1": {
+          "candles": 856,
+          "first": "2024-01-12T00:00:00+00:00",
+          "last": "2026-10-06T00:00:00+00:00"
+        },
+        "H1": {
+          "candles": 3777,
+          "first": "2026-03-01T22:00:00+00:00",
+          "last": "2026-10-07T05:00:00+00:00"
+        },
+        "H4": {
+          "candles": 1762,
+          "first": "2025-09-02T08:00:00+00:00",
+          "last": "2026-10-07T00:00:00+00:00"
+        },
+        "M15": {
+          "candles": 8250,
+          "first": "2026-06-09T06:45:00+00:00",
+          "last": "2026-10-07T06:15:00+00:00"
+        }
+      }
+    },
+    "EUR/NZD": {
+      "broker_symbol": "EURNZDm",
+      "sha256": "sha256:d3fc666bba819ed64316784d90b6fd189a18a138eac9c00ee4c279fda01dff50",
+      "status": "ok",
+      "tick_size": 1e-05,
+      "tick_size_source": "trade_tick_size",
+      "timeframes": {
+        "D1": {
+          "candles": 856,
+          "first": "2024-01-12T00:00:00+00:00",
+          "last": "2026-10-06T00:00:00+00:00"
+        },
+        "H1": {
+          "candles": 3777,
+          "first": "2026-03-01T22:00:00+00:00",
+          "last": "2026-10-07T05:00:00+00:00"
+        },
+        "H4": {
+          "candles": 1762,
+          "first": "2025-09-02T08:00:00+00:00",
+          "last": "2026-10-07T00:00:00+00:00"
+        },
+        "M15": {
+          "candles": 8252,
+          "first": "2026-06-09T06:45:00+00:00",
+          "last": "2026-10-07T06:15:00+00:00"
+        }
+      }
+    },
+    "EUR/USD": {
+      "broker_symbol": "EURUSDm",
+      "sha256": "sha256:60b202e62825c870fa631625e41cb6a6e3285e4a8618be54dd1df2f65c3b7e0f",
+      "status": "ok",
+      "tick_size": 1e-05,
+      "tick_size_source": "trade_tick_size",
+      "timeframes": {
+        "D1": {
+          "candles": 856,
+          "first": "2024-01-12T00:00:00+00:00",
+          "last": "2026-10-06T00:00:00+00:00"
+        },
+        "H1": {
+          "candles": 3777,
+          "first": "2026-03-01T22:00:00+00:00",
+          "last": "2026-10-07T05:00:00+00:00"
+        },
+        "H4": {
+          "candles": 1762,
+          "first": "2025-09-02T08:00:00+00:00",
+          "last": "2026-10-07T00:00:00+00:00"
+        },
+        "M15": {
+          "candles": 8255,
+          "first": "2026-06-09T06:45:00+00:00",
+          "last": "2026-10-07T06:15:00+00:00"
+        }
+      }
+    },
+    "GBP/AUD": {
+      "broker_symbol": "GBPAUDm",
+      "sha256": "sha256:f2535f5b4796e9ba234e4976eaed3869ec4b6056f7cedc069dba2c4a7cfb4ce8",
+      "status": "ok",
+      "tick_size": 1e-05,
+      "tick_size_source": "trade_tick_size",
+      "timeframes": {
+        "D1": {
+          "candles": 856,
+          "first": "2024-01-12T00:00:00+00:00",
+          "last": "2026-10-06T00:00:00+00:00"
+        },
+        "H1": {
+          "candles": 3777,
+          "first": "2026-03-01T22:00:00+00:00",
+          "last": "2026-10-07T05:00:00+00:00"
+        },
+        "H4": {
+          "candles": 1762,
+          "first": "2025-09-02T08:00:00+00:00",
+          "last": "2026-10-07T00:00:00+00:00"
+        },
+        "M15": {
+          "candles": 8251,
+          "first": "2026-06-09T06:45:00+00:00",
+          "last": "2026-10-07T06:15:00+00:00"
+        }
+      }
+    },
+    "GBP/CAD": {
+      "broker_symbol": "GBPCADm",
+      "sha256": "sha256:926171f5c95ec7c7b656738de3f1c564cc0efa0ddfceeadab0c61e0ec09cc9f5",
+      "status": "ok",
+      "tick_size": 1e-05,
+      "tick_size_source": "trade_tick_size",
+      "timeframes": {
+        "D1": {
+          "candles": 856,
+          "first": "2024-01-12T00:00:00+00:00",
+          "last": "2026-10-06T00:00:00+00:00"
+        },
+        "H1": {
+          "candles": 3777,
+          "first": "2026-03-01T22:00:00+00:00",
+          "last": "2026-10-07T05:00:00+00:00"
+        },
+        "H4": {
+          "candles": 1762,
+          "first": "2025-09-02T08:00:00+00:00",
+          "last": "2026-10-07T00:00:00+00:00"
+        },
+        "M15": {
+          "candles": 8235,
+          "first": "2026-06-09T06:45:00+00:00",
+          "last": "2026-10-07T06:15:00+00:00"
+        }
+      }
+    },
+    "GBP/CHF": {
+      "broker_symbol": "GBPCHFm",
+      "sha256": "sha256:3e02444b85b728e7e648366f67a86ada27a6538dcb015f5c2e5f697dbb607730",
+      "status": "ok",
+      "tick_size": 1e-05,
+      "tick_size_source": "trade_tick_size",
+      "timeframes": {
+        "D1": {
+          "candles": 856,
+          "first": "2024-01-12T00:00:00+00:00",
+          "last": "2026-10-06T00:00:00+00:00"
+        },
+        "H1": {
+          "candles": 3777,
+          "first": "2026-03-01T22:00:00+00:00",
+          "last": "2026-10-07T05:00:00+00:00"
+        },
+        "H4": {
+          "candles": 1762,
+          "first": "2025-09-02T08:00:00+00:00",
+          "last": "2026-10-07T00:00:00+00:00"
+        },
+        "M15": {
+          "candles": 8252,
+          "first": "2026-06-09T06:45:00+00:00",
+          "last": "2026-10-07T06:15:00+00:00"
+        }
+      }
+    },
+    "GBP/JPY": {
+      "broker_symbol": "GBPJPYm",
+      "sha256": "sha256:d4d77c228ec383109391135be1d4f84216e0160b3400dbe8e6d32fd6ee6cb4c0",
+      "status": "ok",
+      "tick_size": 0.001,
+      "tick_size_source": "trade_tick_size",
+      "timeframes": {
+        "D1": {
+          "candles": 856,
+          "first": "2024-01-12T00:00:00+00:00",
+          "last": "2026-10-06T00:00:00+00:00"
+        },
+        "H1": {
+          "candles": 3777,
+          "first": "2026-03-01T22:00:00+00:00",
+          "last": "2026-10-07T05:00:00+00:00"
+        },
+        "H4": {
+          "candles": 1762,
+          "first": "2025-09-02T08:00:00+00:00",
+          "last": "2026-10-07T00:00:00+00:00"
+        },
+        "M15": {
+          "candles": 8249,
+          "first": "2026-06-09T06:45:00+00:00",
+          "last": "2026-10-07T06:15:00+00:00"
+        }
+      }
+    },
+    "GBP/NZD": {
+      "broker_symbol": "GBPNZDm",
+      "sha256": "sha256:80e0a676029d87bc1ed60acea98655c372df2bbebb0ee1426fca3bb43bd3eee3",
+      "status": "ok",
+      "tick_size": 1e-05,
+      "tick_size_source": "trade_tick_size",
+      "timeframes": {
+        "D1": {
+          "candles": 856,
+          "first": "2024-01-12T00:00:00+00:00",
+          "last": "2026-10-06T00:00:00+00:00"
+        },
+        "H1": {
+          "candles": 3777,
+          "first": "2026-03-01T22:00:00+00:00",
+          "last": "2026-10-07T05:00:00+00:00"
+        },
+        "H4": {
+          "candles": 1762,
+          "first": "2025-09-02T08:00:00+00:00",
+          "last": "2026-10-07T00:00:00+00:00"
+        },
+        "M15": {
+          "candles": 8228,
+          "first": "2026-06-09T06:45:00+00:00",
+          "last": "2026-10-07T06:15:00+00:00"
+        }
+      }
+    },
+    "GBP/USD": {
+      "broker_symbol": "GBPUSDm",
+      "sha256": "sha256:543870247ee8c45a92d5a06e0b14d77ce960e20fc970469b13786a7e11b706f9",
+      "status": "ok",
+      "tick_size": 1e-05,
+      "tick_size_source": "trade_tick_size",
+      "timeframes": {
+        "D1": {
+          "candles": 856,
+          "first": "2024-01-12T00:00:00+00:00",
+          "last": "2026-10-06T00:00:00+00:00"
+        },
+        "H1": {
+          "candles": 3777,
+          "first": "2026-03-01T22:00:00+00:00",
+          "last": "2026-10-07T05:00:00+00:00"
+        },
+        "H4": {
+          "candles": 1762,
+          "first": "2025-09-02T08:00:00+00:00",
+          "last": "2026-10-07T00:00:00+00:00"
+        },
+        "M15": {
+          "candles": 8255,
+          "first": "2026-06-09T06:45:00+00:00",
+          "last": "2026-10-07T06:15:00+00:00"
+        }
+      }
+    },
+    "NZD/CAD": {
+      "broker_symbol": "NZDCADm",
+      "sha256": "sha256:65e0cfe197860b6210f3e96b410e150d954e81b9881adcebf1fd98357ec39a80",
+      "status": "ok",
+      "tick_size": 1e-05,
+      "tick_size_source": "trade_tick_size",
+      "timeframes": {
+        "D1": {
+          "candles": 856,
+          "first": "2024-01-12T00:00:00+00:00",
+          "last": "2026-10-06T00:00:00+00:00"
+        },
+        "H1": {
+          "candles": 3777,
+          "first": "2026-03-01T22:00:00+00:00",
+          "last": "2026-10-07T05:00:00+00:00"
+        },
+        "H4": {
+          "candles": 1762,
+          "first": "2025-09-02T08:00:00+00:00",
+          "last": "2026-10-07T00:00:00+00:00"
+        },
+        "M15": {
+          "candles": 8247,
+          "first": "2026-06-09T06:45:00+00:00",
+          "last": "2026-10-07T06:15:00+00:00"
+        }
+      }
+    },
+    "NZD/CHF": {
+      "broker_symbol": "NZDCHFm",
+      "sha256": "sha256:f6ee1e2d7fecc67659fd78f231103b2ac0c9c35e014a96217c7b923b9234afed",
+      "status": "ok",
+      "tick_size": 1e-05,
+      "tick_size_source": "trade_tick_size",
+      "timeframes": {
+        "D1": {
+          "candles": 856,
+          "first": "2024-01-12T00:00:00+00:00",
+          "last": "2026-10-06T00:00:00+00:00"
+        },
+        "H1": {
+          "candles": 3777,
+          "first": "2026-03-01T22:00:00+00:00",
+          "last": "2026-10-07T05:00:00+00:00"
+        },
+        "H4": {
+          "candles": 1762,
+          "first": "2025-09-02T08:00:00+00:00",
+          "last": "2026-10-07T00:00:00+00:00"
+        },
+        "M15": {
+          "candles": 8255,
+          "first": "2026-06-09T06:45:00+00:00",
+          "last": "2026-10-07T06:15:00+00:00"
+        }
+      }
+    },
+    "NZD/JPY": {
+      "broker_symbol": "NZDJPYm",
+      "sha256": "sha256:8263b9c0a5419091edf464dfa83de7a3cc54811e61dcb7a1adb6ffbe04fff295",
+      "status": "ok",
+      "tick_size": 0.001,
+      "tick_size_source": "trade_tick_size",
+      "timeframes": {
+        "D1": {
+          "candles": 856,
+          "first": "2024-01-12T00:00:00+00:00",
+          "last": "2026-10-06T00:00:00+00:00"
+        },
+        "H1": {
+          "candles": 3777,
+          "first": "2026-03-01T22:00:00+00:00",
+          "last": "2026-10-07T05:00:00+00:00"
+        },
+        "H4": {
+          "candles": 1762,
+          "first": "2025-09-02T08:00:00+00:00",
+          "last": "2026-10-07T00:00:00+00:00"
+        },
+        "M15": {
+          "candles": 8247,
+          "first": "2026-06-09T06:45:00+00:00",
+          "last": "2026-10-07T06:15:00+00:00"
+        }
+      }
+    },
+    "NZD/USD": {
+      "broker_symbol": "NZDUSDm",
+      "sha256": "sha256:879d431d3017291215923c549997faaaea1fabfa65d76e5509672e76d0dd9b06",
+      "status": "ok",
+      "tick_size": 1e-05,
+      "tick_size_source": "trade_tick_size",
+      "timeframes": {
+        "D1": {
+          "candles": 856,
+          "first": "2024-01-12T00:00:00+00:00",
+          "last": "2026-10-06T00:00:00+00:00"
+        },
+        "H1": {
+          "candles": 3777,
+          "first": "2026-03-01T22:00:00+00:00",
+          "last": "2026-10-07T05:00:00+00:00"
+        },
+        "H4": {
+          "candles": 1762,
+          "first": "2025-09-02T08:00:00+00:00",
+          "last": "2026-10-07T00:00:00+00:00"
+        },
+        "M15": {
+          "candles": 8255,
+          "first": "2026-06-09T06:45:00+00:00",
+          "last": "2026-10-07T06:15:00+00:00"
+        }
+      }
+    },
+    "USD/CAD": {
+      "broker_symbol": "USDCADm",
+      "sha256": "sha256:7c5ec364878f8ba922e386a2588159a1c10a5ae0173324fe029b3cca17ebf016",
+      "status": "ok",
+      "tick_size": 1e-05,
+      "tick_size_source": "trade_tick_size",
+      "timeframes": {
+        "D1": {
+          "candles": 856,
+          "first": "2024-01-12T00:00:00+00:00",
+          "last": "2026-10-06T00:00:00+00:00"
+        },
+        "H1": {
+          "candles": 3777,
+          "first": "2026-03-01T22:00:00+00:00",
+          "last": "2026-10-07T05:00:00+00:00"
+        },
+        "H4": {
+          "candles": 1762,
+          "first": "2025-09-02T08:00:00+00:00",
+          "last": "2026-10-07T00:00:00+00:00"
+        },
+        "M15": {
+          "candles": 8255,
+          "first": "2026-06-09T06:45:00+00:00",
+          "last": "2026-10-07T06:15:00+00:00"
+        }
+      }
+    },
+    "USD/CHF": {
+      "broker_symbol": "USDCHFm",
+      "sha256": "sha256:ee28611d824d93c095bc85249f4d722cbb6a89967146e32488da3805eddce1ae",
+      "status": "ok",
+      "tick_size": 1e-05,
+      "tick_size_source": "trade_tick_size",
+      "timeframes": {
+        "D1": {
+          "candles": 856,
+          "first": "2024-01-12T00:00:00+00:00",
+          "last": "2026-10-06T00:00:00+00:00"
+        },
+        "H1": {
+          "candles": 3777,
+          "first": "2026-03-01T22:00:00+00:00",
+          "last": "2026-10-07T05:00:00+00:00"
+        },
+        "H4": {
+          "candles": 1762,
+          "first": "2025-09-02T08:00:00+00:00",
+          "last": "2026-10-07T00:00:00+00:00"
+        },
+        "M15": {
+          "candles": 8255,
+          "first": "2026-06-09T06:45:00+00:00",
+          "last": "2026-10-07T06:15:00+00:00"
+        }
+      }
+    },
+    "USD/JPY": {
+      "broker_symbol": "USDJPYm",
+      "sha256": "sha256:d12f5aa5cba231ffb013f1049cbc313124ef748dc9e0991c55c4a7e6e6c62a1d",
+      "status": "ok",
+      "tick_size": 0.001,
+      "tick_size_source": "trade_tick_size",
+      "timeframes": {
+        "D1": {
+          "candles": 856,
+          "first": "2024-01-12T00:00:00+00:00",
+          "last": "2026-10-06T00:00:00+00:00"
+        },
+        "H1": {
+          "candles": 3777,
+          "first": "2026-03-01T22:00:00+00:00",
+          "last": "2026-10-07T05:00:00+00:00"
+        },
+        "H4": {
+          "candles": 1762,
+          "first": "2025-09-02T08:00:00+00:00",
+          "last": "2026-10-07T00:00:00+00:00"
+        },
+        "M15": {
+          "candles": 8254,
+          "first": "2026-06-09T06:45:00+00:00",
+          "last": "2026-10-07T06:15:00+00:00"
+        }
+      }
+    },
+    "XAG/USD": {
+      "broker_symbol": "XAGUSDm",
+      "sha256": "sha256:c38d37c1b0cd2fcccd5efb72edcf325fe2f184ac99b85d4af633cb599f424584",
+      "status": "ok",
+      "tick_size": 0.001,
+      "tick_size_source": "trade_tick_size",
+      "timeframes": {
+        "D1": {
+          "candles": 852,
+          "first": "2024-01-12T00:00:00+00:00",
+          "last": "2026-10-06T00:00:00+00:00"
+        },
+        "H1": {
+          "candles": 3584,
+          "first": "2026-03-01T23:00:00+00:00",
+          "last": "2026-10-07T05:00:00+00:00"
+        },
+        "H4": {
+          "candles": 1752,
+          "first": "2025-09-02T08:00:00+00:00",
+          "last": "2026-10-07T00:00:00+00:00"
+        },
+        "M15": {
+          "candles": 7869,
+          "first": "2026-06-09T06:45:00+00:00",
+          "last": "2026-10-07T06:15:00+00:00"
+        }
+      }
+    },
+    "XAU/USD": {
+      "broker_symbol": "XAUUSDm",
+      "sha256": "sha256:905be2796788d4788d77b40bede4e77f2a337b4b48338af2498c0e42320b59ee",
+      "status": "ok",
+      "tick_size": 0.001,
+      "tick_size_source": "trade_tick_size",
+      "timeframes": {
+        "D1": {
+          "candles": 852,
+          "first": "2024-01-12T00:00:00+00:00",
+          "last": "2026-10-06T00:00:00+00:00"
+        },
+        "H1": {
+          "candles": 3584,
+          "first": "2026-03-01T23:00:00+00:00",
+          "last": "2026-10-07T05:00:00+00:00"
+        },
+        "H4": {
+          "candles": 1752,
+          "first": "2025-09-02T08:00:00+00:00",
+          "last": "2026-10-07T00:00:00+00:00"
+        },
+        "M15": {
+          "candles": 7869,
+          "first": "2026-06-09T06:45:00+00:00",
+          "last": "2026-10-07T06:15:00+00:00"
+        }
+      }
+    }
+  },
+  "tail_bars": {
+    "H1": 48,
+    "M15": 192
+  },
+  "timeframes": [
+    "D1",
+    "H4",
+    "H1",
+    "M15"
+  ],
+  "window_bars": {
+    "D1": 500,
+    "H1": 500,
+    "H4": 500,
+    "M15": 100
+  }
+}
