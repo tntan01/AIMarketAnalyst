@@ -22,9 +22,10 @@
 ## 3. Trạng thái tại lúc bàn giao (07/10/2026)
 
 - Commit `5f5cc66` trên `main`: đề xuất + plan + SD-C1. Chưa push.
-- **SD-C1 ACCEPT** (07/10/2026, code `3d9d4a5`). **SD-C2 đã giao**
-  ([`SD-C2.md`](SD-C2.md)), chờ Coder.
-- Việc kế tiếp của TL: "Review SD-C2" → review (§5); ACCEPT thì viết `SD-C3.md`.
+- **SD-C1 ACCEPT** (code `3d9d4a5`), **SD-C2 ACCEPT** (code `f6b4fcf`).
+  **SD-C3 đã giao** ([`SD-C3.md`](SD-C3.md)), chờ Coder.
+- Việc kế tiếp của TL: "Review SD-C3" → review (§5); ACCEPT thì viết `SD-C4.md`
+  (báo cáo CP1). Sau SD-C4 là **CP1** — không tự qua, trình Owner.
 
 ## 4. Quy trình mỗi task
 

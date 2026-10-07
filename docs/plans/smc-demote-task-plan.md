@@ -1,8 +1,8 @@
 # Kế hoạch giao việc: rút SMC khỏi TechnicalScore (Tech Lead → Coder)
 
 > **Trạng thái:** Q1–Q10 ĐÃ CHỐT 07/10/2026 (xem §2 và §8); Giai đoạn 1 dùng
-> corpus **nhỏ**, không tối ưu trọng số. **SD-C1 ACCEPT; SD-C2 đã giao:**
-> [`smc-demote-tasks/SD-C2.md`](smc-demote-tasks/SD-C2.md).  
+> corpus **nhỏ**, không tối ưu trọng số. **SD-C1, SD-C2 ACCEPT; SD-C3 đã giao:**
+> [`smc-demote-tasks/SD-C3.md`](smc-demote-tasks/SD-C3.md).  
 > **Ngày lập:** 07/10/2026.  
 > **Đề xuất gốc (lý do, số liệu, phương án A/B):**
 > [`smc-demote-entry-quality-plan.md`](smc-demote-entry-quality-plan.md) — đọc
@@ -165,8 +165,9 @@ Toàn bộ code ở `scripts/`, output ở `reports/scanner/smc_demote/`. **Khô
      Không grid search/tối ưu trọng số (Q5).
   4. Với side có plan: AUC của SMC `quality_score` đối với TP-trước/SL-trước,
      số side resolved/unresolved — đúng chỉ số của **Q4 điều kiện (2)**.
-  5. Khoảng tin cậy bootstrap **theo cụm (symbol, ngày)**, không bootstrap từng
-     row.
+  5. Khoảng tin cậy bootstrap **theo cụm ngày UTC của cutoff** (TL sửa
+     07/10/2026: mỗi symbol 1 cutoff/ngày nên cụm (symbol, ngày) trùng từng row),
+     không bootstrap từng row.
   6. **Phân bố regime** của corpus (số/tỷ lệ trending_up, trending_down,
      ranging, volatile, unknown) theo symbol và theo tháng; kết quả mục 2–3
      tách theo regime (mang tính mô tả; regime ít mẫu ghi rõ). Số liệu này là
@@ -303,6 +304,13 @@ Thứ tự bắt buộc I1 → I7. Sau I3 dừng ở **CP3**.
 - **Tối ưu trọng số regime 3 thành phần** (Q5): để đợt sau, gộp với việc
   regime bên dưới; khi đó mở rộng corpus bằng chính công cụ SD-C1/C2 (nhiều
   cutoff/ngày, 12 tháng, chia train/test theo thời gian).
+- **Lỗi pipeline SMC trên dữ liệu thật** (ghi nhận 07/10/2026 từ SD-C2):
+  13/2010 cutoff `derive_live_analysis` raise `ValueError: SMC M15 expires_at
+  must follow confirmed_at` (ví dụ `CHF/JPY@2026-07-27T04:00`,
+  `EUR/GBP@2026-08-03T12:00`, `XAU/USD@2026-08-03T12:00`; đủ danh sách trong
+  `reports/scanner/smc_demote/data/replay_errors.jsonl`). Trên live, pair gặp
+  lỗi này có thể không được chấm. Cần plan riêng để điều tra; không sửa trong
+  đợt này.
 - **Regime `unknown` và độ nhạy phân loại regime** (ghi nhận 07/10/2026, việc
   riêng sau đợt này): theo `detect_market_regime`
   (`core/technical_context.py:169-256`), khi EMA50/EMA200 D1 tách ≥ 1 ATR H4 thì
@@ -345,6 +353,8 @@ Rủi ro còn lại: <…> | Không có
 | 07/10/2026 | **ACCEPT SD-C1** — commit code `3d9d4a5`, report `5094e04` | TL | 31/31 symbol ok, 2010 cutoff; TL chạy lại `plan` (ra đúng `cutoffs.json` đã commit), `verify` 0 problems, 3 test pass. Câu hỏi của Coder về đếm lý do bỏ: giữ đếm độc lập theo lý do (dữ liệu không trùng: 2010 + 780 + 93 = 31 × 93). Ghi nhận nhỏ, không rework: `verify` đòi tail M15 đúng 192 (chặt hơn spec "> 0"); test 1 dùng chuỗi H1 cho mọi TF |
 | 07/10/2026 | SD-C2: tiêu chí parity đổi sang so với `smc_replay_parity.py` chạy bằng code hiện tại | TL | TL đo: 4/6 row đầu lệch `replay_parity.json` (quality_raw/zone) do producer SMC Ca 1–4 (04/10) — file lưu đã lỗi thời |
 | 07/10/2026 | Làm rõ Q3 cho SD-C2: entry của plan là lệnh limit tại mép zone → phải khớp trước (M15 chạm E) rồi mới xét TP/SL; giá khớp = E; nến khớp chỉ xét SL; không khớp trong 48h → `not_filled` (đếm riêng như `unresolved`) | TL | Plan có cả ở side `WATCH_ZONE` với E cách giá; không có luật khớp thì TP/SL-trước vô nghĩa. Owner có thể bác tại CP1 |
+| 07/10/2026 | **ACCEPT SD-C2** — commit code `f6b4fcf`, report `a0e4556` | TL | 1997 row + 13 lỗi (0,65 %), missing 0. TL chạy lại: parity 58/0, summary ra đúng file đã commit, `rows_sha256` khớp; bộ gắn nhãn độc lập của TL khớp 3994/3994 side; 30 cutoff ngẫu nhiên chạy lại giống hệt. Resolved TP/SL = 494 side (≥ 200). Trả lời Coder: `error_rate` = errors/cutoffs giữ nguyên; 13 lỗi loại khỏi SD-C3, ghi số lượng, mở việc riêng (§6) |
+| 07/10/2026 | SD-C3: cụm bootstrap = ngày UTC; chỉ số Q4(1) tính trên tập pair cả hai biến thể chọn được side (không lọc gap), pair chỉ biến thể 3 thành phần chọn được báo riêng; biến thể (a) phải khớp `score_technical_signal` thật trên 50 row (`check-scorer`) | TL | 204/1997 pair (10 %) biến thể hiện tại fail-closed vì SMC `data_unavailable` một side — số liệu cho D7 |
 | | CP1 | | |
 | | CP2 | | |
 | | CP3 | | |
