@@ -13,3 +13,4 @@ dist/
 .claude/config/interest/_rates.json
 config/interest_rates.json
 reports/scanner/smc_demote/data/
+.vscode/
