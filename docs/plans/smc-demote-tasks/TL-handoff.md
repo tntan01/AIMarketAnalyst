@@ -55,6 +55,25 @@ Quy ước đã chốt với Owner:
    chỗ tự viết lại logic đã có sẵn, chỗ nuốt lỗi/điền số bịa (vi phạm fail-closed).
 5. Kết luận ACCEPT/REWORK cho Owner, ngắn gọn, kèm bằng chứng file:line.
 
+### 5.1 Khi Owner nói "Review SD-xx" — làm trọn vòng, không hỏi lại
+
+- **ACCEPT:**
+  1. Ghi một dòng vào §8 của plan (`ACCEPT SD-xx`, commit code, ghi chú).
+  2. Nếu task kế tiếp **không** qua checkpoint: viết `SD-yy.md` (cùng cấu trúc
+     SD-C1), commit.
+  3. Nếu vừa xong task kết thúc một giai đoạn (SD-C4 → CP1, SD-D2 → CP2,
+     SD-I3 → CP3, SD-I7 → CP4): **không** viết task kế; trình Owner nội dung
+     cần duyệt và chờ.
+  4. Kết thúc câu trả lời bằng **câu Owner dán cho Coder**, đặt trong khối
+     trích dẫn, ví dụ: `Đọc và thực hiện docs/plans/smc-demote-tasks/SD-yy.md`.
+- **REWORK:**
+  1. Ghi yêu cầu sửa vào mục "Rework" cuối `SD-xx.md`: đánh số, mỗi mục nêu
+     lỗi + bằng chứng file:line + điều kiện đạt; commit.
+  2. Kết thúc bằng câu Owner dán cho Coder:
+     `Đọc mục "Rework" cuối docs/plans/smc-demote-tasks/SD-xx.md, sửa theo đó, cập nhật SD-xx-report.md rồi dừng.`
+- Lỗi nhỏ, rõ ràng (typo, thiếu dòng .gitignore…) vẫn đi đường REWORK; TL
+  không tự sửa code của Coder trừ khi Owner bảo.
+
 ## 6. Ghi chú kỹ thuật cho các task tới
 
 **SD-C2 (replay + nhãn):**
