@@ -1,8 +1,8 @@
 # Kế hoạch giao việc: rút SMC khỏi TechnicalScore (Tech Lead → Coder)
 
 > **Trạng thái:** Q1–Q10 ĐÃ CHỐT 07/10/2026 (xem §2 và §8); Giai đoạn 1 dùng
-> corpus **nhỏ**, không tối ưu trọng số. **SD-C1, SD-C2 ACCEPT; SD-C3 đã giao:**
-> [`smc-demote-tasks/SD-C3.md`](smc-demote-tasks/SD-C3.md).  
+> corpus **nhỏ**, không tối ưu trọng số. **SD-C1–C3 ACCEPT; SD-C4 đã giao:**
+> [`smc-demote-tasks/SD-C4.md`](smc-demote-tasks/SD-C4.md).  
 > **Ngày lập:** 07/10/2026.  
 > **Đề xuất gốc (lý do, số liệu, phương án A/B):**
 > [`smc-demote-entry-quality-plan.md`](smc-demote-entry-quality-plan.md) — đọc
@@ -355,6 +355,8 @@ Rủi ro còn lại: <…> | Không có
 | 07/10/2026 | Làm rõ Q3 cho SD-C2: entry của plan là lệnh limit tại mép zone → phải khớp trước (M15 chạm E) rồi mới xét TP/SL; giá khớp = E; nến khớp chỉ xét SL; không khớp trong 48h → `not_filled` (đếm riêng như `unresolved`) | TL | Plan có cả ở side `WATCH_ZONE` với E cách giá; không có luật khớp thì TP/SL-trước vô nghĩa. Owner có thể bác tại CP1 |
 | 07/10/2026 | **ACCEPT SD-C2** — commit code `f6b4fcf`, report `a0e4556` | TL | 1997 row + 13 lỗi (0,65 %), missing 0. TL chạy lại: parity 58/0, summary ra đúng file đã commit, `rows_sha256` khớp; bộ gắn nhãn độc lập của TL khớp 3994/3994 side; 30 cutoff ngẫu nhiên chạy lại giống hệt. Resolved TP/SL = 494 side (≥ 200). Trả lời Coder: `error_rate` = errors/cutoffs giữ nguyên; 13 lỗi loại khỏi SD-C3, ghi số lượng, mở việc riêng (§6) |
 | 07/10/2026 | SD-C3: cụm bootstrap = ngày UTC; chỉ số Q4(1) tính trên tập pair cả hai biến thể chọn được side (không lọc gap), pair chỉ biến thể 3 thành phần chọn được báo riêng; biến thể (a) phải khớp `score_technical_signal` thật trên 50 row (`check-scorer`) | TL | 204/1997 pair (10 %) biến thể hiện tại fail-closed vì SMC `data_unavailable` một side — số liệu cho D7 |
+| 07/10/2026 | **ACCEPT SD-C3** — commit code `0b699ef`, report `a3b7f1d` | TL | TL chạy lại: test 17 pass, `check-scorer` 0/100 mismatch, `analyze` ra đúng file đã commit. TL tính độc lập (code riêng, RNG khác): diff Q4(1) −0,00038, 91 pair đổi side, CI cụm ngày [−0,091; 0,082] (Coder [−0,090; 0,086]); AUC Q4(2) 0,4669 đếm cặp trực tiếp khớp. Ghi nhận nhỏ: `gap_ok_count` chỉ tính trên tập `both` |
+| 07/10/2026 | SD-C4: báo cáo CP1 sinh bằng script từ `analysis.json`, không khuyến nghị ngoài kết quả cơ học Q4 | TL | Bối cảnh TL trình riêng tại CP1 |
 | | CP1 | | |
 | | CP2 | | |
 | | CP3 | | |

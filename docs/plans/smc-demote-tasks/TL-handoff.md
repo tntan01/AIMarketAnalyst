@@ -22,10 +22,17 @@
 ## 3. Trạng thái tại lúc bàn giao (07/10/2026)
 
 - Commit `5f5cc66` trên `main`: đề xuất + plan + SD-C1. Chưa push.
-- **SD-C1 ACCEPT** (code `3d9d4a5`), **SD-C2 ACCEPT** (code `f6b4fcf`).
-  **SD-C3 đã giao** ([`SD-C3.md`](SD-C3.md)), chờ Coder.
-- Việc kế tiếp của TL: "Review SD-C3" → review (§5); ACCEPT thì viết `SD-C4.md`
-  (báo cáo CP1). Sau SD-C4 là **CP1** — không tự qua, trình Owner.
+- **SD-C1/C2/C3 ACCEPT** (code `3d9d4a5`, `f6b4fcf`, `0b699ef`).
+  **SD-C4 đã giao** ([`SD-C4.md`](SD-C4.md)), chờ Coder.
+- Việc kế tiếp của TL: "Review SD-C4" → review (§5); ACCEPT thì **không** viết
+  task kế — trình Owner CP1 (§5.1 bước 3).
+- Kết quả SD-C3 (để trình CP1): Q4(1) diff −0,0004 ATR, CI [−0,090; 0,086] →
+  không đạt (CI rộng, không phải A tệ hơn); Q4(2) AUC 0,467, CI [0,407; 0,527],
+  n=494 → không đạt. Bối cảnh TL tự tính: fwd 24h side chọn bởi TechnicalScore
+  hiện tại −0,091 ATR, CI cụm ngày [−0,39; 0,20] (chọn ngẫu nhiên = 0 vì
+  fwd BUY = −fwd SELL) → chưa thấy edge chọn side ở cả hai biến thể; TP-trước
+  96/494 = 19 % so với hòa vốn 33 % ở R:R 2; 204/1997 pair (10 %) bị chặn do
+  SMC `data_unavailable` (D7).
 
 ## 4. Quy trình mỗi task
 
