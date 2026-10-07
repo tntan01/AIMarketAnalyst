@@ -1,0 +1,14 @@
+{
+  "estimated_total_seconds": {
+    "1": 2121.8995714285716,
+    "4": 530.4748928571429,
+    "8": 265.23744642857145
+  },
+  "full_lot": 2010,
+  "peak_rss_mb_max": 57.1,
+  "seconds_per_snapshot_mean": 1.0556714285714286,
+  "seconds_per_snapshot_p95": 1.1033,
+  "snapshots": 21,
+  "total_elapsed_s": 22.84657580000021,
+  "workers": 1
+}

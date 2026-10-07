@@ -1,0 +1,18 @@
+{
+  "frozen_vs_corpus": {
+    "compared": 33,
+    "fully_matched": 33,
+    "mismatches": []
+  },
+  "matched": 58,
+  "mismatches": [],
+  "rows": 58,
+  "rule_versions": {
+    "confluence": "smc-confluence-v1",
+    "domain": "smc-domain-v1",
+    "scorer": "smc-v2",
+    "selection": "smc-selection-v1",
+    "snapshot_contract": "smc-snapshot-v1",
+    "sweep_link": "smc-sweep-link-v1"
+  }
+}

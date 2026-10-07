@@ -1,0 +1,54 @@
+{
+  "cutoffs_total": 2010,
+  "error_rate": 0.006467661691542288,
+  "error_types": {
+    "ValueError": 13
+  },
+  "errors": 13,
+  "missing": 0,
+  "regime": {
+    "ranging": 130,
+    "trending_down": 632,
+    "trending_up": 1235
+  },
+  "rows": 1997,
+  "rows_sha256": "sha256:0c41acbcece0ce3c61776986c37cf3975f31fd494db369f7cb4b68a03990f5e2",
+  "rule_versions": {
+    "confluence": "smc-confluence-v1",
+    "domain": "smc-domain-v1",
+    "scorer": "smc-v2",
+    "selection": "smc-selection-v1",
+    "snapshot_contract": "smc-snapshot-v1",
+    "sweep_link": "smc-sweep-link-v1"
+  },
+  "smc_state": {
+    "buy": {
+      "data_unavailable": 105,
+      "evaluated": 649,
+      "out_of_strategy": 232,
+      "watch_zone": 1011
+    },
+    "sell": {
+      "data_unavailable": 148,
+      "evaluated": 677,
+      "out_of_strategy": 337,
+      "watch_zone": 835
+    }
+  },
+  "tp_sl": {
+    "buy": {
+      "None": 1348,
+      "not_filled": 327,
+      "sl_first": 192,
+      "tp_first": 42,
+      "unresolved": 88
+    },
+    "sell": {
+      "None": 1320,
+      "not_filled": 300,
+      "sl_first": 206,
+      "tp_first": 54,
+      "unresolved": 117
+    }
+  }
+}
