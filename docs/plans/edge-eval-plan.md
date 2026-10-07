@@ -1,7 +1,8 @@
 # Kế hoạch: đo edge của TechnicalScore và plan SMC (Tech Lead → Coder)
 
-> **Trạng thái:** DỰ THẢO — chờ Owner duyệt các quyết định E1–E9 (§3, CP-E0).
-> Chưa giao task.  
+> **Trạng thái:** CP-E0 DUYỆT 07/10/2026 (E1–E9 như đề xuất). **EE-C1 đã giao:**
+> [`edge-eval-tasks/EE-C1.md`](edge-eval-tasks/EE-C1.md). TL handoff:
+> [`edge-eval-tasks/TL-handoff.md`](edge-eval-tasks/TL-handoff.md).  
 > **Ngày lập:** 07/10/2026.  
 > **Nguồn gốc:** đợt SMC demote đóng tại CP1
 > ([`smc-demote-task-plan.md`](smc-demote-task-plan.md) §8,
@@ -132,5 +133,5 @@ Toàn bộ code ở `scripts/`, output ở `reports/scanner/edge_eval/`.
 
 | Ngày | Quyết định | Người chốt | Ghi chú |
 |---|---|---|---|
-| | CP-E0 (E1–E9) | | |
+| 07/10/2026 | **CP-E0: duyệt E1–E9 như đề xuất** | Owner | Commission/swap không tính (Owner không nêu loại tài khoản có commission) — ghi trong giới hạn báo cáo |
 | | CP-E1 | | |
