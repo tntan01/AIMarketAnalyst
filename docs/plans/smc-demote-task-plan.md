@@ -1,8 +1,8 @@
 # Kế hoạch giao việc: rút SMC khỏi TechnicalScore (Tech Lead → Coder)
 
 > **Trạng thái:** Q1–Q10 ĐÃ CHỐT 07/10/2026 (xem §2 và §8); Giai đoạn 1 dùng
-> corpus **nhỏ**, không tối ưu trọng số. **SD-C1 đã giao:**
-> [`smc-demote-tasks/SD-C1.md`](smc-demote-tasks/SD-C1.md).  
+> corpus **nhỏ**, không tối ưu trọng số. **SD-C1 ACCEPT; SD-C2 đã giao:**
+> [`smc-demote-tasks/SD-C2.md`](smc-demote-tasks/SD-C2.md).  
 > **Ngày lập:** 07/10/2026.  
 > **Đề xuất gốc (lý do, số liệu, phương án A/B):**
 > [`smc-demote-entry-quality-plan.md`](smc-demote-entry-quality-plan.md) — đọc
@@ -146,8 +146,10 @@ Toàn bộ code ở `scripts/`, output ở `reports/scanner/smc_demote/`. **Khô
     chạy lại bỏ qua snapshot đã có; có tùy chọn chỉ chạy lại theo symbol hoặc
     khoảng ngày.
 - **Chấp nhận:**
-  - Replay lại 58 snapshot corpus cũ cho kết quả SMC khớp
-    `reports/scanner/smc_real_snapshots/replay_parity.json` (trạng thái side).
+  - Replay lại 58 snapshot corpus cũ qua đường SD-C2 cho kết quả SMC khớp
+    `scripts/smc_replay_parity.py` chạy **với code hiện tại** (trạng thái side).
+    Không so với `replay_parity.json` đã lưu (tạo 17/09, trước khi producer
+    đổi ngày 04/10 — lỗi thời).
   - Lỗi từng row ghi vào file lỗi, không làm dừng cả lô; báo tỷ lệ lỗi.
   - Không có nhãn nào dùng dữ liệu ≤ cutoff (test nhỏ trong script).
 
@@ -340,6 +342,9 @@ Rủi ro còn lại: <…> | Không có
 | 07/10/2026 | Q8: lưu nến gốc một lần, không commit `data/`; Q9: không tính spread | Owner | |
 | 07/10/2026 | SD-C2 thêm chạy thử 1 symbol × 1 tháng và cơ chế chạy tiếp | Owner | |
 | 07/10/2026 | Q10: TL = Claude Code; Coder = opencode (DeepSeek Flash); MT5 sẵn sàng | Owner | Quy trình §0.4 |
+| 07/10/2026 | **ACCEPT SD-C1** — commit code `3d9d4a5`, report `5094e04` | TL | 31/31 symbol ok, 2010 cutoff; TL chạy lại `plan` (ra đúng `cutoffs.json` đã commit), `verify` 0 problems, 3 test pass. Câu hỏi của Coder về đếm lý do bỏ: giữ đếm độc lập theo lý do (dữ liệu không trùng: 2010 + 780 + 93 = 31 × 93). Ghi nhận nhỏ, không rework: `verify` đòi tail M15 đúng 192 (chặt hơn spec "> 0"); test 1 dùng chuỗi H1 cho mọi TF |
+| 07/10/2026 | SD-C2: tiêu chí parity đổi sang so với `smc_replay_parity.py` chạy bằng code hiện tại | TL | TL đo: 4/6 row đầu lệch `replay_parity.json` (quality_raw/zone) do producer SMC Ca 1–4 (04/10) — file lưu đã lỗi thời |
+| 07/10/2026 | Làm rõ Q3 cho SD-C2: entry của plan là lệnh limit tại mép zone → phải khớp trước (M15 chạm E) rồi mới xét TP/SL; giá khớp = E; nến khớp chỉ xét SL; không khớp trong 48h → `not_filled` (đếm riêng như `unresolved`) | TL | Plan có cả ở side `WATCH_ZONE` với E cách giá; không có luật khớp thì TP/SL-trước vô nghĩa. Owner có thể bác tại CP1 |
 | | CP1 | | |
 | | CP2 | | |
 | | CP3 | | |

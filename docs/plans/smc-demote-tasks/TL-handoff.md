@@ -22,9 +22,9 @@
 ## 3. Trạng thái tại lúc bàn giao (07/10/2026)
 
 - Commit `5f5cc66` trên `main`: đề xuất + plan + SD-C1. Chưa push.
-- **SD-C1 đã giao**, chờ Coder làm. Chưa có `SD-C1-report.md`.
-- Việc kế tiếp của TL: khi Owner nói "Review SD-C1" → review (§5); ACCEPT thì
-  viết `SD-C2.md`.
+- **SD-C1 ACCEPT** (07/10/2026, code `3d9d4a5`). **SD-C2 đã giao**
+  ([`SD-C2.md`](SD-C2.md)), chờ Coder.
+- Việc kế tiếp của TL: "Review SD-C2" → review (§5); ACCEPT thì viết `SD-C3.md`.
 
 ## 4. Quy trình mỗi task
 
@@ -86,7 +86,8 @@ Quy ước đã chốt với Owner:
   `quality_score`, `b/q/l/c`, `state`, `plan_available`, `plan`,
   `zone_low/zone_high`; `analysis["regime"]`.
 - Plan entry/SL/TP: xem `core/scanner_scenario_producers.py:plans_from_canonical_selection`.
-- Tốc độ đo được ~5 giây/snapshot (1 process); tài liệu replay parity ghi ~9 giây.
+- Tốc độ: TL đo lại 07/10 trên dữ liệu đóng băng ~1 giây/snapshot (EUR/USD, 1 process); số cũ 5–9 giây là trước tối ưu.
+- `reports/scanner/smc_real_snapshots/replay_parity.json` (17/09) đã lỗi thời so với producer 04/10 — không dùng làm expected.
 - Phiên TL trước đã chạy thử nghiệm trên corpus 58 snapshot bằng script scratch
   (không commit); kết quả nằm trong đề xuất §3–§4 — dùng để đối chiếu thô.
 
