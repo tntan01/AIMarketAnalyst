@@ -86,7 +86,7 @@ Quy ước đã chốt với Owner:
   `quality_score`, `b/q/l/c`, `state`, `plan_available`, `plan`,
   `zone_low/zone_high`; `analysis["regime"]`.
 - Plan entry/SL/TP: xem `core/scanner_scenario_producers.py:plans_from_canonical_selection`.
-- Tốc độ: TL đo lại 07/10 trên dữ liệu đóng băng ~1 giây/snapshot (EUR/USD, 1 process); số cũ 5–9 giây là trước tối ưu.
+- Tốc độ: TL đo lại 07/10 trên dữ liệu đóng băng ~1 giây/snapshot (EUR/USD, 1 process); số cũ 5–9 giây đo trên corpus cũ, chưa rõ vì sao chênh — SD-C2 trial sẽ đo lại.
 - `reports/scanner/smc_real_snapshots/replay_parity.json` (17/09) đã lỗi thời so với producer 04/10 — không dùng làm expected.
 - Phiên TL trước đã chạy thử nghiệm trên corpus 58 snapshot bằng script scratch
   (không commit); kết quả nằm trong đề xuất §3–§4 — dùng để đối chiếu thô.
