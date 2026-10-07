@@ -1,8 +1,8 @@
 # Kế hoạch giao việc: rút SMC khỏi TechnicalScore (Tech Lead → Coder)
 
 > **Trạng thái:** Q1–Q10 ĐÃ CHỐT 07/10/2026 (xem §2 và §8); Giai đoạn 1 dùng
-> corpus **nhỏ**, không tối ưu trọng số. **Giai đoạn 1 xong (SD-C1–C4 ACCEPT); chờ Owner tại CP1** —
-> báo cáo [`reports/scanner/smc_demote/report.md`](../../reports/scanner/smc_demote/report.md).  
+> corpus **nhỏ**, không tối ưu trọng số. **ĐÓNG tại CP1 (07/10/2026): Owner chọn GIỮ NGUYÊN** — Giai đoạn 2–3
+> không thực hiện. Báo cáo [`reports/scanner/smc_demote/report.md`](../../reports/scanner/smc_demote/report.md).  
 > **Ngày lập:** 07/10/2026.  
 > **Đề xuất gốc (lý do, số liệu, phương án A/B):**
 > [`smc-demote-entry-quality-plan.md`](smc-demote-entry-quality-plan.md) — đọc
@@ -358,7 +358,5 @@ Rủi ro còn lại: <…> | Không có
 | 07/10/2026 | **ACCEPT SD-C3** — commit code `0b699ef`, report `a3b7f1d` | TL | TL chạy lại: test 17 pass, `check-scorer` 0/100 mismatch, `analyze` ra đúng file đã commit. TL tính độc lập (code riêng, RNG khác): diff Q4(1) −0,00038, 91 pair đổi side, CI cụm ngày [−0,091; 0,082] (Coder [−0,090; 0,086]); AUC Q4(2) 0,4669 đếm cặp trực tiếp khớp. Ghi nhận nhỏ: `gap_ok_count` chỉ tính trên tập `both` |
 | 07/10/2026 | SD-C4: báo cáo CP1 sinh bằng script từ `analysis.json`, không khuyến nghị ngoài kết quả cơ học Q4 | TL | Bối cảnh TL trình riêng tại CP1 |
 | 07/10/2026 | **ACCEPT SD-C4** — commit code `8526dfb`, report `f6d6703` | TL | TL chạy lại: test 4 pass, `report.md` sinh lại giống byte; số Q4 khớp `analysis.json`; đủ 8 mục. Ghi nhận hiển thị (không rework): bucket sắp theo chuỗi ("0-8, 17-25, 9-16"), diff Q4(1) in "-0.000" |
-| | CP1 | | |
-| | CP2 | | |
-| | CP3 | | |
-| | CP4 | | |
+| 07/10/2026 | **CP1: GIỮ NGUYÊN TechnicalScore 4 thành phần; đóng đợt SMC demote** | Owner | Quy tắc Q4: không đạt (1) — diff −0,0004 ATR, CI [−0,090; 0,086] (CI rộng, không phải A tệ hơn); không đạt (2) — AUC `quality_score` 0,467, CI [0,407; 0,527], n=494. Owner không chọn B (B dựa trên cùng B/Q/L/C không dự báo TP/SL). Không sửa contract/runtime. Việc tiếp theo (cần plan riêng, chưa giao): đo edge TechnicalScore và plan SMC (TP-trước 19 % < hòa vốn 33 % ở R:R 2; fwd 24h side chọn −0,09 ATR, CI [−0,39; 0,20]); lỗi pipeline SMC 13 cutoff; phân loại regime (§6) |
+| — | CP2–CP4 | — | Không áp dụng (đóng tại CP1) |

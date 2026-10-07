@@ -1,7 +1,10 @@
 # Đề xuất: rút SMC khỏi TechnicalScore, dùng làm chất lượng entry (chờ duyệt)
 
-> **Trạng thái:** ĐỀ XUẤT — chờ Owner/Tech Lead quyết định. Chưa sửa code, chưa
-> sửa [`scanner-architecture.md`](../scanner/scanner-architecture.md).  
+> **Trạng thái:** KHÔNG TRIỂN KHAI — Owner chọn giữ nguyên tại CP1 (07/10/2026)
+> sau khi đo trên corpus 1997 snapshot; xem
+> [`reports/scanner/smc_demote/report.md`](../../reports/scanner/smc_demote/report.md)
+> và §8 của [`smc-demote-task-plan.md`](smc-demote-task-plan.md). Không sửa
+> code/contract.  
 > **Ngày:** 07/10/2026.  
 > **Phạm vi:** vai trò của thành phần `smc` trong `TechnicalSignalScore`
 > (§3.1–3.3 của scanner-architecture). Không đổi công thức B/Q/L/C nội bộ, không

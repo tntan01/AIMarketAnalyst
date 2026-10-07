@@ -24,8 +24,9 @@
 - Commit `5f5cc66` trên `main`: đề xuất + plan + SD-C1. Chưa push.
 - **SD-C1/C2/C3 ACCEPT** (code `3d9d4a5`, `f6b4fcf`, `0b699ef`).
   **SD-C4 ACCEPT** (code `8526dfb`). Giai đoạn 1 xong.
-- **Đang chờ Owner quyết CP1** (đã trình 07/10/2026). Chưa viết task giai đoạn 2.
-  Khi Owner chốt: ghi dòng CP1 vào §8 plan, rồi làm theo lựa chọn.
+- **ĐÃ ĐÓNG tại CP1 (07/10/2026): Owner chọn giữ nguyên.** Không còn task nào
+  của đợt này. Việc kế tiếp (chưa có plan): đo edge TechnicalScore/plan SMC —
+  xem dòng CP1 trong §8 plan.
 - Kết quả SD-C3 (để trình CP1): Q4(1) diff −0,0004 ATR, CI [−0,090; 0,086] →
   không đạt (CI rộng, không phải A tệ hơn); Q4(2) AUC 0,467, CI [0,407; 0,527],
   n=494 → không đạt. Bối cảnh TL tự tính: fwd 24h side chọn bởi TechnicalScore
